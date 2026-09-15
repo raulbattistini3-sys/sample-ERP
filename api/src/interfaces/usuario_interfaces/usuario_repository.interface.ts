@@ -5,9 +5,10 @@ import { Either } from "../../globals/errors/left_right_either.error";
 
 interface IUsuarioRepository {
    getUsuario(id: string): Promise<Either<BaseAppError, UsuarioEntity>>;
+   getUsuarioByEmail(email: string): Promise<Either<BaseAppError, UsuarioEntity>>;
    getUsuarios(): Promise<Either<BaseAppError, UsuarioEntity[]>>;
    createUsuario(
-      payload: Omit<UsuarioEntity, "id">,
+      payload: Omit<UsuarioEntity, "id" | "auditorias_realizadas">,
    ): Promise<Either<BaseAppError, UsuarioEntity>>;
    updateUsuario(
       payload: PayloadUpdateUsuarioDto,

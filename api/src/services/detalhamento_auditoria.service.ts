@@ -189,4 +189,4 @@ class DetalhamentoAuditoriaService implements IDetalhamentoAuditoriaService {
    }
 }
 
-export { DetalhamentoAuditoriaService };
+export default DetalhamentoAuditoriaService ;

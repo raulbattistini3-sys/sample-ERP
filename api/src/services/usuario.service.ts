@@ -24,9 +24,14 @@ import { IUsuarioValidator } from "../interfaces/usuario_interfaces/usuario_vali
 import paginate from "../utils/helpers/paginate_data.helper";
 import { ValidationError } from "../errors/client_errors/four_xx.error";
 import { ServerError } from "../errors/server_errors/five_xx.error";
+import { RepositoryError } from "../globals/errors/global_repository_error.error";
+import { UsuarioEntity } from "../entities/usuario.entity";
+import { comparePassword, hashPassword } from "../utils/helpers/password.util";
+import { generateToken } from "../utils/helpers/token.util";
+import permissoesUsuarioEnum from "../enums/usuarios_permissoes.enum";
 
 class UsuarioService implements IUserService {
-   constructor(
+     constructor(
       private userRepository: IUsuarioRepository,
       private userValidator: IUsuarioValidator,
    ) {}
@@ -112,29 +117,21 @@ class UsuarioService implements IUserService {
          return left(new ServerError("500", true));
       }
    }
-   async updateUser(
-      payload: PayloadUpdateUsuarioDto,
-   ): Promise<Either<BaseAppError, null>> {
-      try {
-         const validation = this.userValidator.validatePayload(payload);
-         if (validation.isLeft()) {
-            return left(validation.value);
-         }
-
-         const usuarioData = await this.userRepository.updateUsuario(payload);
-         if (usuarioData.isLeft()) {
-            return left(usuarioData.value);
-         }
-         return right(null);
-      } catch (error) {
-         if (error instanceof ValidationError) {
-            return left(error);
-         }
-         return left(new ServerError("500", true));
+  async updateUser(id: string, payload: PayloadUpdateUsuarioDto): Promise<Either<BaseAppError, null>> {
+   try {
+      if (!payload) {
+         return left(new RepositoryError("No payload found"));
       }
+      const usuario = await this.userRepository.getUsuario(payload.id)
+      if (!usuario) {
+         return left(new RepositoryError("No usuario found"));
+      }
+      await this.userRepository.updateUsuario(usuario.value as UsuarioEntity)
+      return right(null);
+   } catch (error) {
+      return left(new RepositoryError("Database error"));
    }
-   // update usuario auditorias in bulk method
-   async deleteUser(id: string): Promise<Either<BaseAppError, null>> {
+  } async deleteUser(id: string): Promise<Either<BaseAppError, null>> {
       try {
          const validation = this.userValidator.validateUUIDv4(id);
          if (validation.isLeft()) {
@@ -172,6 +169,7 @@ class UsuarioService implements IUserService {
          let userToUpdate: PayloadUpdateUsuarioDto = {
             id,
             ativo: false,
+            senha: userClass.senha,
             nome: userClass.nome,
             permissoes: userClass.permissoes,
             email: userClass.email,
@@ -189,32 +187,64 @@ class UsuarioService implements IUserService {
          return left(new ServerError("500", true));
       }
    }
-   async loginUsuario(
-      payload: PayloadLoginUsuarioDto,
-   ): Promise<Either<BaseAppError, ResponseLoginUsuarioDto>> {
-      try {
-         const validation = this.userValidator.validatePayload(payload);
-         if (validation.isLeft()) {
-            return left(validation.value);
-         }
-      } catch (error) {
-         if (error instanceof ValidationError) {
-            return left(error);
-         }
-         return left(new ServerError("500", true));
+  async loginUsuario(
+   payload: PayloadLoginUsuarioDto,
+): Promise<Either<BaseAppError, ResponseLoginUsuarioDto>> {
+   try {
+      const validation = this.userValidator.validatePayload(payload);
+      if (validation.isLeft()) {
+         return left(validation.value);
       }
-   }
-   async registerUsuario(
-      payloadUsuario: PayloadRegisterUsuarioDto,
-   ): Promise<Either<BaseAppError, ResponseRegisterUsuarioDto>> {
-      try {
-      } catch (error) {
-         if (error instanceof ValidationError) {
-            return left(error);
-         }
-         return left(new ServerError("500", true));
+      const userData = await this.userRepository.getUsuarioByEmail(payload.email);
+      if (userData.isLeft()) {
+         return left(new ValidationError("401", "credenciais inválidas"));
       }
+      const matches = await comparePassword(payload.senha, userData.value.senha);
+      if (!matches) {
+         return left(new ValidationError("401", "credenciais inválidas"));
+      }
+      const token = generateToken(userData.value);
+      const { senha, auditorias_realizadas, id, ...safeUser } = userData.value;
+      const userDataVal = userData.value
+      const response: 
+        ResponseLoginUsuarioDto = { ...userDataVal, token };
+      return right(response);
+   } catch (error) {
+      if (error instanceof ValidationError) {
+         return left(error);
+      }
+      return left(new ServerError("500", true));
    }
 }
 
-export { UsuarioService };
+async registerUsuario(
+   payloadUsuario: PayloadRegisterUsuarioDto,
+): Promise<Either<BaseAppError, ResponseRegisterUsuarioDto>> {
+   try {
+      const validation = this.userValidator.validatePayload(payloadUsuario);
+      if (validation.isLeft()) {
+         return left(validation.value);
+      }
+      const hashed = await hashPassword(payloadUsuario.senha);
+      const userData = await this.userRepository.createUsuario({
+         nome: payloadUsuario.nome,
+         email: payloadUsuario.email,
+         senha: hashed,
+         permissoes: permissoesUsuarioEnum.Values.Estoque,
+         ativo: true,
+      });
+      if (userData.isLeft()) {
+         return left(userData.value);
+      }
+      const { senha, ...safeUser } = userData.value;
+      return right(userData.value);
+   } catch (error) {
+      if (error instanceof ValidationError) {
+         return left(error);
+      }
+      return left(new ServerError("500", true));
+   }
+  }
+}
+
+export default UsuarioService;
