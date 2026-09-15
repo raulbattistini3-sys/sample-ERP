@@ -25,6 +25,20 @@ class UsuarioRepository implements IUsuarioRepository {
          return left(new RepositoryError("Database error"));
       }
    }
+   async getUsuarioByEmail(email: string): Promise<Either<BaseAppError, UsuarioEntity>> {
+      try {
+         if (!email) {
+            return left(new RepositoryError("No payload found"));
+         }
+         const usuario = await this.repository.findOne({ where: { email } });
+         if (!usuario) {
+            return left(new RepositoryError("No usuario found"));
+         }
+         return right(usuario);
+      } catch (error) {
+         return left(new RepositoryError("Database error"));
+      }
+   }
    async getUsuarios(): Promise<Either<BaseAppError, UsuarioEntity[]>> {
       try {
          const usuarios = await this.repository.find();
@@ -98,4 +112,4 @@ class UsuarioRepository implements IUsuarioRepository {
    }
 }
 
-export default { UsuarioRepository };
+export default UsuarioRepository;

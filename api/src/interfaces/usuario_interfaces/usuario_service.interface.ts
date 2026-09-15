@@ -31,6 +31,7 @@ interface IUsuarioService {
       payload: PayloadCreateUsuario,
    ) => Promise<Either<BaseAppError, ResponseCreateUsuario>>;
    updateUser: (
+      id: string,
       payload: PayloadUpdateUsuarioDto,
    ) => Promise<Either<BaseAppError, null>>;
    deleteUser: (id: string) => Promise<Either<BaseAppError, null>>;
