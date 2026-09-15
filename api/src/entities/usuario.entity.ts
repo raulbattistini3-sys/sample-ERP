@@ -1,5 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, OneToOne } from "typeorm";
-import { PermissoesUsuarioEnum } from "../enums/usuarios_permissoes.enum";
+import permissoesUsuarioEnum, { PermissoesUsuarioEnum } from "../enums/usuarios_permissoes.enum";
 import { AuditoriaEntity } from "./auditoria.entity";
 
 @Entity("usuarios")
@@ -11,13 +11,13 @@ class UsuarioEntity {
    nome: string;
 
    @Column("text")
-   permissoes: PermissoesUsuarioEnum;
-
+   permissoes = permissoesUsuarioEnum.Values.Estoque // or ADM — pick your actual default
+   
    @Column("text", { nullable: false })
    email: string;
 
    @Column("text")
-   private senha: string;
+   senha: string;
 
    @Column()
    ativo: boolean;
