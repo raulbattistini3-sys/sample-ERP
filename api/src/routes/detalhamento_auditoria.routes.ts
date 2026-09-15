@@ -1,8 +1,7 @@
 import { Router } from "express";
 import DetalhamentoAuditoriaController from "../controllers/detalhamento_auditoria.controller";
 import DetalhamentoAuditoriaService from "../services/detalhamento_auditoria.service";
-import DetalhamentoAuditoriaRepository from "../repositories/detalhamento_auditoria.repository";
-import DetalhamentoAuditoriaValidator from "../validators/detalhamento_auditoria.validator";
+import DetalhamentoAuditoriaRepository from "../repositories/detalhamento_auditoria.repository"; import DetalhamentoAuditoriaValidator from "../validators/detalhamento_auditoria.validator";
 import postgresConnection from "../db/postgres_connection";
 
 const detalhamentoAuditoriaRepository = new DetalhamentoAuditoriaRepository(postgresConnection);
