@@ -5,10 +5,11 @@ import ProductRepository from "../repositories/product.repository";
 import CategoriaRepository from "../repositories/categoria.repository";
 import ProdutoValidator from "../validators/produto.validator";
 import CategoriaValidator from "../validators/categoria.validator";
-import postgresConnection from "../db/postgres_connection";
+import { db } from "../db/client";
 
-const productRepository = new ProductRepository(postgresConnection);
-const categoriaRepository = new CategoriaRepository(postgresConnection);
+
+const productRepository = new ProductRepository(db);
+const categoriaRepository = new CategoriaRepository(db);
 const produtoValidator = new ProdutoValidator();
 const categoriaValidator = new CategoriaValidator();
 

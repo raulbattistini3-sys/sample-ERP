@@ -1,69 +1,51 @@
-import { DataSource, DataSourceOptions } from "typeorm";
 import "dotenv/config";
-import { ServerError } from "../errors/server_errors/five_xx.error";
+import { DrizzleDB } from "../db/client";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+import * as schema from "../db/schema";
 
 export type ApiConfig = {
-   port: number;
-   host: string;
-};
-
-export type AppConfig = {
-   connectionConfig: DataSourceOptions;
-   api: ApiConfig;
+  port: number;
+  host: string;
 };
 
 class Config {
-   private appConfig: AppConfig;
-   private static instance: Config;
-   private static connection: DataSource | null = null;
-   constructor() {
-      this.appConfig = {
-         api: this.loadApiConfig(),
-         connectionConfig: this.loadDbConfig(),
-      };
-   }
-   public static getInstance(): Config {
-      if (!Config.instance) {
-         Config.instance = new Config();
-      }
-      return Config.instance;
-   }
-   private loadApiConfig(): ApiConfig {
-      return {
-         port: Number(process.env.APP_PORT) || 3333,
-         host: String(process.env.APP_HOST) || "localhost",
-      };
-   }
-   private loadDbConfig(): DataSourceOptions {
-      const connectionOptions: DataSourceOptions = {
-         type: "postgres",
-         database: process.env.DB_NAME,
-         host: process.env.DB_HOST,
-         port: Number(process.env.DB_PORT) || 5432,
-         username: process.env.DB_USERNAME,
-         password: process.env.DB_PASSWORD,
-      };
-      return connectionOptions;
-   }
-   public getApiConfig(): ApiConfig {
-      return this.appConfig.api;
-   }
-   public getDbConfig(): DataSource {
-      try {
-         if (Config.connection && Config.connection.isInitialized) {
-            return Config.connection;
-         }
-         Config.connection = new DataSource(this.loadDbConfig());
-         Config.connection.initialize();
-         return Config.connection;
-      } catch (error) {
-         throw new ServerError(
-            "500",
-            true,
-            "Failure when connecting to the database",
-         );
-      }
-   }
+  private appConfig: { api: ApiConfig };
+  private static instance: Config;
+
+  constructor() {
+    this.appConfig = { api: this.loadApiConfig() };
+  }
+
+  public static getInstance(): Config {
+    if (!Config.instance) {
+      Config.instance = new Config();
+    }
+    return Config.instance;
+  }
+
+  private loadApiConfig(): ApiConfig {
+    console.log("testh")
+    return {
+      port: Number(process.env.APP_PORT) || 3333,
+      host: String(process.env.APP_HOST) || "localhost",
+    };
+  }
+
+  public getApiConfig(): ApiConfig {
+    return this.appConfig.api;
+  }
+
+  public getDb(): DrizzleDB {
+  const pool = new Pool({
+    database: "app_dev", // process.env.DB_NAME,
+    host: "localhost",// process.env.DB_HOST,
+    port: 3306, // Number(process.env.DB_PORT) || 3306,
+    user: "root",// process.env.DB_USERNAME,
+  });
+  const db = drizzle(pool, { schema });
+  return db;
+  }
 }
 
 export default Config;

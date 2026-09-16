@@ -8,15 +8,14 @@ const config = Config.getInstance();
 
 const host = config.getApiConfig().host;
 const port = config.getApiConfig().port;
-const connection = config.getDbConfig();
+const connection = config.getDb();
 const pinoLogger = new AppLogger();
 const baseErrorMiddleware = new BaseErrorMiddleware();
 app.use(baseErrorMiddleware.handle);
 
 app.listen(port, host, async () => {
-   if (!connection.isInitialized) {
-      await connection.initialize();
-   }
+  
+  console.log("parou antes")
    pinoLogger.handle({ applicationValues: config }, "DEBUG");
    console.log(`Server listening on host: ${host} and port: ${port}`);
 });

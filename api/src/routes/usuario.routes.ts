@@ -3,9 +3,9 @@ import UsuarioController from "../controllers/usuario.controller";
 import UsuarioService from "../services/usuario.service";
 import UsuarioRepository from "../repositories/usuario.repository";
 import UsuarioValidator from "../validators/usuario.validator";
-import postgresConnection from "../db/postgres_connection";
+import { db } from "../db/client";
+const usuarioRepository = new UsuarioRepository(db);
 
-const usuarioRepository = new UsuarioRepository(postgresConnection);
 const usuarioValidator = new UsuarioValidator();
 
 const usuarioService = new UsuarioService(usuarioRepository, usuarioValidator);
