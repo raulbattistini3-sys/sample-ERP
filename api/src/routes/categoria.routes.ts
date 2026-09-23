@@ -3,8 +3,10 @@ import CategoriaController from "../controllers/categoria.controller";
 import { CategoriaService } from "../services/categoria.service";
 import CategoriaRepository from "../repositories/categoria.repository";
 import CategoriaValidator from "../validators/categoria.validator";
-import { db } from "../db/client";
+import Config from "../configs/app_config";
 
+const config = Config.getInstance();
+const  db = config.getDb();
 const categoriaRepository = new CategoriaRepository(db);
 const categoriaValidator = new CategoriaValidator();
 

@@ -1,9 +1,13 @@
 import { Router } from "express";
+import Config from "../configs/app_config";
 import UsuarioController from "../controllers/usuario.controller";
 import UsuarioService from "../services/usuario.service";
 import UsuarioRepository from "../repositories/usuario.repository";
 import UsuarioValidator from "../validators/usuario.validator";
-import { db } from "../db/client";
+
+const config = Config.getInstance();
+const  db = config.getDb();
+
 const usuarioRepository = new UsuarioRepository(db);
 
 const usuarioValidator = new UsuarioValidator();

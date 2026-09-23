@@ -1,10 +1,14 @@
 import { Router } from "express";
+import Config from "../configs/app_config";
 import AuditoriaController from "../controllers/auditoria.controller";
 import { AuditoriaService } from "../services/auditoria.service";
 import AuditoriaRepository from "../repositories/auditoria.repository";
 import AuditoriaValidator from "../validators/auditoria.validator";
 import DetalhamentoAuditoriaRepository from "../repositories/detalhamento_auditoria.repository";
-import { db } from "../db/client";
+
+
+const config = Config.getInstance();
+const  db = config.getDb();
 
 const detalhamentoAuditoriaRepository = new DetalhamentoAuditoriaRepository(db);
 
