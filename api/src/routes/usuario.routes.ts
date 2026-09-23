@@ -1,11 +1,15 @@
 import { Router } from "express";
+import Config from "../configs/app_config";
 import UsuarioController from "../controllers/usuario.controller";
 import UsuarioService from "../services/usuario.service";
 import UsuarioRepository from "../repositories/usuario.repository";
 import UsuarioValidator from "../validators/usuario.validator";
-import postgresConnection from "../db/postgres_connection";
 
-const usuarioRepository = new UsuarioRepository(postgresConnection);
+const config = Config.getInstance();
+const  db = config.getDb();
+
+const usuarioRepository = new UsuarioRepository(db);
+
 const usuarioValidator = new UsuarioValidator();
 
 const usuarioService = new UsuarioService(usuarioRepository, usuarioValidator);

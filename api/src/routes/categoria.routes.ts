@@ -3,9 +3,11 @@ import CategoriaController from "../controllers/categoria.controller";
 import { CategoriaService } from "../services/categoria.service";
 import CategoriaRepository from "../repositories/categoria.repository";
 import CategoriaValidator from "../validators/categoria.validator";
-import postgresConnection from "../db/postgres_connection";
+import Config from "../configs/app_config";
 
-const categoriaRepository = new CategoriaRepository(postgresConnection);
+const config = Config.getInstance();
+const  db = config.getDb();
+const categoriaRepository = new CategoriaRepository(db);
 const categoriaValidator = new CategoriaValidator();
 
 const categoriaService = new CategoriaService(

@@ -1,14 +1,17 @@
 import { Router } from "express";
+import Config from "../configs/app_config";
 import ProductController from "../controllers/product.controller";
 import ProductService from "../services/product.service";
 import ProductRepository from "../repositories/product.repository";
 import CategoriaRepository from "../repositories/categoria.repository";
 import ProdutoValidator from "../validators/produto.validator";
 import CategoriaValidator from "../validators/categoria.validator";
-import postgresConnection from "../db/postgres_connection";
 
-const productRepository = new ProductRepository(postgresConnection);
-const categoriaRepository = new CategoriaRepository(postgresConnection);
+
+const config = Config.getInstance();
+const  db = config.getDb();
+const productRepository = new ProductRepository(db);
+const categoriaRepository = new CategoriaRepository(db);
 const produtoValidator = new ProdutoValidator();
 const categoriaValidator = new CategoriaValidator();
 

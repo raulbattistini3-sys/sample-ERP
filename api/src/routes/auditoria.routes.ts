@@ -1,16 +1,19 @@
 import { Router } from "express";
+import Config from "../configs/app_config";
 import AuditoriaController from "../controllers/auditoria.controller";
 import { AuditoriaService } from "../services/auditoria.service";
 import AuditoriaRepository from "../repositories/auditoria.repository";
 import AuditoriaValidator from "../validators/auditoria.validator";
 import DetalhamentoAuditoriaRepository from "../repositories/detalhamento_auditoria.repository";
-import DetalhamentoAuditoriaValidator from "../validators/detalhamento_auditoria.validator";
-import postgresConnection from "../db/postgres_connection";
 
-const detalhamentoAuditoriaRepository = new DetalhamentoAuditoriaRepository(postgresConnection);
-const detalhamentoAuditoriaValidator = new DetalhamentoAuditoriaValidator();
 
-const auditoriaRepository = new AuditoriaRepository(postgresConnection);
+const config = Config.getInstance();
+const  db = config.getDb();
+
+const detalhamentoAuditoriaRepository = new DetalhamentoAuditoriaRepository(db);
+
+
+const auditoriaRepository = new AuditoriaRepository(db);
 const auditoriaValidator = new AuditoriaValidator();
 
 const auditoriaService = new AuditoriaService(
