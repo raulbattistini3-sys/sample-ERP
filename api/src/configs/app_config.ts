@@ -1,6 +1,5 @@
 import "dotenv/config";
-import { DrizzleDB } from "../db/client";
-import { drizzle } from "drizzle-orm/node-postgres";
+import { drizzle, NodePgClient, NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../db/schema";
 
@@ -25,7 +24,6 @@ class Config {
   }
 
   private loadApiConfig(): ApiConfig {
-    console.log("testh")
     return {
       port: Number(process.env.APP_PORT) || 3333,
       host: String(process.env.APP_HOST) || "localhost",
@@ -36,12 +34,12 @@ class Config {
     return this.appConfig.api;
   }
 
-  public getDb(): DrizzleDB {
+  public getDb(): NodePgDatabase | any {
   const pool = new Pool({
-    database: "app_dev", // process.env.DB_NAME,
-    host: "localhost",// process.env.DB_HOST,
-    port: 3306, // Number(process.env.DB_PORT) || 3306,
-    user: "root",// process.env.DB_USERNAME,
+    database: process.env.DB_NAME,
+    host: process.env.DB_HOST,
+    port: Number(process.env.DB_PORT) || 5432,
+    user: process.env.DB_USERNAME,
   });
   const db = drizzle(pool, { schema });
   return db;

@@ -1,7 +1,5 @@
 import { mysqlTable, varchar, decimal, timestamp } from "drizzle-orm/mysql-core";
-import { relations } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { auditorias } from "./auditoria.schema";
 
 export const detalhamentosAuditoria = mysqlTable("detalhamentos_auditoria", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => randomUUID()),
@@ -12,9 +10,4 @@ export const detalhamentosAuditoria = mysqlTable("detalhamentos_auditoria", {
   deletedAt: timestamp("deleted_at"),
 });
 
-export const detalhamentosAuditoriaRelations = relations(detalhamentosAuditoria, ({ one }) => ({
-  auditoria: one(auditorias, {
-    fields: [detalhamentosAuditoria.id],
-    references: [auditorias.detalhamentoAuditoriaId],
-  }),
-}));
+
