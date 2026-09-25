@@ -1,12 +1,23 @@
 import { Request, Response, NextFunction } from "express";
 import IUsuarioService from "../interfaces/usuario_interfaces/usuario_service.interface";
+import AppLogger from "../utils/logger/pino_logger.util";
+import Config from "../configs/app_config";
 
 class UsuarioController {
-  constructor(private usuarioService: IUsuarioService) {}
+  constructor(
+    private usuarioService: IUsuarioService,
+    private config: Config
+  ) {
+  }
 
   create = async (req: Request, res: Response, next: NextFunction) => {
     const result = await this.usuarioService.createUsuario(req.body);
     if (result.isLeft()) {
+      
+      const pinoLogger = new AppLogger();
+
+      const config = Config.getInstance() 
+      pinoLogger.handle({config}, "ERROR", result.value as any)
       return next(result.value);
     }
     return res.status(201).json(result.value);

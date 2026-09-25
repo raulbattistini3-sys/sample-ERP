@@ -4,7 +4,7 @@ import Config from "./configs/app_config";
 import BaseErrorMiddleware from "./middlewares/global_middleware.middleware";
 import AppLogger from "./utils/logger/pino_logger.util";
 
-  const config = Config.getInstance();
+const config = Config.getInstance();
 
 const host = config.getApiConfig().host;
 const port = config.getApiConfig().port;
