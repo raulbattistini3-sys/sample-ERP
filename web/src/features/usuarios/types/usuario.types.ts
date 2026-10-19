@@ -11,18 +11,24 @@ export const UsuarioSchema = z.object({
 });
 export type Usuario = z.infer<typeof UsuarioSchema>;
 
-export const RegisterUsuarioSchema = UsuarioSchema.pick({ nome: true, email: true }).extend({
+export const RegisterUsuarioSchema = z.extend(z.pick(UsuarioSchema, { nome: true, email: true }), {
   senha: z.string(),
 });
 export type RegisterUsuarioPayload = z.infer<typeof RegisterUsuarioSchema>;
 
 export const LoginUsuarioSchema = z.object({
-  email: z.email(),
-  senha: z.string(),
+  email: z.email("Informe um e-mail válido"),
+  senha: z.string().check(z.minLength(1, "Informe a senha")),
 });
 export type LoginUsuarioPayload = z.infer<typeof LoginUsuarioSchema>;
 
-export const UpdateUsuarioSchema = UsuarioSchema.omit({ ativo: true }).extend({
+// matches ResponseLoginUsuarioDto — parsing strips anything else the API sends back (e.g. senha)
+export const LoginResponseSchema = z.extend(UsuarioSchema, {
+  token: z.string(),
+});
+export type LoginResponse = z.infer<typeof LoginResponseSchema>;
+
+export const UpdateUsuarioSchema = z.extend(z.omit(UsuarioSchema, { ativo: true }), {
   ativo: z.optional(z.boolean()),
 });
 export type UpdateUsuarioPayload = z.infer<typeof UpdateUsuarioSchema>;
