@@ -8,4 +8,8 @@
   --color-muted: #71717a;
   --color-accent: #0f766e;
   --color-accent-soft: #ccfbf1;
+  --color-warning: #b45309;
+  --color-warning-soft: #fef3c7;
+  --color-danger: #b91c1c;
+  --color-danger-soft: #fee2e2;
 }
