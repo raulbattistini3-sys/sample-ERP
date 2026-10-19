@@ -1,12 +1,12 @@
 import { z } from "zod/mini";
 
-export const AcaoEfetuadaEnum = z.enum(["Criacao", "Alteracao", "Delecao"]);
+// decimals come back as strings (drizzle decimal without mode:"number")
 export const DetalhamentoAuditoriaSchema = z.object({
   id: z.string(),
-  acao_efetuada: AcaoEfetuadaEnum,
-  data_de_audicao: z.string(),
-  nome_do_auditor: z.string(), // usuario id — see naming note below
-  detalhamento_auditoria_id: z.nullable(z.string()),
+  nome_do_produto: z.string(),
+  valor_anterior: z.string(),
+  valor_atual: z.string(),
+  observacoes_adicionais: z.string(),
 });
 export type DetalhamentoAuditoria = z.infer<typeof DetalhamentoAuditoriaSchema>;
 
