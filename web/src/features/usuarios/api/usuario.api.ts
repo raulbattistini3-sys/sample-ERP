@@ -1,4 +1,4 @@
-import { apiClient } from "../../../lib/api-client";
+import { apiClient, ItemResponse, ListResponse } from "../../../lib/api-client";
 import {
   RegisterUsuarioPayload,
   LoginUsuarioPayload,
@@ -12,8 +12,9 @@ export const loginUsuario = async (payload: LoginUsuarioPayload) => {
   const { data } = await apiClient.post("/user/login", payload);
   return LoginResponseSchema.parse(data);
 };
-export const getUsuarios = () => apiClient.get<Usuario[]>("/user");
-export const getUsuarioById = (id: string) => apiClient.get<Usuario>(`/user/${id}`);
+export const getUsuarios = () => apiClient.get<ListResponse<Usuario>>("/user").then((r) => r.data.data);
+export const getUsuarioById = (id: string) =>
+  apiClient.get<ItemResponse<Usuario>>(`/user/${id}`).then((r) => r.data.data);
 export const updateUsuario = (payload: UpdateUsuarioPayload) => apiClient.put(`/user/${payload.id}`, payload);
 export const archiveUsuario = (id: string) => apiClient.patch(`/user/${id}/archive`);
 export const deleteUsuario = (id: string) => apiClient.delete(`/user/${id}`);

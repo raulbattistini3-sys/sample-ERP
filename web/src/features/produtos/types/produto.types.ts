@@ -15,8 +15,23 @@ export const ProductSchema = z.object({
 });
 export type Product = z.infer<typeof ProductSchema>;
 
-export const CreateProductSchema = ProductSchema.omit({ id: true, ativo: true });
+export const CreateProductSchema = z.omit(ProductSchema, { id: true, ativo: true });
 export type CreateProductPayload = z.infer<typeof CreateProductSchema>;
 
 export const UpdateProductSchema = ProductSchema; // full shape required, matches your PUT /:id
 export type UpdateProductPayload = z.infer<typeof UpdateProductSchema>;
+
+const amount = (label: string) =>
+  z.number(`Informe ${label}`).check(z.gte(0, `${label[0].toUpperCase()}${label.slice(1)} não pode ser negativo`));
+
+// what the product form validates before building a Create/Update payload
+export const ProductFormSchema = z.object({
+  name: z.string().check(z.trim(), z.minLength(1, "Informe o nome")),
+  sku: z.string().check(z.trim(), z.minLength(1, "Informe o SKU")),
+  categoria: CategoriaNomesEnum,
+  valor_de_custo: amount("o valor de custo"),
+  icms: amount("o ICMS"),
+  valor_de_venda: amount("o valor de venda"),
+  quantidade_em_estoque: amount("a quantidade"),
+});
+export type ProductFormValues = z.infer<typeof ProductFormSchema>;

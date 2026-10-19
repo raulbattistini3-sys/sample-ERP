@@ -23,10 +23,10 @@ export const CategoriaSchema = z.object({
 });
 export type Categoria = z.infer<typeof CategoriaSchema>;
 
-export const CreateCategoriaSchema = CategoriaSchema.omit({ id: true, ativo: true });
+export const CreateCategoriaSchema = z.omit(CategoriaSchema, { id: true, ativo: true });
 export type CreateCategoriaPayload = z.infer<typeof CreateCategoriaSchema>;
 
-export const UpdateCategoriaSchema = CategoriaSchema.omit({ ativo: true }).extend({
-  ativo: z.optional(z.boolean()), // function form — .optional() doesn't exist as a method in mini
+export const UpdateCategoriaSchema = z.extend(z.omit(CategoriaSchema, { ativo: true }), {
+  ativo: z.optional(z.boolean()),
 });
 export type UpdateCategoriaPayload = z.infer<typeof UpdateCategoriaSchema>;

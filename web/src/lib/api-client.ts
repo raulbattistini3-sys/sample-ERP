@@ -37,3 +37,7 @@ export const getApiErrorMessage = (error: unknown, fallback = "Algo deu errado. 
   }
   return fallback;
 };
+
+// list endpoints wrap rows as BaseMessageGet, single-item endpoints as BaseMessageGetOne
+export type ListResponse<T> = { data: T[]; pageNumber: number; pageSize: number; totalItems: number };
+export type ItemResponse<T> = { data: T };

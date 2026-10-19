@@ -1,0 +1,22 @@
+import { createColumnHelper } from "@tanstack/react-table";
+import type { DataTableFeatures } from "../../../components/ui/DataTable";
+import { StatusBadge } from "../../../components/ui/PageState";
+import { formatCurrency } from "../../../lib/form";
+import { Product } from "../types/produto.types";
+
+const helper = createColumnHelper<DataTableFeatures, Product>();
+
+export const productColumns = helper.columns([
+  helper.accessor("sku", { header: "SKU" }),
+  helper.accessor("name", { header: "Nome" }),
+  helper.accessor("categoria.nome", { header: "Categoria" }),
+  helper.accessor("valor_de_venda", {
+    header: "Preço",
+    cell: ({ getValue }) => formatCurrency(getValue()),
+  }),
+  helper.accessor("quantidade_em_estoque", { header: "Estoque" }),
+  helper.accessor("ativo", {
+    header: "Status",
+    cell: ({ getValue }) => <StatusBadge active={getValue()} />,
+  }),
+]);
