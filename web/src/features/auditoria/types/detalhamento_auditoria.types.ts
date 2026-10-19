@@ -10,5 +10,5 @@ export const DetalhamentoAuditoriaSchema = z.object({
 });
 export type DetalhamentoAuditoria = z.infer<typeof DetalhamentoAuditoriaSchema>;
 
-export const CreateDetalhamentoAuditoriaSchema = DetalhamentoAuditoriaSchema.omit({ id: true });
+export const CreateDetalhamentoAuditoriaSchema = z.omit(DetalhamentoAuditoriaSchema, { id: true });
 export type CreateDetalhamentoAuditoriaPayload = z.infer<typeof CreateDetalhamentoAuditoriaSchema>;

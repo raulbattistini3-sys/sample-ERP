@@ -1,10 +1,10 @@
 
 export const LoginPage = () => {
   return (
-  <>
-    <span>
+    <>
+      <span className="text-red-500">
         login page
-    </span>
-  </>
+      </span>
+    </>
   )
 }
