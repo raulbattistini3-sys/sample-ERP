@@ -11,5 +11,5 @@ export const AuditoriaSchema = z.object({
 });
 export type Auditoria = z.infer<typeof AuditoriaSchema>;
 
-export const CreateAuditoriaSchema = AuditoriaSchema.omit({ id: true });
+export const CreateAuditoriaSchema = z.omit(AuditoriaSchema, { id: true });
 export type CreateAuditoriaPayload = z.infer<typeof CreateAuditoriaSchema>;

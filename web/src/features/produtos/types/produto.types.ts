@@ -15,7 +15,7 @@ export const ProductSchema = z.object({
 });
 export type Product = z.infer<typeof ProductSchema>;
 
-export const CreateProductSchema = ProductSchema.omit({ id: true, ativo: true });
+export const CreateProductSchema = z.omit(ProductSchema, { id: true, ativo: true });
 export type CreateProductPayload = z.infer<typeof CreateProductSchema>;
 
 export const UpdateProductSchema = ProductSchema; // full shape required, matches your PUT /:id

@@ -1,11 +1,18 @@
-import { Table } from "../../../components/ui/Table";
+import { createColumnHelper } from "@tanstack/react-table";
+import { DataTable, type DataTableFeatures } from "../../../components/ui/DataTable";
 import { Categoria } from "../types/categoria.types";
 
-export function CategoriaTable({ categorias }: { categorias: Categoria[] }) {
-    return (
-    <Table
-      columns={["Nome", "Tipo", "Status"]}
-      rows={categorias.map((c) => [c.nome, c.tipo, c.ativo ? "Ativo" : "Inativo"])}
-    />
-  );
+const helper = createColumnHelper<DataTableFeatures, Categoria>();
+
+const categoriaColumns = helper.columns([
+  helper.accessor("nome", { header: "Nome" }),
+  helper.accessor("tipo", { header: "Tipo" }),
+  helper.accessor("ativo", {
+    header: "Status",
+    cell: ({ getValue }) => (getValue() ? "Ativo" : "Inativo"),
+  }),
+]);
+
+export function CategoriaTable({ categorias }: { categorias?: Categoria[] }) {
+  return <DataTable columns={categoriaColumns} data={categorias} />;
 }
