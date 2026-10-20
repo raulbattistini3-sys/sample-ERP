@@ -80,6 +80,7 @@ class ProductService implements IProductService {
    async getProducts(
       page: number,
       amount: number,
+      includeInactive = false,
    ): Promise<Either<BaseAppError, ResponseGetProductsDto>> {
       try {
          const validation = this.productValidator.validatePageAndAmount(
@@ -90,7 +91,7 @@ class ProductService implements IProductService {
             return left(validation.value);
          }
          const productData =
-            await this.productRepository.getProductsWithCategoria();
+            await this.productRepository.getProductsWithCategoria(includeInactive);
          if (productData.isLeft()) {
             return left(
                new ServerError("500", true, "internal server error", productData.value),
@@ -114,13 +115,14 @@ class ProductService implements IProductService {
 
    async findProductById(
       id: string,
+      includeInactive = false,
    ): Promise<Either<BaseAppError, ResponseGetProductDto>> {
       try {
          const validation = this.productValidator.validateUUIDv4(id);
          if (validation.isLeft()) {
             return left(validation.value);
          }
-         const productData = await this.productRepository.getProductById(id);
+         const productData = await this.productRepository.getProductById(id, includeInactive);
          if (productData.isLeft()) {
             return left(productData.value);
          }
@@ -139,9 +141,10 @@ class ProductService implements IProductService {
       page: number,
       amount: number,
       query: unknown,
+      includeInactive = false,
    ): Promise<Either<BaseAppError, ResponseFindFilteredProductsDto>> {
       try {
-         const filtered = await this.getFilteredProducts(page, amount, query);
+         const filtered = await this.getFilteredProducts(page, amount, query, includeInactive);
          if (filtered.isLeft()) {
             return left(filtered.value);
          }
@@ -164,9 +167,10 @@ class ProductService implements IProductService {
       page: number,
       amount: number,
       query: unknown,
+      includeInactive = false,
    ): Promise<Either<BaseAppError, ResponseFindProductsToDownloadDto>> {
       try {
-         const filtered = await this.getFilteredProducts(page, amount, query);
+         const filtered = await this.getFilteredProducts(page, amount, query, includeInactive);
          if (filtered.isLeft()) {
             return left(filtered.value);
          }
@@ -199,6 +203,7 @@ class ProductService implements IProductService {
       page: number,
       amount: number,
       query: unknown,
+      includeInactive = false,
    ): Promise<Either<BaseAppError, ProductWithCategoria[]>> {
       const paginateValidation = this.productValidator.validatePageAndAmount(
          page,
@@ -211,7 +216,7 @@ class ProductService implements IProductService {
       if (filters.isLeft()) {
          return left(filters.value);
       }
-      const productData = await this.productRepository.getProductsWithCategoria();
+      const productData = await this.productRepository.getProductsWithCategoria(includeInactive);
       if (productData.isLeft()) {
          return left(
             new ServerError("500", true, "internal server error", productData.value),
@@ -220,8 +225,11 @@ class ProductService implements IProductService {
       return right(filterProducts(productData.value, filters.value));
    }
 
+   // includeInactive (ADM/SU): may edit and reactivate deactivated products; for anyone else
+   // an inactive product is a 404 and `ativo` in the body is ignored
    async updateProduct(
       product: PayloadUpdateProductDto,
+      includeInactive = false,
    ): Promise<Either<BaseAppError, null>> {
       try {
          const validation = this.productValidator.validateUpdatePayload(product);
@@ -237,7 +245,11 @@ class ProductService implements IProductService {
          }
          const productData = await this.productRepository.updateProduct(
             product.id,
-            toProductUpdateEntity(product, categoriaData.value.id),
+            toProductUpdateEntity(
+               includeInactive ? product : { ...product, ativo: undefined },
+               categoriaData.value.id,
+            ),
+            includeInactive,
          );
          if (productData.isLeft()) {
             if (productData.value instanceof ValidationError) {

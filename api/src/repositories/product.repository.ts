@@ -12,7 +12,7 @@ import { ValidationError } from "../errors/client_errors/four_xx.error";
 class ProductRepository implements IProductRepository {
   constructor(private readonly db: DrizzleDB) {}
 
-  async getProductById(id: string): Promise<Either<BaseAppError, ProductWithCategoria>> {
+  async getProductById(id: string, includeInactive = false): Promise<Either<BaseAppError, ProductWithCategoria>> {
     try {
       const [productData] = await this.db
         .select({ produto: produtos, categoria: categorias })
@@ -20,7 +20,7 @@ class ProductRepository implements IProductRepository {
         .innerJoin(categorias, eq(produtos.categoriaId, categorias.id))
         .where(eq(produtos.id, id))
         .limit(1);
-      if (!productData || !productData.produto.ativo) {
+      if (!productData || (!includeInactive && !productData.produto.ativo)) {
         return left(new ValidationError("404", "Produto não encontrado"));
       }
       return right(productData);
@@ -29,13 +29,13 @@ class ProductRepository implements IProductRepository {
     }
   }
 
-  async getProductsWithCategoria(): Promise<Either<RepositoryError, ProductWithCategoria[]>> {
+  async getProductsWithCategoria(includeInactive = false): Promise<Either<RepositoryError, ProductWithCategoria[]>> {
     try {
       const productData = await this.db
         .select({ produto: produtos, categoria: categorias })
         .from(produtos)
         .innerJoin(categorias, eq(produtos.categoriaId, categorias.id))
-        .where(eq(produtos.ativo, true))
+        .where(includeInactive ? undefined : eq(produtos.ativo, true))
         .orderBy(asc(produtos.name));
       return right(productData);
     } catch (error) {
@@ -58,10 +58,11 @@ class ProductRepository implements IProductRepository {
   async updateProduct(
     id: string,
     values: Partial<NewProductEntity>,
+    includeInactive = false,
   ): Promise<Either<BaseAppError, null>> {
     try {
       const [productData] = await this.db.select().from(produtos).where(eq(produtos.id, id)).limit(1);
-      if (!productData) {
+      if (!productData || (!includeInactive && !productData.ativo)) {
         return left(new ValidationError("404", "Produto não encontrado"));
       }
       await this.db.update(produtos).set(values).where(eq(produtos.id, id));

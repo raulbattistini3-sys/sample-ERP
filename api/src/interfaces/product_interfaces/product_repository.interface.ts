@@ -4,9 +4,10 @@ import { Either } from "../../globals/errors/left_right_either.error";
 import { RepositoryError } from "../../globals/errors/global_repository_error.error";
 
 interface IProductRepository {
-   getProductById(id: string): Promise<Either<BaseAppError, ProductWithCategoria>>;
-   // active products with their category, for the list, filter and download endpoints
-   getProductsWithCategoria(): Promise<Either<RepositoryError, ProductWithCategoria[]>>;
+   // includeInactive: ADM/SU see deactivated products; everyone else gets 404 / only active ones
+   getProductById(id: string, includeInactive?: boolean): Promise<Either<BaseAppError, ProductWithCategoria>>;
+   // products with their category, for the list, filter and download endpoints
+   getProductsWithCategoria(includeInactive?: boolean): Promise<Either<RepositoryError, ProductWithCategoria[]>>;
    // categoria is resolved to categoriaId by the service before inserting
    createProduct(
       payload: NewProductEntity,
@@ -15,6 +16,7 @@ interface IProductRepository {
    updateProduct(
       id: string,
       values: Partial<NewProductEntity>,
+      includeInactive?: boolean,
    ): Promise<Either<BaseAppError, null>>;
    deactivateProduct(id: string): Promise<Either<RepositoryError, null>>;
    removeProduct(id: string): Promise<Either<RepositoryError, null>>;

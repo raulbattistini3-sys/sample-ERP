@@ -24,7 +24,8 @@ export const AuditoriaFormPage = () => {
   const backToList = useBackToList("/auditoria");
   const { user } = useAuth();
   const { data: productsPage, isLoading: loadingProducts } = useProducts(1, ALL_ITEMS_AMOUNT);
-  const products = productsPage?.data;
+  // ADM/SU also receive inactive products; only active ones can be audited
+  const products = productsPage?.data.filter((p) => p.ativo);
   const createMutation = useCreateAuditoria();
 
   const [form, setForm] = useState<FormValues>({

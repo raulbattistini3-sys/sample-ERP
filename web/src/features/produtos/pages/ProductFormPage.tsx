@@ -1,7 +1,7 @@
 import { FormEvent, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useBackToList } from "../../../hooks/useListPage";
-import { PowerOff, Trash2 } from "lucide-react";
+import { Power, PowerOff, Trash2 } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Field, Input, Select } from "../../../components/ui/Field";
 import { ErrorAlert, FormCard, LoadingState, PageHeader } from "../../../components/ui/PageState";
@@ -97,6 +97,11 @@ function ProductForm({ product }: { product?: Product }) {
     }
   };
 
+  const handleReactivate = () => {
+    if (!product) return;
+    updateMutation.mutate({ ...product, ativo: true });
+  };
+
   const handleDeactivate = () => {
     if (!product || !window.confirm(`Desativar o produto "${product.name}"?`)) return;
     deactivateMutation.mutate(product.id, { onSuccess: backToList });
@@ -121,10 +126,15 @@ function ProductForm({ product }: { product?: Product }) {
         actions={
           isEdit && (
             <>
-              {product.ativo && (
+              {product.ativo ? (
                 <Button variant="secondary" onClick={handleDeactivate} disabled={deactivateMutation.isPending}>
                   <PowerOff className="h-4 w-4" aria-hidden="true" />
                   Desativar
+                </Button>
+              ) : (
+                <Button variant="secondary" onClick={handleReactivate} disabled={updateMutation.isPending}>
+                  <Power className="h-4 w-4" aria-hidden="true" />
+                  Reativar
                 </Button>
               )}
               <Button variant="danger" onClick={handleDelete} disabled={deleteMutation.isPending}>
