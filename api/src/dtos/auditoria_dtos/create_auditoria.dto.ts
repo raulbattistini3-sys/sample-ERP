@@ -1,6 +1,7 @@
 import { AuditoriaEntity } from "../../entities/auditoria.entity";
 import { DetalhamentoAuditoriaEntity } from "../../entities/detalhamento_auditoria.entity";
 import { UsuarioEntity } from "../../entities/usuario.entity";
+import { AuditoriaResponseDto } from "./auditoria_response.dto";
 
 type PayloadCreateAuditoria = Omit<
    AuditoriaEntity,
@@ -9,11 +10,6 @@ type PayloadCreateAuditoria = Omit<
    nome_do_auditor: Pick<UsuarioEntity, "nome">;
 } & Omit<DetalhamentoAuditoriaEntity, "id" | "auditoria">;
 
-type ResponseCreateAuditoria = Omit<
-   AuditoriaEntity,
-   "detalhamento_auditoria"
-> & {
-   detalhamento_auditoria: Omit<DetalhamentoAuditoriaEntity, "auditoria">;
-};
+type ResponseCreateAuditoria = AuditoriaResponseDto;
 
 export { PayloadCreateAuditoria, ResponseCreateAuditoria };

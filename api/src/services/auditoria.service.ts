@@ -14,6 +14,7 @@ import { ServerError } from "../errors/server_errors/five_xx.error";
 import { ValidationError } from "../errors/client_errors/four_xx.error";
 import paginate from "../utils/helpers/paginate_data.helper";
 import { AuditoriaEntity } from "../entities/auditoria.entity";
+import { toAuditoriaResponse } from "../mappers/auditoria.mapper";
 import acaoEfetuadaEnum from "../enums/acao_efetuada.enum";
 import IDetalhamentoAuditoriaRepository from "../interfaces/detalhamento_auditoria_interfaces/detalhamento_auditoria_repository.interface";
 import IAuditoryRepository from "../interfaces/auditory_interfaces/auditoria_repository.interface";
@@ -45,7 +46,7 @@ class AuditoriaService implements IAuditoriaService {
          }
          const paginatedData = paginate(auditorias.value, page, amount);
          const response: ResponseGetAuditorias = {
-            data: paginatedData.data,
+            data: paginatedData.data.map(toAuditoriaResponse),
             pageNumber: paginatedData.currentPage,
             pageSize: paginatedData.perPage,
             totalItems: paginatedData.totalItems,
@@ -71,7 +72,7 @@ class AuditoriaService implements IAuditoriaService {
             return left(auditoria.value);
          }
          const response: ResponseFindAuditoriaById = {
-            data: auditoria.value,
+            data: toAuditoriaResponse(auditoria.value),
          };
          return right(response);
       } catch (error) {
@@ -94,7 +95,7 @@ class AuditoriaService implements IAuditoriaService {
          if (auditoria.isLeft()) {
             return left(auditoria.value);
          }
-         const response: ResponseCreateAuditoria = auditoria.value;
+         const response: ResponseCreateAuditoria = toAuditoriaResponse(auditoria.value);
          return right(response);
       } catch (error) {
          if (error instanceof ValidationError) {

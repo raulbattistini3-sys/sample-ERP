@@ -16,6 +16,7 @@ import CategoriaValidator from "../validators/categoria.validator";
 import { ValidationError } from "../errors/client_errors/four_xx.error";
 import { ServerError } from "../errors/server_errors/five_xx.error";
 import paginate from "../utils/helpers/paginate_data.helper";
+import { toCategoriaResponse } from "../mappers/categoria.mapper";
 
 class CategoriaService implements ICategoryService {
    constructor(
@@ -42,7 +43,7 @@ class CategoriaService implements ICategoryService {
 
          const paginatedResult = paginate(categorias.value, page, amount);
          const response: ResponseGetCategoriesDto = {
-            data: paginatedResult.data,
+            data: paginatedResult.data.map(toCategoriaResponse),
             pageSize: paginatedResult.perPage,
             pageNumber: paginatedResult.currentPage,
             totalItems: paginatedResult.totalItems,
@@ -69,7 +70,7 @@ class CategoriaService implements ICategoryService {
             return left(categoria.value);
          }
          const response: ResponseFindCategoryByIdDto = {
-            data: categoria.value,
+            data: toCategoriaResponse(categoria.value),
          };
 
          return right(response);
@@ -91,7 +92,7 @@ class CategoriaService implements ICategoryService {
             return left(categoria.value);
          }
          const response: ResponseFindCategoryByIdDto = {
-            data: categoria.value,
+            data: toCategoriaResponse(categoria.value),
          };
 
          return right(response);
@@ -113,7 +114,7 @@ class CategoriaService implements ICategoryService {
          if (categoria.isLeft()) {
             return left(categoria.value);
          }
-         const response: ResponseCreateCategoria = categoria.value;
+         const response: ResponseCreateCategoria = toCategoriaResponse(categoria.value);
          return right(response);
       } catch (error) {
          if (error instanceof ValidationError) {
