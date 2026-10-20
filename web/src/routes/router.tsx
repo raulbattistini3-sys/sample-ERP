@@ -20,6 +20,8 @@ import { AuditoriaListPage } from "../features/auditoria/pages/AuditoriaListPage
 import { AuditoriaDetailPage } from "../features/auditoria/pages/AuditoriaDetailPage";
 import { AuditoriaFormPage } from "../features/auditoria/pages/AuditoriaFormPage";
 
+import { IntegracoesPage } from "../features/integracoes/pages/IntegracoesPage";
+
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
   { path: "/register", element: <RegisterPage /> },
@@ -50,6 +52,8 @@ export const router = createBrowserRouter([
           { path: "auditoria", element: <AuditoriaListPage /> },
           { path: "auditoria/new", element: <AuditoriaFormPage /> },
           { path: "auditoria/:id", element: <AuditoriaDetailPage /> },
+
+          { path: "integracoes", element: <IntegracoesPage /> },
         ],
       },
     ],
