@@ -1,6 +1,7 @@
-import { CreateProductDto, ResponseCreateProductDto } from "../dtos/product_dtos/create_product.dto";
+import { CreateProductDto } from "../dtos/product_dtos/create_product.dto";
+import { ProductResponseDto } from "../dtos/product_dtos/product_response.dto";
 import { Categoria } from "../entities/categoria.entity";
-import { NewProductEntity, ProductEntity } from "../entities/product.entity";
+import { NewProductEntity, ProductEntity, ProductWithCategoria } from "../entities/product.entity";
 
 // pg returns numeric/decimal columns as strings even with mode: "number"
 const toNumber = (value: number | string) => Number(value);
@@ -24,7 +25,7 @@ export const toNewProductEntity = (
 export const toProductResponse = (
    product: ProductEntity,
    categoria: Categoria,
-): ResponseCreateProductDto => ({
+): ProductResponseDto => ({
    id: product.id,
    name: product.name,
    ativo: product.ativo,
@@ -36,3 +37,6 @@ export const toProductResponse = (
    data_de_cadastro: product.dataDeCadastro,
    quantidade_em_estoque: toNumber(product.quantidadeEmEstoque),
 });
+
+export const toProductResponseFromRow = ({ produto, categoria }: ProductWithCategoria) =>
+   toProductResponse(produto, categoria);

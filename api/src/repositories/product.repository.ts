@@ -2,23 +2,43 @@ import { eq } from "drizzle-orm";
 import { DrizzleDB } from "../db/client";
 import { produtos } from "../db/schema/product.schema";
 import { categorias } from "../db/schema/categoria.schema";
-import { NewProductEntity, ProductEntity } from "../entities/product.entity";
+import { NewProductEntity, ProductEntity, ProductWithCategoria } from "../entities/product.entity";
 import IProductRepository from "../interfaces/product_interfaces/product_repository.interface";
 import { Either, left, right } from "../globals/errors/left_right_either.error";
 import { RepositoryError } from "../globals/errors/global_repository_error.error";
+import { BaseAppError } from "../errors/global_error.error";
+import { ValidationError } from "../errors/client_errors/four_xx.error";
 
 class ProductRepository implements IProductRepository {
   constructor(private readonly db: DrizzleDB) {}
 
-  async getProductById(id: string): Promise<Either<RepositoryError, ProductEntity>> {
+  async getProductById(id: string): Promise<Either<BaseAppError, ProductWithCategoria>> {
     try {
-      const [productData] = await this.db.select().from(produtos).where(eq(produtos.id, id)).limit(1);
-      if (!productData || !productData.ativo) {
-        return left(new RepositoryError("404"));
+      const [productData] = await this.db
+        .select({ produto: produtos, categoria: categorias })
+        .from(produtos)
+        .innerJoin(categorias, eq(produtos.categoriaId, categorias.id))
+        .where(eq(produtos.id, id))
+        .limit(1);
+      if (!productData || !productData.produto.ativo) {
+        return left(new ValidationError("404", "Produto não encontrado"));
       }
       return right(productData);
     } catch (error) {
       return left(new RepositoryError("500", error));
+    }
+  }
+
+  async getProductsWithCategoria(): Promise<Either<RepositoryError, ProductWithCategoria[]>> {
+    try {
+      const productData = await this.db
+        .select({ produto: produtos, categoria: categorias })
+        .from(produtos)
+        .innerJoin(categorias, eq(produtos.categoriaId, categorias.id))
+        .where(eq(produtos.ativo, true));
+      return right(productData);
+    } catch (error) {
+      return left(new RepositoryError("Database error", error));
     }
   }
 

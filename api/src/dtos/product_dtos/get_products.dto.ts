@@ -1,4 +1,5 @@
-import Categoria from "../../entities/categoria.entity";
+import { Categoria } from "../../entities/categoria.entity";
+import { ProductResponseDto } from "./product_response.dto";
 import { ProductEntity } from "../../entities/product.entity";
 import { BaseMessageGet, BaseMessageGetOne } from "../global_get.dto";
 
@@ -8,9 +9,9 @@ interface MessageGetUniqueProduct<T> extends BaseMessageGetOne<T> {
    data: T;
 }
 
-type ResponseGetProductDto = BaseMessageGetOne<ProductEntity>;
+type ResponseGetProductDto = BaseMessageGetOne<ProductResponseDto>;
 
-type ResponseGetProductsDto = BaseMessageGet<ProductEntity>;
+type ResponseGetProductsDto = BaseMessageGet<ProductResponseDto>;
 
 type FindFilteredProductsPayloadDto = Partial<
    Omit<ProductEntity, "categoria" & { categoria: Pick<Categoria, "nome"> }>

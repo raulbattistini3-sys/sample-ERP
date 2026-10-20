@@ -21,7 +21,11 @@ import { ValidationError } from "../errors/client_errors/four_xx.error";
 import ProdutoValidator from "../validators/produto.validator";
 import CategoriaValidator from "../validators/categoria.validator";
 import paginate from "../utils/helpers/paginate_data.helper";
-import { toNewProductEntity, toProductResponse } from "../mappers/product.mapper";
+import {
+   toNewProductEntity,
+   toProductResponse,
+   toProductResponseFromRow,
+} from "../mappers/product.mapper";
 import filterUniqueProperty from "../utils/helpers/filter_unique_elements.helper";
 import filterProducts from "../utils/helpers/filter_products_params.helper";
 import IProductRepository from "../interfaces/product_interfaces/product_repository.interface";
@@ -86,17 +90,16 @@ class ProductService implements IProductService {
          if (validation.isLeft()) {
             return left(validation.value);
          }
-         const productData = await this.productRepository.getProducts();
+         const productData =
+            await this.productRepository.getProductsWithCategoria();
          if (productData.isLeft()) {
-            if (productData.value instanceof ValidationError) {
-               // TODO: fix it will never fall in this condition, only in RepositoryError
-               return left(productData.value);
-            }
-            return left(new ServerError("500", true, "internal server error"));
+            return left(
+               new ServerError("500", true, "internal server error", productData.value),
+            );
          }
          const paginatedResult = paginate(productData.value, page, amount);
          const response: ResponseGetProductsDto = {
-            data: paginatedResult.data,
+            data: paginatedResult.data.map(toProductResponseFromRow),
             pageNumber: paginatedResult.currentPage,
             pageSize: paginatedResult.perPage,
             totalItems: productData.value.length,
@@ -123,7 +126,7 @@ class ProductService implements IProductService {
             return left(productData.value);
          }
          const response: ResponseGetProductDto = {
-            data: productData.value,
+            data: toProductResponseFromRow(productData.value),
          };
          return right(response);
       } catch (error) {
