@@ -7,9 +7,7 @@ import { Field, Input, Select } from "../../../components/ui/Field";
 import { ErrorAlert, FormCard, LoadingState, PageHeader } from "../../../components/ui/PageState";
 import { getApiErrorMessage } from "../../../lib/api-client";
 import { toFieldErrors, toNumber } from "../../../lib/form";
-import { ALL_ITEMS_AMOUNT } from "../../../lib/pagination";
-import { CategoriaNomesEnum } from "../../categoria/types/categoria.types";
-import { useCategorias } from "../../categoria/hooks/useCategorias";
+import { useCategoriaNomes } from "../../categoria/hooks/useCategorias";
 import {
   useCreateProduct,
   useDeactivateProduct,
@@ -35,8 +33,7 @@ export function ProductFormPage() {
 
 function ProductForm({ product }: { product?: Product }) {
   const isEdit = !!product;
-  const { data: categoriasPage } = useCategorias(1, ALL_ITEMS_AMOUNT);
-  const categorias = categoriasPage?.data;
+  const categoriasQuery = useCategoriaNomes();
 
   const createMutation = useCreateProduct();
   const updateMutation = useUpdateProduct();
@@ -54,8 +51,18 @@ function ProductForm({ product }: { product?: Product }) {
   });
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
-  // only offer active categories; fall back to the full enum until the list loads
-  const categoriaOptions = categorias?.filter((c) => c.ativo).map((c) => c.nome) ?? CategoriaNomesEnum.options;
+  // only categorias that exist and are active can be saved; when editing, keep the current one
+  // selectable even if it has since been archived
+  const activeNomes = categoriasQuery.data ?? [];
+  const categoriaOptions =
+    product && !activeNomes.includes(product.categoria.nome) ? [product.categoria.nome, ...activeNomes] : activeNomes;
+  const categoriaHint = categoriasQuery.isLoading
+    ? "Carregando categorias..."
+    : categoriasQuery.error
+      ? getApiErrorMessage(categoriasQuery.error, "Não foi possível carregar as categorias.")
+      : categoriaOptions.length === 0
+        ? "Nenhuma categoria ativa. Cadastre uma em Categorias antes de criar o produto."
+        : undefined;
 
   const updateField = (field: keyof FormValues) => (value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -154,12 +161,18 @@ function ProductForm({ product }: { product?: Product }) {
               />
             </Field>
 
-            <Field id="categoria" label="Categoria" error={fieldErrors.categoria && "Selecione uma categoria"}>
+            <Field
+              id="categoria"
+              label="Categoria"
+              error={fieldErrors.categoria && "Selecione uma categoria"}
+              hint={categoriaHint}
+            >
               <Select
                 id="categoria"
                 value={form.categoria}
                 onChange={(e) => updateField("categoria")(e.target.value)}
                 invalid={!!fieldErrors.categoria}
+                disabled={categoriaOptions.length === 0}
               >
                 <option value="" disabled>
                   Selecione...
