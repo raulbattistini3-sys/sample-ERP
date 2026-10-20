@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { Archive, Trash2 } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Field, Input, Select } from "../../../components/ui/Field";
@@ -49,6 +49,7 @@ export const UsuarioFormPage = () => {
 
 function UsuarioForm({ usuario }: { usuario?: Usuario }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const isEdit = !!usuario;
 
@@ -71,14 +72,22 @@ function UsuarioForm({ usuario }: { usuario?: Usuario }) {
     setFieldErrors((prev) => ({ ...prev, [field]: undefined }));
   };
 
-  const backToList = () => navigate("/usuarios");
+  // set by UsuarioListPage so saving/cancelling returns to the page the admin came from
+  const listSearch = (location.state as { listSearch?: string } | null)?.listSearch ?? "";
+  const backToList = () => navigate(`/usuarios${listSearch}`);
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     const email = form.email.trim();
 
     if (!usuario) {
-      const result = RegisterUsuarioSchema.safeParse({ nome: form.nome, email, senha: form.senha });
+      const result = RegisterUsuarioSchema.safeParse({
+        nome: form.nome,
+        email,
+        senha: form.senha,
+        permissoes: form.permissoes,
+        ativo: true,
+      });
       if (!result.success) return setFieldErrors(toFieldErrors<keyof FormValues>(result.error.issues));
       registerMutation.mutate(result.data, { onSuccess: backToList });
       return;
@@ -157,22 +166,20 @@ function UsuarioForm({ usuario }: { usuario?: Usuario }) {
               />
             </Field>
 
-            {isEdit && (
-              <Field id="permissoes" label="Permissão" error={fieldErrors.permissoes}>
-                <Select
-                  id="permissoes"
-                  value={form.permissoes}
-                  onChange={(e) => updateField("permissoes", e.target.value as FormValues["permissoes"])}
-                  disabled={isSelf}
-                >
-                  {PermissoesEnum.options.map((p) => (
-                    <option key={p} value={p}>
-                      {p === "ADM" ? "Administrador" : "Estoque"}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            )}
+            <Field id="permissoes" label="Permissão" error={fieldErrors.permissoes}>
+              <Select
+                id="permissoes"
+                value={form.permissoes}
+                onChange={(e) => updateField("permissoes", e.target.value as FormValues["permissoes"])}
+                disabled={isSelf}
+              >
+                {PermissoesEnum.options.map((p) => (
+                  <option key={p} value={p}>
+                    {p === "ADM" ? "Administrador" : "Estoque"}
+                  </option>
+                ))}
+              </Select>
+            </Field>
 
             <Field
               id="senha"
@@ -202,10 +209,6 @@ function UsuarioForm({ usuario }: { usuario?: Usuario }) {
               />
               Usuário ativo
             </label>
-          )}
-
-          {!isEdit && (
-            <p className="text-xs text-muted">Novos usuários são criados com permissão de Estoque; ajuste depois se necessário.</p>
           )}
 
           <div className="flex justify-end gap-2 pt-2">

@@ -12,7 +12,8 @@ export const loginUsuario = async (payload: LoginUsuarioPayload) => {
   const { data } = await apiClient.post("/user/login", payload);
   return LoginResponseSchema.parse(data);
 };
-export const getUsuarios = () => apiClient.get<ListResponse<Usuario>>("/user").then((r) => r.data.data);
+export const getUsuarios = (page: number, amount: number) =>
+  apiClient.get<ListResponse<Usuario>>("/user", { params: { page, amount } }).then((r) => r.data);
 export const getUsuarioById = (id: string) =>
   apiClient.get<ItemResponse<Usuario>>(`/user/${id}`).then((r) => r.data.data);
 export const updateUsuario = (payload: UpdateUsuarioPayload) => apiClient.put(`/user/${payload.id}`, payload);

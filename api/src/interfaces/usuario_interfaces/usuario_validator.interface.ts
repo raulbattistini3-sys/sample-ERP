@@ -4,4 +4,6 @@ import { IBaseValidator } from "../general_interfaces/base_validator.interface";
 
 export interface IUsuarioValidator extends IBaseValidator {
    validatePayload(payload: unknown): Either<BaseAppError, void>;
+   validateRegisterPayload(payload: unknown): Either<BaseAppError, void>;
+   validateLoginPayload(payload: unknown): Either<BaseAppError, void>;
 }
