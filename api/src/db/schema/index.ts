@@ -5,3 +5,4 @@ export * from "./product.schema";
 export * from "./detalhamento_auditoria.schema";
 export * from "./auditoria.schema";
 export * from "./produtos_por_auditoria.schema";
+export * from "./password_reset_token.schema";

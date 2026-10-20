@@ -20,14 +20,25 @@ export const clearSession = () => {
   localStorage.removeItem(USER_KEY);
 };
 
-// JWT payload is base64url — only read here to check `exp`, the API is what actually verifies it
-const isTokenExpired = (token: string) => {
+// JWT payload is base64url — only read here for `exp`/`iat`, the API is what actually verifies it
+const readTokenPayload = (token: string): { exp?: number; iat?: number } | null => {
   try {
-    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
-    return typeof payload.exp === "number" && payload.exp * 1000 <= Date.now();
+    return JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
   } catch {
-    return true;
+    return null;
   }
+};
+
+const isTokenExpired = (token: string) => {
+  const payload = readTokenPayload(token);
+  return !payload || (typeof payload.exp === "number" && payload.exp * 1000 <= Date.now());
+};
+
+// when the stored token was issued (ms), or null if there's no readable token
+export const getTokenIssuedAt = () => {
+  const token = getToken();
+  const iat = token ? readTokenPayload(token)?.iat : undefined;
+  return typeof iat === "number" ? iat * 1000 : null;
 };
 
 // restores the user after a page reload, so ProtectedRoute doesn't bounce a still-valid session

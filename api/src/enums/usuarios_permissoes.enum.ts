@@ -1,5 +1,6 @@
 import { z } from "zod";
 
-const permissoesUsuarioEnum = z.enum(["ADM", "Estoque"]);
+// Estoque < ADM < SU (see utils/helpers/permissoes.util.ts)
+const permissoesUsuarioEnum = z.enum(["ADM", "Estoque", "SU"]);
 export type PermissoesUsuarioEnum = z.infer<typeof permissoesUsuarioEnum>;
 export default permissoesUsuarioEnum;

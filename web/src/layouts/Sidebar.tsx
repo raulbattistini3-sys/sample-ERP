@@ -3,6 +3,7 @@ import { NavItem } from "../components/ui/NavItem";
 import { Avatar } from "../components/ui/Avatar";
 import { useAuth } from "../context/AuthContext";
 import { cn } from "../lib/cn";
+import { isAdminRole } from "../lib/permissoes";
 
 const navItems = [
   { to: "/products", label: "Produtos", icon: Package, requiresAdm: false },
@@ -15,7 +16,7 @@ type SidebarProps = { className?: string };
 
 export function Sidebar({ className }: SidebarProps) {
   const { user, logout } = useAuth();
-  const visibleItems = navItems.filter((item) => !item.requiresAdm || user?.permissoes === "ADM");
+  const visibleItems = navItems.filter((item) => !item.requiresAdm || isAdminRole(user?.permissoes));
 
   return (
     <aside className={cn("flex h-full w-60 flex-col border-r border-border bg-surface", className)}>

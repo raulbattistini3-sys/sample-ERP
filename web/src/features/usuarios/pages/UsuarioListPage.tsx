@@ -7,6 +7,7 @@ import { useAuth } from "../../../context/AuthContext";
 import { useClampPage, useListPage } from "../../../hooks/useListPage";
 import { getApiErrorMessage } from "../../../lib/api-client";
 import { LIST_PAGE_SIZE } from "../../../lib/pagination";
+import { isAdminRole } from "../../../lib/permissoes";
 import { usuarioColumns } from "../components/columns";
 import { useUsuarios } from "../hooks/useUsuarios";
 
@@ -17,7 +18,7 @@ export const UsuarioListPage = () => {
   useClampPage(page, setPage, data, isPlaceholderData);
 
   // the sidebar already hides this entry for non-admins; this covers typing the URL directly
-  if (user?.permissoes !== "ADM") {
+  if (!isAdminRole(user?.permissoes)) {
     return <ErrorAlert message="Apenas administradores podem gerenciar usuários." />;
   }
 

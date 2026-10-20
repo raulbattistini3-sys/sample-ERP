@@ -1,9 +1,9 @@
 import { FormEvent, useState } from "react";
-import { Link, Location, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Location, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Field, Input } from "../../../components/ui/Field";
-import { ErrorAlert } from "../../../components/ui/PageState";
+import { ErrorAlert, SuccessAlert } from "../../../components/ui/PageState";
 import { useAuth } from "../../../context/AuthContext";
 import { AuthLayout } from "../../../layouts/AuthLayout";
 import { getApiErrorMessage } from "../../../lib/api-client";
@@ -17,13 +17,17 @@ export const LoginPage = () => {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  // set by the api client when the API ended the session
+  const [searchParams] = useSearchParams();
+  const sessionEnded = searchParams.get("sessao") === "encerrada";
   const loginMutation = useLogin();
 
   const [form, setForm] = useState<LoginUsuarioPayload>({ email: "", senha: "" });
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
-  // set by ProtectedRoute when it bounced the user here
-  const from = (location.state as { from?: Location } | null)?.from?.pathname ?? "/";
+  // set by ProtectedRoute when it bounced the user here, or by ResetPasswordPage after a reset
+  const state = location.state as { from?: Location; passwordReset?: boolean } | null;
+  const from = state?.from?.pathname ?? "/";
 
   if (isAuthenticated) return <Navigate to={from} replace />;
 
@@ -63,6 +67,14 @@ export const LoginPage = () => {
         </>
       }
     >
+      {sessionEnded && !state?.passwordReset && !submitError && (
+        <p role="status" className="mt-4 rounded-md bg-canvas px-3 py-2 text-sm text-muted">
+          Sua sessão foi encerrada. Entre novamente.
+        </p>
+      )}
+      {state?.passwordReset && !submitError && (
+        <SuccessAlert message="Senha redefinida. Entre com a nova senha." className="mt-4" />
+      )}
       {submitError && <ErrorAlert message={submitError} className="mt-4" />}
 
       <form onSubmit={handleSubmit} noValidate className="mt-5 space-y-4">
@@ -89,6 +101,11 @@ export const LoginPage = () => {
             invalid={!!fieldErrors.senha}
           />
         </Field>
+        <div className="-mt-2 text-right">
+          <Link to="/forgot-password" className="text-sm font-medium text-accent hover:underline">
+            Esqueceu a senha?
+          </Link>
+        </div>
 
         <Button type="submit" className="w-full" disabled={loginMutation.isPending}>
           {loginMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}

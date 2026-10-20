@@ -1,5 +1,15 @@
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getUsuarios, getUsuarioById, registerUsuario, updateUsuario, archiveUsuario, deleteUsuario } from "../api/usuario.api";
+import {
+  getUsuarios,
+  getUsuarioById,
+  registerUsuario,
+  forgotPassword,
+  resetPassword,
+  createUsuario,
+  updateUsuario,
+  archiveUsuario,
+  deleteUsuario,
+} from "../api/usuario.api";
 import { useAuth } from "../../../context/AuthContext";
 import { LIST_PAGE_SIZE } from "../../../lib/pagination";
 
@@ -16,6 +26,18 @@ export const useUsuario = (id: string) =>
 
 export const useRegisterUsuario = () =>
   useMutation({ mutationFn: registerUsuario });
+
+export const useCreateUsuario = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createUsuario,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["usuarios"] }),
+  });
+};
+
+export const useForgotPassword = () => useMutation({ mutationFn: forgotPassword });
+
+export const useResetPassword = () => useMutation({ mutationFn: resetPassword });
 
 export const useLogin = () => {
   const { login } = useAuth();

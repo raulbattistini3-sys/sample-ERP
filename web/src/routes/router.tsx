@@ -4,6 +4,8 @@ import { AppLayout } from "../layouts/AppLayout";
 
 import { LoginPage } from "../features/usuarios/pages/LoginPage";
 import { RegisterPage } from "../features/usuarios/pages/RegisterPage";
+import { ForgotPasswordPage } from "../features/usuarios/pages/ForgotPasswordPage";
+import { ResetPasswordPage } from "../features/usuarios/pages/ResetPasswordPage";
 import { UsuarioListPage } from "../features/usuarios/pages/UsuarioListPage";
 import { UsuarioFormPage } from "../features/usuarios/pages/UsuarioFormPage";
 
@@ -20,6 +22,8 @@ import { AuditoriaFormPage } from "../features/auditoria/pages/AuditoriaFormPage
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
   { path: "/register", element: <RegisterPage /> },
+  { path: "/forgot-password", element: <ForgotPasswordPage /> },
+  { path: "/reset-password", element: <ResetPasswordPage /> },
 
   {
     element: <ProtectedRoute />,

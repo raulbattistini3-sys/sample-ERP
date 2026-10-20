@@ -3,7 +3,14 @@ import { BaseAppError } from "../errors/global_error.error";
 import { Either, left, right } from "../globals/errors/left_right_either.error";
 import { IUsuarioValidator } from "../interfaces/usuario_interfaces/usuario_validator.interface";
 import { ZodTypeAny } from "zod";
-import UserSchema, { LoginUserSchema, RegisterUserSchema } from "../utils/schemas/user.schema";
+import {
+   CreateUserSchema,
+   ForgotPasswordSchema,
+   LoginUserSchema,
+   ResetPasswordSchema,
+   RegisterUserSchema,
+   UpdateUserSchema,
+} from "../utils/schemas/user.schema";
 import BaseValidator from "./base.validator";
 
 class UsuarioValidator extends BaseValidator implements IUsuarioValidator {
@@ -11,12 +18,24 @@ class UsuarioValidator extends BaseValidator implements IUsuarioValidator {
       super();
    }
 
-   validatePayload(payload: unknown): Either<BaseAppError, void> {
-      return this.validateWith(UserSchema, payload);
+   validateCreatePayload(payload: unknown): Either<BaseAppError, void> {
+      return this.validateWith(CreateUserSchema, payload);
+   }
+
+   validateUpdatePayload(payload: unknown): Either<BaseAppError, void> {
+      return this.validateWith(UpdateUserSchema, payload);
    }
 
    validateRegisterPayload(payload: unknown): Either<BaseAppError, void> {
       return this.validateWith(RegisterUserSchema, payload);
+   }
+
+   validateForgotPasswordPayload(payload: unknown): Either<BaseAppError, void> {
+      return this.validateWith(ForgotPasswordSchema, payload);
+   }
+
+   validateResetPasswordPayload(payload: unknown): Either<BaseAppError, void> {
+      return this.validateWith(ResetPasswordSchema, payload);
    }
 
    validateLoginPayload(payload: unknown): Either<BaseAppError, void> {

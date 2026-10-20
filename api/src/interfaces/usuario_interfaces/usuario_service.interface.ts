@@ -1,3 +1,4 @@
+import { UsuarioResponseDto } from "../../dtos/usuario_dtos/usuario_response.dto";
 import { ResponseArchiveUsuario } from "../../dtos/usuario_dtos/delete_usuario.dto";
 import {
    ResponseFindUsuarioByIdDto,
@@ -27,17 +28,19 @@ interface IUsuarioService {
    findUserById: (
       id: string,
    ) => Promise<Either<BaseAppError, ResponseFindUsuarioByIdDto>>;
+   // actor: the signed-in ADM/SU making the change
    createUsuario: (
       payload: PayloadCreateUsuario,
+      actor: UsuarioResponseDto,
    ) => Promise<Either<BaseAppError, ResponseCreateUsuario>>;
+   refreshToken: (usuario: UsuarioResponseDto, sessaoVersao: number) => ResponseLoginUsuarioDto;
    updateUser: (
       id: string,
       payload: PayloadUpdateUsuarioDto,
+      actor: UsuarioResponseDto,
    ) => Promise<Either<BaseAppError, null>>;
-   deleteUser: (id: string) => Promise<Either<BaseAppError, null>>;
-   archiveUser: (
-      id: string,
-   ) => Promise<Either<BaseAppError, ResponseArchiveUsuario>>;
+   deleteUser: (id: string, actor: UsuarioResponseDto) => Promise<Either<BaseAppError, null>>;
+   archiveUser: (id: string, actor: UsuarioResponseDto) => Promise<Either<BaseAppError, ResponseArchiveUsuario>>;
    loginUsuario: (
       payload: PayloadLoginUsuarioDto,
    ) => Promise<Either<BaseAppError, ResponseLoginUsuarioDto>>;

@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import router from "./routes";
+import { corsOptions } from "./configs/cors.config";
 
 const app = express();
 
@@ -8,7 +9,7 @@ const app = express();
 app.set("query parser", "extended");
 
 app.use(express.json());
-app.use(cors())
+app.use(cors(corsOptions));
 app.use(router);
 
 export { app };

@@ -12,7 +12,8 @@ class AuditoriaController extends BaseController {
   }
 
   create = async (req: Request, res: Response, next: NextFunction) => {
-    const result = await this.auditoriaService.createAuditoria(req.body);
+    // the auditor is whoever is signed in, not whatever id the body carries
+    const result = await this.auditoriaService.createAuditoria({ ...req.body, usuario_id: req.user?.id });
     if (result.isLeft()) {
       return this.fail(req, next, result.value);
     }

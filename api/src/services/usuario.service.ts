@@ -29,7 +29,12 @@ import { UsuarioEntity } from "../entities/usuario.entity";
 import { comparePassword, hashPassword } from "../utils/helpers/password.util";
 import { generateToken } from "../utils/helpers/token.util";
 import { toUsuarioResponse } from "../mappers/usuario.mapper";
+import { UsuarioResponseDto } from "../dtos/usuario_dtos/usuario_response.dto";
+import { isAdminRole, isSu } from "../utils/helpers/permissoes.util";
 import permissoesUsuarioEnum from "../enums/usuarios_permissoes.enum";
+
+const onlySuError = () =>
+   new ValidationError("403", "Apenas superusuários (SU) podem gerenciar administradores");
 
 class UsuarioService implements IUserService {
      constructor(
@@ -92,18 +97,34 @@ class UsuarioService implements IUserService {
    }
    async createUsuario(
       payload: PayloadCreateUsuario,
+      actor: UsuarioResponseDto,
    ): Promise<Either<BaseAppError, ResponseCreateUsuario>> {
       try {
-         const validation = this.userValidator.validatePayload(payload);
+         const validation = this.userValidator.validateCreatePayload(payload);
          if (validation.isLeft()) {
             return left(validation.value);
          }
-         const userData = await this.userRepository.createUsuario(payload);
+         if (isAdminRole(payload.permissoes) && !isSu(actor.permissoes)) {
+            return left(onlySuError());
+         }
+         const emailCheck = await this.ensureEmailAvailable(payload.email);
+         if (emailCheck.isLeft()) {
+            return left(emailCheck.value);
+         }
+         const userData = await this.userRepository.createUsuario({
+            nome: payload.nome,
+            email: payload.email,
+            senha: await hashPassword(payload.senha),
+            permissoes: payload.permissoes ?? permissoesUsuarioEnum.Values.Estoque,
+            ativo: payload.ativo ?? true,
+         });
          if (userData.isLeft()) {
             if (userData.value instanceof ValidationError) {
                return left(userData.value);
             }
-            return left(new ServerError("500", true, "internal server error"));
+            return left(
+               new ServerError("500", true, "internal server error", userData.value),
+            );
          }
          const response: ResponseCreateUsuario = toUsuarioResponse(userData.value);
          return right(response);
@@ -114,31 +135,92 @@ class UsuarioService implements IUserService {
          return left(new ServerError("500", true, undefined, error));
       }
    }
-  async updateUser(id: string, payload: PayloadUpdateUsuarioDto): Promise<Either<BaseAppError, null>> {
-   try {
-      if (!payload) {
-         return left(new RepositoryError("No payload found"));
+   async updateUser(
+      id: string,
+      payload: PayloadUpdateUsuarioDto,
+      actor: UsuarioResponseDto,
+   ): Promise<Either<BaseAppError, null>> {
+      try {
+         const idValidation = this.userValidator.validateUUIDv4(id);
+         if (idValidation.isLeft()) {
+            return left(idValidation.value);
+         }
+         const validation = this.userValidator.validateUpdatePayload(payload);
+         if (validation.isLeft()) {
+            return left(validation.value);
+         }
+         const existing = await this.findExisting(id);
+         if (existing.isLeft()) {
+            return left(existing.value);
+         }
+         const emailCheck = await this.ensureEmailAvailable(payload.email, id);
+         if (emailCheck.isLeft()) {
+            return left(emailCheck.value);
+         }
+         const nextAtivo = payload.ativo ?? existing.value.ativo;
+         // an ADM manages Estoque accounts; on ADM/SU accounts (or to grant ADM/SU) only SU may act.
+         // An ADM may still edit their own nome/email/senha, as long as role and status stay the same
+         const touchesAdminAccount =
+            isAdminRole(existing.value.permissoes) || isAdminRole(payload.permissoes);
+         const isOwnProfileEdit =
+            existing.value.id === actor.id &&
+            payload.permissoes === existing.value.permissoes &&
+            nextAtivo === existing.value.ativo;
+         if (touchesAdminAccount && !isSu(actor.permissoes) && !isOwnProfileEdit) {
+            return left(onlySuError());
+         }
+         const row: UsuarioEntity = {
+            id,
+            nome: payload.nome,
+            email: payload.email,
+            permissoes: payload.permissoes,
+            ativo: nextAtivo,
+            // keep the current hash unless a new senha was sent
+            senha: payload.senha
+               ? await hashPassword(payload.senha)
+               : existing.value.senha,
+            // a new senha ends every session opened with the old one
+            sessaoVersao: existing.value.sessaoVersao + (payload.senha ? 1 : 0),
+         };
+         // only a change that leaves the usuario without active SU rights needs the guard
+         const removesSu = !isSu(payload.permissoes) || !nextAtivo;
+         const updated = removesSu
+            ? await this.userRepository.writeKeepingAnActiveSu(id, (repository) =>
+                 repository.updateUsuario(row),
+              )
+            : await this.userRepository.updateUsuario(row);
+         if (updated.isLeft()) {
+            if (updated.value instanceof ValidationError) {
+               return left(updated.value);
+            }
+            return left(new ServerError("500", true, undefined, updated.value));
+         }
+         return right(null);
+      } catch (error) {
+         if (error instanceof ValidationError) {
+            return left(error);
+         }
+         return left(new ServerError("500", true, undefined, error));
       }
-      const usuario = await this.userRepository.getUsuario(payload.id)
-      if (!usuario) {
-         return left(new RepositoryError("No usuario found"));
-      }
-      await this.userRepository.updateUsuario(usuario.value as UsuarioEntity)
-      return right(null);
-   } catch (error) {
-      return left(new RepositoryError("Database error", error));
    }
-  } async deleteUser(id: string): Promise<Either<BaseAppError, null>> {
+
+   async deleteUser(id: string, actor: UsuarioResponseDto): Promise<Either<BaseAppError, null>> {
       try {
          const validation = this.userValidator.validateUUIDv4(id);
          if (validation.isLeft()) {
             return left(validation.value);
          }
-         const userData = await this.userRepository.getUsuario(id);
+         const userData = await this.findExisting(id);
          if (userData.isLeft()) {
             return left(userData.value);
          }
-         const userDeletion = await this.userRepository.deleteUsuario(id);
+         if (isAdminRole(userData.value.permissoes) && !isSu(actor.permissoes)) {
+            return left(onlySuError());
+         }
+         const userDeletion = await this.userRepository.writeKeepingAnActiveSu(
+            id,
+            (repository) => repository.deleteUsuario(id),
+         );
          if (userDeletion.isLeft()) {
             return left(userDeletion.value);
          }
@@ -152,27 +234,34 @@ class UsuarioService implements IUserService {
    }
    async archiveUser(
       id: string,
+      actor: UsuarioResponseDto,
    ): Promise<Either<BaseAppError, ResponseArchiveUsuario>> {
       try {
          const validation = this.userValidator.validateUUIDv4(id);
          if (validation.isLeft()) {
             return left(validation.value);
          }
-         const userData = await this.userRepository.getUsuario(id);
+         const userData = await this.findExisting(id);
          if (userData.isLeft()) {
             return left(userData.value);
          }
          const userClass = userData.value;
-         let userToUpdate: PayloadUpdateUsuarioDto = {
+         if (isAdminRole(userClass.permissoes) && !isSu(actor.permissoes)) {
+            return left(onlySuError());
+         }
+         let userToUpdate: UsuarioEntity = {
             id,
             ativo: false,
             senha: userClass.senha,
+            sessaoVersao: userClass.sessaoVersao,
             nome: userClass.nome,
             permissoes: userClass.permissoes,
             email: userClass.email,
          };
-         const userArchiving =
-            await this.userRepository.updateUsuario(userToUpdate);
+         const userArchiving = await this.userRepository.writeKeepingAnActiveSu(
+            id,
+            (repository) => repository.updateUsuario(userToUpdate),
+         );
          if (userArchiving.isLeft()) {
             return left(userArchiving.value);
          }
@@ -200,6 +289,10 @@ class UsuarioService implements IUserService {
       if (!matches) {
          return left(new ValidationError("401", "credenciais inválidas"));
       }
+      // checked after the password, so it doesn't reveal which emails exist
+      if (!userData.value.ativo) {
+         return left(new ValidationError("401", "Usuário inativo"));
+      }
       const token = generateToken(userData.value);
       const response: ResponseLoginUsuarioDto = { ...toUsuarioResponse(userData.value), token };
       return right(response);
@@ -211,6 +304,11 @@ class UsuarioService implements IUserService {
    }
 }
 
+// sliding session: a signed-in, active usuario trades its token for a new one
+refreshToken(usuario: UsuarioResponseDto, sessaoVersao: number): ResponseLoginUsuarioDto {
+   return { ...usuario, token: generateToken({ ...usuario, sessaoVersao }) };
+}
+
 async registerUsuario(
    payloadUsuario: PayloadRegisterUsuarioDto,
 ): Promise<Either<BaseAppError, ResponseRegisterUsuarioDto>> {
@@ -219,13 +317,19 @@ async registerUsuario(
       if (validation.isLeft()) {
          return left(validation.value);
       }
+      const emailCheck = await this.ensureEmailAvailable(payloadUsuario.email);
+      if (emailCheck.isLeft()) {
+         return left(emailCheck.value);
+      }
       const hashed = await hashPassword(payloadUsuario.senha);
       const userData = await this.userRepository.createUsuario({
          nome: payloadUsuario.nome,
          email: payloadUsuario.email,
          senha: hashed,
-         permissoes: payloadUsuario.permissoes ?? permissoesUsuarioEnum.Values.Estoque,
-         ativo: payloadUsuario.ativo ?? true,
+         // self-registration is public: never trust permissoes/ativo from the body
+         // (an ADM promotes users through PUT /user/:id)
+         permissoes: permissoesUsuarioEnum.Values.Estoque,
+         ativo: true,
       });
       if (userData.isLeft()) {
          return left(userData.value);
@@ -237,6 +341,36 @@ async registerUsuario(
       }
       return left(new ServerError("500", true, undefined, error));
    }
+  }
+
+  // emails identify usuarios at login, so two accounts can't share one; exceptId lets an update keep its own
+  private async ensureEmailAvailable(
+     email: string,
+     exceptId?: string,
+  ): Promise<Either<BaseAppError, null>> {
+     const existing = await this.userRepository.getUsuarioByEmail(email);
+     if (existing.isRight()) {
+        return existing.value.id === exceptId
+           ? right(null)
+           : left(new ValidationError("409", "E-mail já cadastrado"));
+     }
+     // a cause means the lookup itself failed; without one the email is free
+     if (existing.value.cause) {
+        return left(new ServerError("500", true, undefined, existing.value));
+     }
+     return right(null);
+  }
+
+  // 404 when the usuario doesn't exist, 500 when the lookup itself failed
+  private async findExisting(id: string): Promise<Either<BaseAppError, UsuarioEntity>> {
+     const existing = await this.userRepository.getUsuario(id);
+     if (existing.isRight()) {
+        return existing;
+     }
+     if (existing.value.cause) {
+        return left(new ServerError("500", true, undefined, existing.value));
+     }
+     return left(new ValidationError("404", "Usuário não encontrado"));
   }
 }
 

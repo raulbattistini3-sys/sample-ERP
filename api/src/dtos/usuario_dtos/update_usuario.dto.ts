@@ -1,7 +1,7 @@
-import { UsuarioEntity } from "../../entities/usuario.entity";
+import { z } from "zod";
+import { UpdateUserSchema } from "../../utils/schemas/user.schema";
 
-type PayloadUpdateUsuarioDto = Omit<UsuarioEntity,  "auditorias_realizadas">;
+// PUT /user/:id body; ativo and senha are optional
+type PayloadUpdateUsuarioDto = z.input<typeof UpdateUserSchema>;
 
-type ResponseUpdateUsuarioDto = Omit<UsuarioEntity, "id">;
-
-export { PayloadUpdateUsuarioDto, ResponseUpdateUsuarioDto };
+export { PayloadUpdateUsuarioDto };
