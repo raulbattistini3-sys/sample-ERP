@@ -1,4 +1,4 @@
-import { ProductEntity } from "../entities/product.entity";
+import { ProductWithCategoria } from "../entities/product.entity";
 import CategoriaRepository from "../repositories/categoria.repository";
 import ProductRepository from "../repositories/product.repository";
 import IProductService from "../interfaces/product_interfaces/product_service.interface";
@@ -9,7 +9,6 @@ import {
 import {
    ResponseGetProductDto,
    ResponseGetProductsDto,
-   FindFilteredProductsPayloadDto,
    ResponseFindFilteredProductsDto,
    ResponseFindProductsToDownloadDto,
 } from "../dtos/product_dtos/get_products.dto";
@@ -25,8 +24,8 @@ import {
    toNewProductEntity,
    toProductResponse,
    toProductResponseFromRow,
+   toProductUpdateEntity,
 } from "../mappers/product.mapper";
-import filterUniqueProperty from "../utils/helpers/filter_unique_elements.helper";
 import filterProducts from "../utils/helpers/filter_products_params.helper";
 import IProductRepository from "../interfaces/product_interfaces/product_repository.interface";
 import ICategoriaRepository from "../interfaces/category_interfaces/categoria_repository.interface";
@@ -137,44 +136,23 @@ class ProductService implements IProductService {
       }
    }
    async findProductsByFilter(
+      page: number,
       amount: number,
-      includeParams: FindFilteredProductsPayloadDto,
+      query: unknown,
    ): Promise<Either<BaseAppError, ResponseFindFilteredProductsDto>> {
       try {
-         const validation =
-            this.productValidator.validatePayload(includeParams);
-         if (validation.isLeft()) {
-            return left(validation.value);
+         const filtered = await this.getFilteredProducts(page, amount, query);
+         if (filtered.isLeft()) {
+            return left(filtered.value);
          }
-         const productData = await this.productRepository.getProducts();
-         if (productData.isLeft()) {
-            return left(productData.value);
-         } else if (!productData.value) {
-            return left(
-               new ValidationError("404", "Produto(s) não encontrado(s)"),
-            );
-         }
-         let filteredProducts = filterProducts(
-            productData.value,
-            includeParams,
-         );
-         if (filteredProducts.isLeft()) {
-            return left(filteredProducts.value);
-         }
-         const filteredProductsLength = filteredProducts.value.data.length;
-         if (filteredProductsLength === 0) {
-            return left(new ValidationError("404", "Produto não encontrado"));
-         }
-         if (filteredProductsLength > amount) {
-            filteredProducts.value.data = filteredProducts.value.data.slice(
-               0,
-               amount,
-            );
-            filteredProducts.value.pageSize = amount;
-            filteredProducts.value.totalItems = amount;
-         }
-
-         return right(filteredProducts.value);
+         const paginatedResult = paginate(filtered.value, page, amount);
+         const response: ResponseFindFilteredProductsDto = {
+            data: paginatedResult.data.map(toProductResponseFromRow),
+            pageNumber: paginatedResult.currentPage,
+            pageSize: paginatedResult.perPage,
+            totalItems: filtered.value.length,
+         };
+         return right(response);
       } catch (error) {
          if (error instanceof ValidationError) {
             return left(error);
@@ -183,57 +161,29 @@ class ProductService implements IProductService {
       }
    }
    async findProductsToDownload(
-      amount: number,
       page: number,
-      includeParamsPayload: FindFilteredProductsPayloadDto,
-   ): Promise<
-      Either<BaseAppError, ResponseFindProductsToDownloadDto<ProductEntity>>
-   > {
+      amount: number,
+      query: unknown,
+   ): Promise<Either<BaseAppError, ResponseFindProductsToDownloadDto>> {
       try {
-         const payloadValidation =
-            this.productValidator.validatePayload(includeParamsPayload);
-         if (payloadValidation.isLeft()) {
-            return left(payloadValidation.value);
+         const filtered = await this.getFilteredProducts(page, amount, query);
+         if (filtered.isLeft()) {
+            return left(filtered.value);
          }
-         const paginateValidation = this.productValidator.validatePageAndAmount(
-            page,
-            amount,
-         );
-         if (paginateValidation.isLeft()) {
-            return left(paginateValidation.value);
-         }
-         const productData = await this.productRepository.getProducts();
-         if (productData.isLeft()) {
-            if (productData.value instanceof ValidationError) {
-               return left(productData.value);
-            }
-            return left(new ServerError("500", true, "internal server error"));
-         }
-         let paginatedResult = paginate(productData.value, page, amount);
-         let categoriasUnicas = filterUniqueProperty(
-            productData.value,
-            "categoria",
-         );
-         const aggregatedValueCategoria = new Map<
-            (typeof categoriasUnicas)[0],
-            number
-         >();
-         for (const categoria of categoriasUnicas) {
-            let valor = 0;
-            for (const product of productData.value) {
-               if (product.categoria === categoria) {
-                  valor += product.valor_de_venda;
-               }
-            }
-            aggregatedValueCategoria.set(categoria, valor);
+         // totals cover every filtered product, not only the requested page
+         const aggregatedValue: Record<string, number> = {};
+         for (const { produto, categoria } of filtered.value) {
+            aggregatedValue[categoria.nome] =
+               (aggregatedValue[categoria.nome] ?? 0) + Number(produto.valorDeVenda);
          }
 
-         const response: ResponseFindProductsToDownloadDto<ProductEntity> = {
-            data: paginatedResult.data,
+         const paginatedResult = paginate(filtered.value, page, amount);
+         const response: ResponseFindProductsToDownloadDto = {
+            data: paginatedResult.data.map(toProductResponseFromRow),
             pageNumber: paginatedResult.currentPage,
             pageSize: paginatedResult.perPage,
-            totalItems: productData.value.length,
-            aggregated_value: aggregatedValueCategoria,
+            totalItems: filtered.value.length,
+            aggregated_value: aggregatedValue,
          };
          return right(response);
       } catch (error) {
@@ -244,27 +194,58 @@ class ProductService implements IProductService {
       }
    }
 
+   // shared by filter and download: validates paging and filters, then filters the active products
+   private async getFilteredProducts(
+      page: number,
+      amount: number,
+      query: unknown,
+   ): Promise<Either<BaseAppError, ProductWithCategoria[]>> {
+      const paginateValidation = this.productValidator.validatePageAndAmount(
+         page,
+         amount,
+      );
+      if (paginateValidation.isLeft()) {
+         return left(paginateValidation.value);
+      }
+      const filters = this.productValidator.parseFilterParams(query);
+      if (filters.isLeft()) {
+         return left(filters.value);
+      }
+      const productData = await this.productRepository.getProductsWithCategoria();
+      if (productData.isLeft()) {
+         return left(
+            new ServerError("500", true, "internal server error", productData.value),
+         );
+      }
+      return right(filterProducts(productData.value, filters.value));
+   }
+
    async updateProduct(
       product: PayloadUpdateProductDto,
    ): Promise<Either<BaseAppError, null>> {
       try {
-         const validation = this.productValidator.validatePayload(product);
+         const validation = this.productValidator.validateUpdatePayload(product);
          if (validation.isLeft()) {
             return left(validation.value);
          }
-         const categoriaValidation = this.categoriaValidator.validateNome(
+         // 404 when the category doesn't exist or is inactive
+         const categoriaData = await this.categoriaRepository.getCategoriaByName(
             product.categoria.nome,
          );
-         if (categoriaValidation.isLeft()) {
-            return left(categoriaValidation.value);
+         if (categoriaData.isLeft()) {
+            return left(categoriaData.value);
          }
-         const productData =
-            await this.productRepository.updateProduct(product);
+         const productData = await this.productRepository.updateProduct(
+            product.id,
+            toProductUpdateEntity(product, categoriaData.value.id),
+         );
          if (productData.isLeft()) {
             if (productData.value instanceof ValidationError) {
                return left(productData.value);
             }
-            return left(new ServerError("500", true, "internal server error"));
+            return left(
+               new ServerError("500", true, "internal server error", productData.value),
+            );
          }
          return right(null);
       } catch (error) {

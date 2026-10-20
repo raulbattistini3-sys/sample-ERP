@@ -68,23 +68,15 @@ class ProductRepository implements IProductRepository {
   }
 
   async updateProduct(
-    payload: Omit<ProductEntity, "categoriaId"> & { categoria: { nome: string } },
-  ): Promise<Either<RepositoryError, null>> {
+    id: string,
+    values: Partial<NewProductEntity>,
+  ): Promise<Either<BaseAppError, null>> {
     try {
-      const { id, categoria, ...rest } = payload;
       const [productData] = await this.db.select().from(produtos).where(eq(produtos.id, id)).limit(1);
       if (!productData) {
-        return left(new RepositoryError("404"));
+        return left(new ValidationError("404", "Produto não encontrado"));
       }
-      const [categoriaData] = await this.db
-        .select()
-        .from(categorias)
-        .where(eq(categorias.nome, categoria.nome))
-        .limit(1);
-      if (!categoriaData) {
-        return left(new RepositoryError("404"));
-      }
-      await this.db.update(produtos).set({ ...rest, categoriaId: categoriaData.id }).where(eq(produtos.id, id));
+      await this.db.update(produtos).set(values).where(eq(produtos.id, id));
       return right(null);
     } catch (error) {
       return left(new RepositoryError("500", error));

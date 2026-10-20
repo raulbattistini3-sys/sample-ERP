@@ -1,4 +1,3 @@
-import { Categoria } from "../../entities/categoria.entity";
 import { NewProductEntity, ProductEntity, ProductWithCategoria } from "../../entities/product.entity";
 import { BaseAppError } from "../../errors/global_error.error";
 import { Either } from "../../globals/errors/left_right_either.error";
@@ -13,11 +12,11 @@ interface IProductRepository {
    createProduct(
       payload: NewProductEntity,
    ): Promise<Either<RepositoryError, ProductEntity>>;
+   // categoria is resolved to categoriaId by the service; 404 when the product doesn't exist
    updateProduct(
-      payload: Omit<ProductEntity, "categoria"> & {
-         categoria: Pick<Categoria, "nome">;
-      },
-   ): Promise<Either<RepositoryError, null>>;
+      id: string,
+      values: Partial<NewProductEntity>,
+   ): Promise<Either<BaseAppError, null>>;
    deactivateProduct(id: string): Promise<Either<RepositoryError, null>>;
    removeProduct(id: string): Promise<Either<RepositoryError, null>>;
 }

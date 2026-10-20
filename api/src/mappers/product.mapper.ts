@@ -1,4 +1,5 @@
 import { CreateProductDto } from "../dtos/product_dtos/create_product.dto";
+import { PayloadUpdateProductDto } from "../dtos/product_dtos/update_product.dto";
 import { ProductResponseDto } from "../dtos/product_dtos/product_response.dto";
 import { Categoria } from "../entities/categoria.entity";
 import { NewProductEntity, ProductEntity, ProductWithCategoria } from "../entities/product.entity";
@@ -20,6 +21,21 @@ export const toNewProductEntity = (
    valorDeVenda: dto.valor_de_venda ?? 0,
    dataDeCadastro,
    quantidadeEmEstoque: dto.quantidade_em_estoque,
+});
+
+// only the editable columns; id and data_de_cadastro never change
+export const toProductUpdateEntity = (
+   dto: PayloadUpdateProductDto,
+   categoriaId: string,
+): Partial<NewProductEntity> => ({
+   name: dto.name,
+   sku: dto.sku,
+   categoriaId,
+   valorDeCusto: dto.valor_de_custo,
+   icms: dto.icms ?? 0,
+   valorDeVenda: dto.valor_de_venda ?? 0,
+   quantidadeEmEstoque: dto.quantidade_em_estoque,
+   ...(dto.ativo !== undefined && { ativo: dto.ativo }),
 });
 
 export const toProductResponse = (

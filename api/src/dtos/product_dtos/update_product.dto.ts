@@ -1,16 +1,9 @@
-import Categoria from "../../entities/categoria.entity";
-import { ProductEntity } from "../../entities/product.entity";
-import { BaseDefaultMessage } from "../global_get.dto";
+import { CreateProductDto } from "./create_product.dto";
 
-type PayloadUpdateProductDto = Omit<ProductEntity, "categoria"> & {
-   categoria: Pick<Categoria, "nome">;
+// PUT /products/:id body (snake_case, like create); id comes from the URL
+type PayloadUpdateProductDto = CreateProductDto & {
+   id: string;
+   ativo?: boolean;
 };
 
-interface MessageUpdateProduct extends BaseDefaultMessage {
-   message: string;
-   status: boolean;
-}
-
-type ResponseUpdateProduct = BaseDefaultMessage & Omit<ProductEntity, "id">;
-
-export { PayloadUpdateProductDto, ResponseUpdateProduct };
+export { PayloadUpdateProductDto };

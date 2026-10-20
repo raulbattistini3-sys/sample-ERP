@@ -1,7 +1,6 @@
 // aquilo que esta chamado de "ProductRepositoryInterface" pertence aqui
 // o ProductRepositoryInterface de fato seria apenas o acesso ao banco de dados
 // rever os DTOs e nomenclaturas para desacoplar regra de negócio de implementação
-import Categoria from "../../entities/categoria.entity";
 import {
    CreateProductDto,
    ResponseCreateProductDto,
@@ -9,12 +8,10 @@ import {
 import {
    ResponseGetProductDto,
    ResponseGetProductsDto,
-   FindFilteredProductsPayloadDto,
    ResponseFindFilteredProductsDto,
    ResponseFindProductsToDownloadDto,
 } from "../../dtos/product_dtos/get_products.dto";
 import { PayloadUpdateProductDto } from "../../dtos/product_dtos/update_product.dto";
-import { ProductEntity } from "../../entities/product.entity";
 import { Either } from "../../globals/errors/left_right_either.error";
 import { BaseAppError } from "../../errors/global_error.error";
 
@@ -29,17 +26,17 @@ interface IProductService {
    findProductById: (
       id: string,
    ) => Promise<Either<BaseAppError, ResponseGetProductDto>>;
+   // query is the raw req.query; the service validates and coerces it
    findProductsByFilter: (
+      page: number,
       amount: number,
-      includeParams: FindFilteredProductsPayloadDto,
+      query: unknown,
    ) => Promise<Either<BaseAppError, ResponseFindFilteredProductsDto>>;
    findProductsToDownload: (
-      amount: number,
       page: number,
-      includeParamsPayload: FindFilteredProductsPayloadDto,
-   ) => Promise<
-      Either<BaseAppError, ResponseFindProductsToDownloadDto<ProductEntity>>
-   >;
+      amount: number,
+      query: unknown,
+   ) => Promise<Either<BaseAppError, ResponseFindProductsToDownloadDto>>;
    updateProduct: (
       payload: PayloadUpdateProductDto,
    ) => Promise<Either<BaseAppError, null>>;
