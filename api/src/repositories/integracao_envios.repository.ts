@@ -1,53 +1,57 @@
 import { sql } from "drizzle-orm";
 import { DrizzleDB } from "../db/client";
-import { enqueueJiraIssueJobs } from "../queues/jira_issues.jobs";
+import { Provider } from "../configs/oauth.providers";
+import { enqueueEnvioJobs } from "../queues/integracao_envios.jobs";
 
-// Jira issues for new auditorias (drizzle/0006-0008): one row per (auditoria, categoria it touches),
-// written on the auditoria's own transaction together with its pg-boss job (job_id), so neither can
-// exist without the other. JiraIssueWorker runs the jobs and records the outcome here, which is also
-// what the pages show.
+// What each integration must create for new auditorias (drizzle/0006-0009): one row per (auditoria,
+// categoria it touches, provider) — a Jira issue, a monday item — written on the auditoria's own
+// transaction together with its pg-boss job (job_id). IntegracaoEnvioWorker runs the jobs and records
+// the outcome here, which is also what the pages show.
 //
 //   pendente -> enviando (worker) -> enviada
-//                                 -> erro (pg-boss retries it with backoff; after the last attempt
-//                                          the job goes to the dead-letter queue)
+//                                 -> erro (pg-boss retries with backoff; after the last attempt
+//                                          the job goes to the provider's dead-letter queue)
 //                                 -> cancelada (auditoria removed)
 
-// only while Jira is connected and has a project and issue type chosen; otherwise nothing is queued,
-// so auditorias made before connecting don't all land in Jira at once later
-const JIRA_READY = sql`exists (
-  select 1 from integracoes
-  where provider = 'jira' and config ->> 'projectKey' is not null and config ->> 'issueTypeId' is not null)`;
+// the providers connected and configured enough to receive one; nothing is queued for the others,
+// so auditorias made before connecting don't all land at once later
+const READY = sql`(
+  (i.provider = 'jira' and i.config ->> 'projectKey' is not null and i.config ->> 'issueTypeId' is not null)
+  or (i.provider = 'monday' and i.config ->> 'boardId' is not null))`;
 
 const idList = (ids: string[]) => sql.join(ids.map((id) => sql`${id}`), sql`, `);
 
-const insertedIds = (result: { rows: unknown[] }) => (result.rows as { id: string }[]).map((r) => r.id);
+type InsertedEnvio = { id: string; provider: Provider };
+const inserted = (result: { rows: unknown[] }) => result.rows as InsertedEnvio[];
 
-// a product auditoria (manual or automatic): one row (and job) per distinct categoria of its products
+// a product auditoria (manual or automatic): per ready provider, one row (and job) per categoria
 export async function enqueueForProducts(tx: DrizzleDB, auditoriaId: string, produtoIds: string[]): Promise<void> {
   if (produtoIds.length === 0) return;
   const result = await tx.execute(sql`
-    insert into auditoria_jira_issues (auditoria_id, categoria_id, categoria_nome)
-    select distinct ${auditoriaId}::uuid, c.id, c.nome::text
-    from produtos p join categorias c on c.id = p.categoria_id
-    where p.id in (${idList(produtoIds)}) and ${JIRA_READY}
-    on conflict (auditoria_id, categoria_id) do nothing
-    returning id`);
-  await enqueueJiraIssueJobs(tx, insertedIds(result));
+    insert into auditoria_integracao_envios (auditoria_id, categoria_id, categoria_nome, provider)
+    select distinct ${auditoriaId}::uuid, c.id, c.nome::text, i.provider
+    from produtos p join categorias c on c.id = p.categoria_id cross join integracoes i
+    where p.id in (${idList(produtoIds)}) and ${READY}
+    on conflict (auditoria_id, categoria_id, provider) do nothing
+    returning id, provider::text as provider`);
+  await enqueueEnvioJobs(tx, inserted(result));
 }
 
-// a categoria change: one row (and job) for that categoria, even when it has no products
+// a categoria change: per ready provider, one row (and job) for that categoria, even without products
 export async function enqueueForCategoria(tx: DrizzleDB, auditoriaId: string, categoriaId: string): Promise<void> {
   const result = await tx.execute(sql`
-    insert into auditoria_jira_issues (auditoria_id, categoria_id, categoria_nome)
-    select ${auditoriaId}::uuid, c.id, c.nome::text from categorias c
-    where c.id = ${categoriaId} and ${JIRA_READY}
-    on conflict (auditoria_id, categoria_id) do nothing
-    returning id`);
-  await enqueueJiraIssueJobs(tx, insertedIds(result));
+    insert into auditoria_integracao_envios (auditoria_id, categoria_id, categoria_nome, provider)
+    select ${auditoriaId}::uuid, c.id, c.nome::text, i.provider
+    from categorias c cross join integracoes i
+    where c.id = ${categoriaId} and ${READY}
+    on conflict (auditoria_id, categoria_id, provider) do nothing
+    returning id, provider::text as provider`);
+  await enqueueEnvioJobs(tx, inserted(result));
 }
 
-export type QueuedIssue = {
+export type QueuedEnvio = {
   id: string;
+  provider: Provider;
   auditoriaId: string;
   categoriaNome: string;
   tentativas: number;
@@ -62,30 +66,33 @@ export type QueuedIssue = {
   auditoriaRemovida: boolean;
 };
 
-export type IssueQueueEntry = {
+export type EnvioStatus = "pendente" | "enviando" | "enviada" | "erro" | "cancelada";
+
+export type AuditoriaEnvio = {
+  provider: Provider;
   categoriaNome: string;
-  status: "pendente" | "enviando" | "enviada" | "erro" | "cancelada";
-  issueKey: string | null;
-  issueUrl: string | null;
+  status: EnvioStatus;
+  externalId: string | null;
+  externalUrl: string | null;
   tentativas: number;
   ultimoErro: string | null;
 };
 
-class JiraOutboxRepository {
+class IntegracaoEnviosRepository {
   constructor(private readonly db: DrizzleDB) {}
 
-  // The worker takes the row before calling Jira. Single statement: a job run twice (pg-boss retries
-  // an expired job; a second run of the same row) only creates the issue once. null = nothing to do
-  // (already sent, being sent within its lease, or cancelled).
-  async claimForSend(id: string, leaseMinutes: number): Promise<QueuedIssue | null> {
+  // The worker takes the row before calling the provider. Single statement: a job run twice (pg-boss
+  // retries an expired job) only creates one issue/item. null = nothing to do (already sent, being
+  // sent within its lease, or cancelled).
+  async claimForSend(id: string, leaseMinutes: number): Promise<QueuedEnvio | null> {
     const { rows } = await this.db.execute(sql`
       with claimed as (
-        update auditoria_jira_issues set status = 'enviando', tentativas = tentativas + 1,
+        update auditoria_integracao_envios set status = 'enviando', tentativas = tentativas + 1,
           proxima_tentativa_em = now() + make_interval(mins => ${leaseMinutes})
         where id = ${id}
           and (status in ('pendente', 'erro') or (status = 'enviando' and proxima_tentativa_em < now()))
         returning *)
-      select j.id, j.auditoria_id, j.categoria_nome, j.tentativas,
+      select j.id, j.provider::text as provider, j.auditoria_id, j.categoria_nome, j.tentativas,
              a.acao_efetuada::text as acao, (extract(epoch from a.data_de_audicao) * 1000)::float8 as data_de_audicao,
              u.nome as auditor, d.nome_do_produto, d.valor_anterior::text as valor_anterior,
              d.valor_atual::text as valor_atual, d.observacoes_adicionais as observacoes,
@@ -101,6 +108,7 @@ class JiraOutboxRepository {
     if (!r) return null;
     return {
       id: r.id,
+      provider: r.provider,
       auditoriaId: r.auditoria_id,
       categoriaNome: r.categoria_nome,
       tentativas: Number(r.tentativas),
@@ -116,29 +124,29 @@ class JiraOutboxRepository {
     };
   }
 
-  async markSent(id: string, issueKey: string, issueUrl: string): Promise<void> {
+  async markSent(id: string, externalId: string, externalUrl: string): Promise<void> {
     await this.db.execute(sql`
-      update auditoria_jira_issues set status = 'enviada', issue_key = ${issueKey}, issue_url = ${issueUrl},
-        ultimo_erro = null, enviado_em = now()
+      update auditoria_integracao_envios set status = 'enviada', external_id = ${externalId},
+        external_url = ${externalUrl}, ultimo_erro = null, enviado_em = now()
       where id = ${id}`);
   }
 
   // retryInMs: roughly when pg-boss runs it again (shown on the pages); null = it gave up
   async markFailed(id: string, message: string, retryInMs: number | null): Promise<void> {
     await this.db.execute(sql`
-      update auditoria_jira_issues set status = 'erro', ultimo_erro = ${message.slice(0, 1000)},
+      update auditoria_integracao_envios set status = 'erro', ultimo_erro = ${message.slice(0, 1000)},
         proxima_tentativa_em = ${retryInMs === null ? sql`now()` : sql`now() + make_interval(secs => ${retryInMs / 1000})`}
       where id = ${id}`);
   }
 
   async markCancelled(id: string): Promise<void> {
-    await this.db.execute(sql`update auditoria_jira_issues set status = 'cancelada' where id = ${id}`);
+    await this.db.execute(sql`update auditoria_integracao_envios set status = 'cancelada' where id = ${id}`);
   }
 
   // rows that still need a job (saved while the queue wasn't running, or reset by "Reenviar")
   async listWithoutJob(limit: number): Promise<string[]> {
     const { rows } = await this.db.execute(sql`
-      select id from auditoria_jira_issues where status = 'pendente' and job_id is null
+      select id from auditoria_integracao_envios where status = 'pendente' and job_id is null
       order by criado_em limit ${limit}`);
     return (rows as { id: string }[]).map((r) => r.id);
   }
@@ -149,30 +157,31 @@ class JiraOutboxRepository {
     let enqueued = 0;
     await this.db.transaction(async (tx: DrizzleDB) => {
       const { rows } = await tx.execute(sql`
-        select id from auditoria_jira_issues
+        select id, provider::text as provider from auditoria_integracao_envios
         where id in (${idList(ids)}) and status = 'pendente' and job_id is null
         for update skip locked`);
-      const pending = (rows as { id: string }[]).map((r) => r.id);
-      if (await enqueueJiraIssueJobs(tx, pending)) enqueued = pending.length;
+      const pending = rows as InsertedEnvio[];
+      if (await enqueueEnvioJobs(tx, pending)) enqueued = pending.length;
     });
     return enqueued;
   }
 
-  async listForAuditoria(auditoriaId: string): Promise<IssueQueueEntry[]> {
+  async listForAuditoria(auditoriaId: string): Promise<AuditoriaEnvio[]> {
     const { rows } = await this.db.execute(sql`
-      select categoria_nome, status, issue_key, issue_url, tentativas, ultimo_erro
-      from auditoria_jira_issues where auditoria_id = ${auditoriaId} order by categoria_nome`);
+      select provider::text as provider, categoria_nome, status, external_id, external_url, tentativas, ultimo_erro
+      from auditoria_integracao_envios where auditoria_id = ${auditoriaId} order by provider, categoria_nome`);
     return (rows as any[]).map((r) => ({
+      provider: r.provider,
       categoriaNome: r.categoria_nome,
       status: r.status,
-      issueKey: r.issue_key,
-      issueUrl: r.issue_url,
+      externalId: r.external_id,
+      externalUrl: r.external_url,
       tentativas: Number(r.tentativas),
       ultimoErro: r.ultimo_erro,
     }));
   }
 
-  async summary(maxAttempts: number): Promise<{
+  async summary(provider: Provider, maxAttempts: number): Promise<{
     enviadas: number;
     pendentes: number;
     comErro: number;
@@ -185,10 +194,10 @@ class JiraOutboxRepository {
         count(*) filter (where status in ('pendente', 'enviando'))::int as pendentes,
         count(*) filter (where status = 'erro' and tentativas < ${maxAttempts})::int as com_erro,
         count(*) filter (where status = 'erro' and tentativas >= ${maxAttempts})::int as esgotadas
-      from auditoria_jira_issues`);
+      from auditoria_integracao_envios where provider = ${provider}`);
     const { rows: erros } = await this.db.execute(sql`
-      select categoria_nome, auditoria_id, ultimo_erro, tentativas from auditoria_jira_issues
-      where status = 'erro' order by proxima_tentativa_em desc limit 5`);
+      select categoria_nome, auditoria_id, ultimo_erro, tentativas from auditoria_integracao_envios
+      where provider = ${provider} and status = 'erro' order by proxima_tentativa_em desc limit 5`);
     const r = rows[0] as any;
     return {
       enviadas: r.enviadas,
@@ -204,15 +213,15 @@ class JiraOutboxRepository {
     };
   }
 
-  // "Reenviar": rows that gave up start over without a job; JiraIssueWorker.enqueueMissing gives them one.
-  // Rows still within their retries are left alone (pg-boss already has their next attempt scheduled).
-  async resetExhausted(maxAttempts: number): Promise<string[]> {
+  // "Reenviar": the provider's rows that gave up start over without a job; the worker's sweep gives
+  // them one. Rows still within their retries are left alone (pg-boss has their next attempt scheduled).
+  async resetExhausted(provider: Provider, maxAttempts: number): Promise<string[]> {
     const { rows } = await this.db.execute(sql`
-      update auditoria_jira_issues set status = 'pendente', tentativas = 0, job_id = null, proxima_tentativa_em = now()
-      where status = 'erro' and tentativas >= ${maxAttempts}
+      update auditoria_integracao_envios set status = 'pendente', tentativas = 0, job_id = null, proxima_tentativa_em = now()
+      where provider = ${provider} and status = 'erro' and tentativas >= ${maxAttempts}
       returning id`);
     return (rows as { id: string }[]).map((r) => r.id);
   }
 }
 
-export default JiraOutboxRepository;
+export default IntegracaoEnviosRepository;

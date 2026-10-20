@@ -1,6 +1,7 @@
-import { QueuedIssue } from "../repositories/jira_outbox.repository";
+import type { QueuedEnvio } from "../repositories/integracao_envios.repository";
 
-// the Jira issue for one (auditoria, categoria) row: summary, description paragraphs and labels
+// the issue/item for one (auditoria, categoria) row: title, description paragraphs and labels.
+// Jira uses all three; monday uses the title as the item name and the paragraphs as its update.
 
 const acaoLabels: Record<string, string> = { Criacao: "Criação", Alteracao: "Alteração", Delecao: "Deleção" };
 
@@ -15,7 +16,7 @@ export const categoriaLabel = (nome: string) =>
 
 const money = (value: string | null) => (value === null ? "—" : `R$ ${Number(value).toFixed(2).replace(".", ",")}`);
 
-export function buildAuditoriaIssue(item: QueuedIssue) {
+export function buildAuditoriaIssue(item: QueuedEnvio) {
   const acao = acaoLabels[item.acao] ?? item.acao;
   const isCategoriaChange = item.nomeDoProduto?.startsWith("Categoria:") ?? false;
   const quando = new Date(item.dataDeAudicao).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });

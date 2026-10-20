@@ -10,7 +10,7 @@ import { useArchiveAuditoria, useAuditoria, useDeleteAuditoria } from "../hooks/
 import { useAuditorNames } from "../hooks/useAuditorNames";
 import { useDetalhamentoAuditoria } from "../hooks/useDetalhamentoAuditoria";
 import { acaoEfetuadaLabels } from "../types/auditoria.types";
-import { AuditoriaJiraIssues } from "../../integracoes/components/AuditoriaJiraIssues";
+import { AuditoriaIntegracoes } from "../../integracoes/components/AuditoriaIntegracoes";
 
 function Detail({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -110,7 +110,7 @@ export const AuditoriaDetailPage = () => {
           )}
         </FormCard>
 
-        <AuditoriaJiraIssues auditoriaId={auditoria.id} />
+        <AuditoriaIntegracoes auditoriaId={auditoria.id} />
       </div>
     </div>
   );

@@ -7,7 +7,7 @@ export const providers = {
     tokenUrl: "https://auth.monday.com/oauth2/token",
     clientId: process.env.MONDAY_CLIENT_ID!,
     clientSecret: process.env.MONDAY_CLIENT_SECRET!,
-    scopes: "boards:read boards:write",
+    scopes: "boards:read boards:write me:read",
     extraParams: {},
   },
   jira: {
