@@ -136,3 +136,4 @@ dist
 .pnp.*
 requisitor.txt
 /src/errors/test.txt
+bun.lock
