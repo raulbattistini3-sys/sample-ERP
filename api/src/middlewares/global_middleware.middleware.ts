@@ -5,6 +5,7 @@ import ErrorLevelsEnum from "../enums/errors_enums/errors_levels.enum";
 import { INTERNAL_SERVER_ERROR_OBJ } from "../globals/errors/global_http_error.global";
 import LoggerInterface from "../interfaces/logger_interfaces/logger_interface.interface";
 import serializeError from "../utils/logger/serialize_error.util";
+import toHttpStatus from "../utils/helpers/http_status.util";
 
 class BaseErrorMiddleware {
     constructor(private readonly logger: LoggerInterface) {}
@@ -13,13 +14,14 @@ class BaseErrorMiddleware {
     handle = (err: Error, req: Request, res: Response, next: NextFunction) => {
         // BaseAppErrors were already logged by BaseController.fail; only shape the response here
         if (err instanceof BaseAppError) {
-            return res.status(Number(err.statusCode)).json({
+            return res.status(toHttpStatus(err.statusCode)).json({
                 message: err.message,
                 status: err.status,
             });
         }
 
-        // anything else was thrown outside the Either flow (a bug, a bad JSON body, ...) and hasn't been logged yet
+        // anything else was thrown outside the Either flow (a bug, a bad JSON body, ...) and hasn't been logged yet;
+        // Express 5 forwards rejected promises from async controllers here too
         this.logger.handle(
             {
                 layer: "middleware",

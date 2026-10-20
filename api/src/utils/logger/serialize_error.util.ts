@@ -4,6 +4,10 @@ export type SerializedError = {
    name: string;
    message: string;
    code?: string;
+   detail?: string;
+   constraint?: string;
+   table?: string;
+   column?: string;
    statusCode?: string;
    status?: string;
    isOperational?: boolean;
@@ -14,6 +18,18 @@ export type SerializedError = {
 // guards against cyclic or absurdly deep cause chains
 const MAX_CAUSE_DEPTH = 5;
 
+// what pg's DatabaseError exposes about a failed statement (e.g. 23505 + users_email_unique)
+const DRIVER_FIELDS = ["code", "detail", "constraint", "table", "column"] as const;
+
+// DrizzleQueryError's message embeds the bound params (emails, password hashes, ...); keep only the SQL
+const describe = (error: Error) => {
+   const { query, params } = error as { query?: unknown; params?: unknown };
+   if (typeof query === "string" && Array.isArray(params)) {
+      return `Failed query: ${query}`;
+   }
+   return error.message;
+};
+
 // flattens an error and the chain of lower-layer errors it wraps into plain JSON for the logger
 const serializeError = (error: unknown, depth = 0): SerializedError => {
    if (!(error instanceof Error)) {
@@ -21,22 +37,27 @@ const serializeError = (error: unknown, depth = 0): SerializedError => {
    }
 
    const serialized: SerializedError = {
-      name: error.name,
-      message: error.message,
+      // libraries often leave name as "Error"; the class name says more (e.g. DrizzleQueryError)
+      name: error.name.toLowerCase() === "error" ? error.constructor.name : error.name,
+      message: describe(error),
       stack: error.stack,
    };
 
-   // driver errors (e.g. pg) carry a machine-readable code such as 42P01 or 23505
-   const code = (error as { code?: unknown }).code;
-   if (typeof code === "string") serialized.code = code;
+   for (const field of DRIVER_FIELDS) {
+      const value = (error as Partial<Record<typeof field, unknown>>)[field];
+      if (typeof value === "string") serialized[field] = value;
+   }
 
    if (error instanceof BaseAppError) {
       serialized.statusCode = error.statusCode;
       serialized.status = error.status;
       serialized.isOperational = error.isOperational;
-      if (error.cause !== undefined && depth < MAX_CAUSE_DEPTH) {
-         serialized.cause = serializeError(error.cause, depth + 1);
-      }
+   }
+
+   // follows both our own `cause` and library ones (DrizzleQueryError -> pg DatabaseError)
+   const cause = (error as { cause?: unknown }).cause;
+   if (cause !== undefined && depth < MAX_CAUSE_DEPTH) {
+      serialized.cause = serializeError(cause, depth + 1);
    }
 
    return serialized;
