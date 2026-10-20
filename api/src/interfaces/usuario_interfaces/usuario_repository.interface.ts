@@ -14,9 +14,9 @@ interface IUsuarioRepository {
       payload: UsuarioEntity,
    ): Promise<Either<BaseAppError, null>>;
    deleteUsuario(id: string): Promise<Either<BaseAppError, null>>;
-   // runs write in a transaction that locks the active ADM rows; 409 (nothing written)
-   // when targetId is the only active ADM
-   writeKeepingAnActiveAdm(
+   // runs write in a transaction that locks the active SU rows; 409 (nothing written)
+   // when targetId is the only active SU
+   writeKeepingAnActiveSu(
       targetId: string,
       write: (repository: IUsuarioRepository) => Promise<Either<BaseAppError, null>>,
    ): Promise<Either<BaseAppError, null>>;

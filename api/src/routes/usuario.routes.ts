@@ -28,12 +28,13 @@ publicUsuarioRoutes.post("/login", usuarioController.login);
 const usuarioRoutes = Router();
 // sliding session: the web calls this on user activity before the token expires
 usuarioRoutes.post("/refresh-token", usuarioController.refreshToken);
-// any signed-in usuario can read (the auditoria pages show auditor names); only ADM can manage
+// any signed-in usuario can read (the auditoria pages show auditor names); ADM/SU manage,
+// and UsuarioService only lets an SU touch ADM/SU accounts
 usuarioRoutes.get("/", usuarioController.getAll);
 usuarioRoutes.get("/:id", usuarioController.getById);
-usuarioRoutes.post("/", authMiddleware.requireAdm, usuarioController.create);
-usuarioRoutes.put("/:id", authMiddleware.requireAdm, usuarioController.update);
-usuarioRoutes.delete("/:id", authMiddleware.requireAdm, usuarioController.delete);
-usuarioRoutes.patch("/:id/archive", authMiddleware.requireAdm, usuarioController.archive);
+usuarioRoutes.post("/", authMiddleware.requireAdminRole, usuarioController.create);
+usuarioRoutes.put("/:id", authMiddleware.requireAdminRole, usuarioController.update);
+usuarioRoutes.delete("/:id", authMiddleware.requireAdminRole, usuarioController.delete);
+usuarioRoutes.patch("/:id/archive", authMiddleware.requireAdminRole, usuarioController.archive);
 
 export { publicUsuarioRoutes, usuarioRoutes };

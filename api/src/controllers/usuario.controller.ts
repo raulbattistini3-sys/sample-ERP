@@ -12,7 +12,7 @@ class UsuarioController extends BaseController {
   }
 
   create = async (req: Request, res: Response, next: NextFunction) => {
-    const result = await this.usuarioService.createUsuario(req.body);
+    const result = await this.usuarioService.createUsuario(req.body, req.user!);
     if (result.isLeft()) {
       return this.fail(req, next, result.value);
     }
@@ -38,7 +38,7 @@ class UsuarioController extends BaseController {
   };
 
   update = async (req: Request, res: Response, next: NextFunction) => {
-    const result = await this.usuarioService.updateUser(req.params.id as string, req.body);
+    const result = await this.usuarioService.updateUser(req.params.id as string, req.body, req.user!);
     if (result.isLeft()) {
       return this.fail(req, next, result.value);
     }
@@ -46,7 +46,7 @@ class UsuarioController extends BaseController {
   };
 
   delete = async (req: Request, res: Response, next: NextFunction) => {
-    const result = await this.usuarioService.deleteUser(req.params.id as string);
+    const result = await this.usuarioService.deleteUser(req.params.id as string, req.user!);
     if (result.isLeft()) {
       return this.fail(req, next, result.value);
     }
@@ -54,7 +54,7 @@ class UsuarioController extends BaseController {
   };
 
   archive = async (req: Request, res: Response, next: NextFunction) => {
-    const result = await this.usuarioService.archiveUser(req.params.id as string);
+    const result = await this.usuarioService.archiveUser(req.params.id as string, req.user!);
     if (result.isLeft()) {
       return this.fail(req, next, result.value);
     }

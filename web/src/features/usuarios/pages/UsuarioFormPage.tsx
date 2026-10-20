@@ -8,6 +8,7 @@ import { ErrorAlert, FormCard, LoadingState, PageHeader } from "../../../compone
 import { useAuth } from "../../../context/AuthContext";
 import { getApiErrorMessage } from "../../../lib/api-client";
 import { toFieldErrors } from "../../../lib/form";
+import { isAdminRole, isSu } from "../../../lib/permissoes";
 import {
   useArchiveUsuario,
   useDeleteUsuario,
@@ -17,6 +18,7 @@ import {
 } from "../hooks/useUsuarios";
 import {
   PermissoesEnum,
+  permissoesLabels,
   RegisterUsuarioSchema,
   UpdateUsuarioSchema,
   Usuario,
@@ -36,7 +38,7 @@ export const UsuarioFormPage = () => {
   const { user } = useAuth();
   const { data: usuario, isLoading, error } = useUsuario(id);
 
-  if (user?.permissoes !== "ADM") {
+  if (!isAdminRole(user?.permissoes)) {
     return <ErrorAlert message="Apenas administradores podem gerenciar usuários." />;
   }
   if (!id) return <UsuarioForm />;
@@ -115,6 +117,14 @@ function UsuarioForm({ usuario }: { usuario?: Usuario }) {
   const mutationError = [createMutation, updateMutation, archiveMutation, deleteMutation].find((m) => m.isError)?.error;
   const isSaving = createMutation.isPending || updateMutation.isPending;
   const isSelf = usuario?.id === user?.id;
+  // the API only lets an SU change ADM/SU accounts (or grant those roles); an ADM may still edit
+  // their own nome/email/senha
+  const actorIsSu = isSu(user?.permissoes);
+  const canManageTarget = actorIsSu || !isAdminRole(usuario?.permissoes);
+  const readOnly = isEdit && !isSelf && !canManageTarget;
+  const roleOptions = actorIsSu ? PermissoesEnum.options : (["Estoque"] as const);
+  // keep the current role selectable so the select shows it (e.g. an ADM viewing their own account)
+  const visibleRoles = roleOptions.includes(form.permissoes as never) ? roleOptions : [form.permissoes, ...roleOptions];
 
   return (
     <div>
@@ -122,7 +132,8 @@ function UsuarioForm({ usuario }: { usuario?: Usuario }) {
         title={isEdit ? "Editar usuário" : "Novo usuário"}
         actions={
           isEdit &&
-          !isSelf && (
+          !isSelf &&
+          canManageTarget && (
             <>
               <Button variant="secondary" onClick={handleArchive} disabled={archiveMutation.isPending}>
                 <Archive className="h-4 w-4" aria-hidden="true" />
@@ -138,6 +149,11 @@ function UsuarioForm({ usuario }: { usuario?: Usuario }) {
       />
 
       <FormCard>
+        {readOnly && (
+          <p className="mb-4 rounded-md bg-canvas px-3 py-2 text-sm text-muted">
+            Apenas superusuários (SU) podem alterar administradores.
+          </p>
+        )}
         {mutationError && (
           <ErrorAlert message={getApiErrorMessage(mutationError, "Não foi possível salvar o usuário.")} className="mb-4" />
         )}
@@ -168,11 +184,11 @@ function UsuarioForm({ usuario }: { usuario?: Usuario }) {
                 id="permissoes"
                 value={form.permissoes}
                 onChange={(e) => updateField("permissoes", e.target.value as FormValues["permissoes"])}
-                disabled={isSelf}
+                disabled={isSelf || readOnly}
               >
-                {PermissoesEnum.options.map((p) => (
+                {visibleRoles.map((p) => (
                   <option key={p} value={p}>
-                    {p === "ADM" ? "Administrador" : "Estoque"}
+                    {permissoesLabels[p]}
                   </option>
                 ))}
               </Select>
@@ -201,7 +217,7 @@ function UsuarioForm({ usuario }: { usuario?: Usuario }) {
                 type="checkbox"
                 checked={form.ativo}
                 onChange={(e) => updateField("ativo", e.target.checked)}
-                disabled={isSelf}
+                disabled={isSelf || readOnly}
                 className="h-4 w-4 accent-accent"
               />
               Usuário ativo
@@ -212,7 +228,7 @@ function UsuarioForm({ usuario }: { usuario?: Usuario }) {
             <Button type="button" variant="secondary" onClick={backToList}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={isSaving}>
+            <Button type="submit" disabled={isSaving || readOnly}>
               {isSaving ? "Salvando..." : "Salvar"}
             </Button>
           </div>

@@ -12,7 +12,7 @@ import { pgErrorCode } from "../utils/helpers/pg_error.util";
 // the insert/update raced past the service's email check and hit usuarios_email_lower_unique
 const UNIQUE_VIOLATION = "23505";
 
-export const LAST_ACTIVE_ADM_MESSAGE = "Não é possível remover o último administrador ativo";
+export const LAST_ACTIVE_SU_MESSAGE = "Não é possível remover o último superusuário (SU) ativo";
 
 // thrown inside a transaction to roll it back while keeping the Either's error
 class RollbackWith extends Error {
@@ -96,24 +96,24 @@ class UsuarioRepository implements IUsuarioRepository {
   }
 
   // Runs `write` (which may demote, deactivate or delete targetId) in one transaction that first locks
-  // every active ADM row with SELECT ... FOR UPDATE. If targetId is the only active ADM, nothing is written.
+  // every active SU row with SELECT ... FOR UPDATE. If targetId is the only active SU, nothing is written.
   // A concurrent call blocks on those row locks until this one commits; Postgres then re-checks the rows
-  // it waited on and skips any that stopped matching (no longer ADM/ativo), so the second call sees the
-  // first one's change. Two ADMs removing each other at once can't leave the system with none.
-  async writeKeepingAnActiveAdm(
+  // it waited on and skips any that stopped matching (no longer SU/ativo), so the second call sees the
+  // first one's change. Two SUs removing each other at once can't leave the system without one.
+  async writeKeepingAnActiveSu(
     targetId: string,
     write: (repository: IUsuarioRepository) => Promise<Either<BaseAppError, null>>,
   ): Promise<Either<BaseAppError, null>> {
     try {
       return await this.db.transaction(async (tx: DrizzleDB) => {
-        const activeAdms = await tx
+        const activeSus = await tx
           .select({ id: usuarios.id })
           .from(usuarios)
-          .where(and(eq(usuarios.permissoes, "ADM"), eq(usuarios.ativo, true)))
+          .where(and(eq(usuarios.permissoes, "SU"), eq(usuarios.ativo, true)))
           .for("update");
-        const targetIsActiveAdm = activeAdms.some((adm: { id: string }) => adm.id === targetId);
-        if (targetIsActiveAdm && activeAdms.length === 1) {
-          return left(new ValidationError("409", LAST_ACTIVE_ADM_MESSAGE));
+        const targetIsActiveSu = activeSus.some((su: { id: string }) => su.id === targetId);
+        if (targetIsActiveSu && activeSus.length === 1) {
+          return left(new ValidationError("409", LAST_ACTIVE_SU_MESSAGE));
         }
         // same class bound to the transaction, so the write runs under the locks taken above
         const txRepository = new (this.constructor as new (db: DrizzleDB) => IUsuarioRepository)(tx);

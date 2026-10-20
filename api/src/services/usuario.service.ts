@@ -30,7 +30,11 @@ import { comparePassword, hashPassword } from "../utils/helpers/password.util";
 import { generateToken } from "../utils/helpers/token.util";
 import { toUsuarioResponse } from "../mappers/usuario.mapper";
 import { UsuarioResponseDto } from "../dtos/usuario_dtos/usuario_response.dto";
+import { isAdminRole, isSu } from "../utils/helpers/permissoes.util";
 import permissoesUsuarioEnum from "../enums/usuarios_permissoes.enum";
+
+const onlySuError = () =>
+   new ValidationError("403", "Apenas superusuários (SU) podem gerenciar administradores");
 
 class UsuarioService implements IUserService {
      constructor(
@@ -93,11 +97,15 @@ class UsuarioService implements IUserService {
    }
    async createUsuario(
       payload: PayloadCreateUsuario,
+      actor: UsuarioResponseDto,
    ): Promise<Either<BaseAppError, ResponseCreateUsuario>> {
       try {
          const validation = this.userValidator.validateCreatePayload(payload);
          if (validation.isLeft()) {
             return left(validation.value);
+         }
+         if (isAdminRole(payload.permissoes) && !isSu(actor.permissoes)) {
+            return left(onlySuError());
          }
          const emailCheck = await this.ensureEmailAvailable(payload.email);
          if (emailCheck.isLeft()) {
@@ -130,6 +138,7 @@ class UsuarioService implements IUserService {
    async updateUser(
       id: string,
       payload: PayloadUpdateUsuarioDto,
+      actor: UsuarioResponseDto,
    ): Promise<Either<BaseAppError, null>> {
       try {
          const idValidation = this.userValidator.validateUUIDv4(id);
@@ -149,6 +158,17 @@ class UsuarioService implements IUserService {
             return left(emailCheck.value);
          }
          const nextAtivo = payload.ativo ?? existing.value.ativo;
+         // an ADM manages Estoque accounts; on ADM/SU accounts (or to grant ADM/SU) only SU may act.
+         // An ADM may still edit their own nome/email/senha, as long as role and status stay the same
+         const touchesAdminAccount =
+            isAdminRole(existing.value.permissoes) || isAdminRole(payload.permissoes);
+         const isOwnProfileEdit =
+            existing.value.id === actor.id &&
+            payload.permissoes === existing.value.permissoes &&
+            nextAtivo === existing.value.ativo;
+         if (touchesAdminAccount && !isSu(actor.permissoes) && !isOwnProfileEdit) {
+            return left(onlySuError());
+         }
          const row: UsuarioEntity = {
             id,
             nome: payload.nome,
@@ -160,11 +180,10 @@ class UsuarioService implements IUserService {
                ? await hashPassword(payload.senha)
                : existing.value.senha,
          };
-         // only a change that leaves the usuario without active ADM rights needs the guard
-         const removesAdm =
-            payload.permissoes !== permissoesUsuarioEnum.Values.ADM || !nextAtivo;
-         const updated = removesAdm
-            ? await this.userRepository.writeKeepingAnActiveAdm(id, (repository) =>
+         // only a change that leaves the usuario without active SU rights needs the guard
+         const removesSu = !isSu(payload.permissoes) || !nextAtivo;
+         const updated = removesSu
+            ? await this.userRepository.writeKeepingAnActiveSu(id, (repository) =>
                  repository.updateUsuario(row),
               )
             : await this.userRepository.updateUsuario(row);
@@ -183,7 +202,7 @@ class UsuarioService implements IUserService {
       }
    }
 
-   async deleteUser(id: string): Promise<Either<BaseAppError, null>> {
+   async deleteUser(id: string, actor: UsuarioResponseDto): Promise<Either<BaseAppError, null>> {
       try {
          const validation = this.userValidator.validateUUIDv4(id);
          if (validation.isLeft()) {
@@ -193,7 +212,10 @@ class UsuarioService implements IUserService {
          if (userData.isLeft()) {
             return left(userData.value);
          }
-         const userDeletion = await this.userRepository.writeKeepingAnActiveAdm(
+         if (isAdminRole(userData.value.permissoes) && !isSu(actor.permissoes)) {
+            return left(onlySuError());
+         }
+         const userDeletion = await this.userRepository.writeKeepingAnActiveSu(
             id,
             (repository) => repository.deleteUsuario(id),
          );
@@ -210,6 +232,7 @@ class UsuarioService implements IUserService {
    }
    async archiveUser(
       id: string,
+      actor: UsuarioResponseDto,
    ): Promise<Either<BaseAppError, ResponseArchiveUsuario>> {
       try {
          const validation = this.userValidator.validateUUIDv4(id);
@@ -221,6 +244,9 @@ class UsuarioService implements IUserService {
             return left(userData.value);
          }
          const userClass = userData.value;
+         if (isAdminRole(userClass.permissoes) && !isSu(actor.permissoes)) {
+            return left(onlySuError());
+         }
          let userToUpdate: UsuarioEntity = {
             id,
             ativo: false,
@@ -229,7 +255,7 @@ class UsuarioService implements IUserService {
             permissoes: userClass.permissoes,
             email: userClass.email,
          };
-         const userArchiving = await this.userRepository.writeKeepingAnActiveAdm(
+         const userArchiving = await this.userRepository.writeKeepingAnActiveSu(
             id,
             (repository) => repository.updateUsuario(userToUpdate),
          );

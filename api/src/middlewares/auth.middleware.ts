@@ -1,12 +1,12 @@
 import { Request, Response, NextFunction } from "express";
 import ErrorLevelsEnum from "../enums/errors_enums/errors_levels.enum";
-import permissoesUsuarioEnum from "../enums/usuarios_permissoes.enum";
 import { ValidationError } from "../errors/client_errors/four_xx.error";
 import { ServerError } from "../errors/server_errors/five_xx.error";
 import IUsuarioRepository from "../interfaces/usuario_interfaces/usuario_repository.interface";
 import LoggerInterface from "../interfaces/logger_interfaces/logger_interface.interface";
 import { toUsuarioResponse } from "../mappers/usuario.mapper";
 import { verifyToken } from "../utils/helpers/token.util";
+import { isAdminRole } from "../utils/helpers/permissoes.util";
 
 class AuthMiddleware {
    constructor(
@@ -43,9 +43,9 @@ class AuthMiddleware {
       return next();
    };
 
-   // use after authenticate
-   requireAdm = (req: Request, res: Response, next: NextFunction) => {
-      if (req.user?.permissoes === permissoesUsuarioEnum.Values.ADM) {
+   // ADM or SU; use after authenticate. Which accounts an ADM may touch is decided in UsuarioService
+   requireAdminRole = (req: Request, res: Response, next: NextFunction) => {
+      if (isAdminRole(req.user?.permissoes)) {
          return next();
       }
       return this.reject(req, next, "403", "Apenas administradores podem realizar esta ação");

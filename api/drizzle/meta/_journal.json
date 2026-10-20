@@ -8,6 +8,13 @@
       "when": 1792508911324,
       "tag": "0000_usuarios_email_lower_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792510159163,
+      "tag": "0001_permissoes_su",
+      "breakpoints": true
     }
   ]
 }

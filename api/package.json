@@ -43,6 +43,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
+    "admin:promote": "bun scripts/admin_promote.ts",
     "dev": "tsnd --transpile-only --respawn ./src/index.ts --ignore-watch node_modules",
     "start:dev": "tsc && node dist/index.js",
     "start": "node dist/src/index.js",

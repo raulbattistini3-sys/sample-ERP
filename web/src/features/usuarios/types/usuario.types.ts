@@ -1,6 +1,14 @@
 import { z } from "zod/mini";
 
-export const PermissoesEnum = z.enum(["ADM", "Estoque"]);
+// Estoque < ADM < SU; only an SU manages ADM/SU accounts (enforced by the API)
+export const PermissoesEnum = z.enum(["ADM", "Estoque", "SU"]);
+export type Permissoes = z.infer<typeof PermissoesEnum>;
+
+export const permissoesLabels: Record<Permissoes, string> = {
+  Estoque: "Estoque",
+  ADM: "Administrador",
+  SU: "Superusuário",
+};
 
 export const UsuarioSchema = z.object({
   id: z.string(),
