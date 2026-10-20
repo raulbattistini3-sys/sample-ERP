@@ -3,13 +3,14 @@ import BaseController from "./base.controller";
 import LoggerInterface from "../interfaces/logger_interfaces/logger_interface.interface";
 import IntegracaoService from "../services/integracao.service";
 import JiraOutboxRepository from "../repositories/jira_outbox.repository";
-import JiraIssueDispatcher, { MAX_ATTEMPTS } from "../services/jira_issue_dispatcher.service";
+import JiraIssueRelay from "../services/jira_issue_relay.service";
+import { MAX_ATTEMPTS } from "../services/jira_issue_content";
 
 class IntegracaoController extends BaseController {
   constructor(
     private integracaoService: IntegracaoService,
     private jiraOutbox: JiraOutboxRepository,
-    private jiraDispatcher: JiraIssueDispatcher,
+    private jiraRelay: JiraIssueRelay,
     logger: LoggerInterface,
   ) {
     super(logger);
@@ -58,10 +59,10 @@ class IntegracaoController extends BaseController {
     return res.status(200).json({ data: { ...(await this.jiraOutbox.summary(MAX_ATTEMPTS)), maxTentativas: MAX_ATTEMPTS } });
   };
 
-  // failed issues are tried again now
+  // failed issues start over: back to the outbox, and the relay publishes them to Kafka now
   retryJiraQueue = async (req: Request, res: Response) => {
     const reenviadas = await this.jiraOutbox.retryFailed();
-    void this.jiraDispatcher.runOnce();
+    void this.jiraRelay.runOnce();
     return res.status(202).json({ reenviadas });
   };
 

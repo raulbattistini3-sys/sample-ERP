@@ -8,7 +8,9 @@ import IntegracaoService from "../services/integracao.service";
 import IntegracaoController from "../controllers/integracao.controller";
 import { authMiddleware } from "./auth_middleware.instance";
 import JiraOutboxRepository from "../repositories/jira_outbox.repository";
-import JiraIssueDispatcher from "../services/jira_issue_dispatcher.service";
+import KafkaClient from "../messaging/kafka.client";
+import JiraIssuePipeline from "../messaging/jira_issue_pipeline";
+import { kafkaSettings } from "../configs/kafka.config";
 
 const logger = AppLogger.getInstance();
 const db = Config.getInstance().getDb();
@@ -21,9 +23,9 @@ const integracaoService = new IntegracaoService(new IntegracaoRepository(db), pr
   fetch: globalThis.fetch,
 });
 const jiraOutbox = new JiraOutboxRepository(db);
-// sends the Jira issues queued for new auditorias; started by index.ts
-export const jiraDispatcher = new JiraIssueDispatcher(jiraOutbox, integracaoService, logger);
-const integracaoController = new IntegracaoController(integracaoService, jiraOutbox, jiraDispatcher, logger);
+// outbox -> Kafka -> Jira for the issues of new auditorias; started and stopped by index.ts
+export const jiraIssuePipeline = new JiraIssuePipeline(new KafkaClient(kafkaSettings(), logger), jiraOutbox, integracaoService, logger);
+const integracaoController = new IntegracaoController(integracaoService, jiraOutbox, jiraIssuePipeline.relay, logger);
 
 // mounted before AuthMiddleware: the provider redirects the browser here without our token;
 // the single-use OAuth state identifies who started the connection

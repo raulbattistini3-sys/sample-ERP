@@ -1,9 +1,16 @@
 import { sql } from "drizzle-orm";
 import { DrizzleDB } from "../db/client";
 
-// Queue of Jira issues for new auditorias (drizzle/0006_auditoria_jira_issues.sql): one row per
-// (auditoria, categoria it touches). Enqueued on the auditoria's own transaction; sent later by
-// JiraIssueDispatcher.
+// Transactional outbox of Jira issues for new auditorias (drizzle/0006, 0007): one row per
+// (auditoria, categoria it touches), written on the auditoria's own transaction, so none is lost.
+// JiraIssueRelay publishes the rows to Kafka; JiraIssueConsumer creates the issues and records the
+// outcome here, which is also what the pages show.
+//
+//   pendente -> publicada (relay) -> enviando (consumer) -> enviada
+//                                                        -> erro (retried through the Kafka retry topics)
+//                                                        -> cancelada (auditoria removed)
+// publicada/enviando carry a deadline in proxima_tentativa_em; a row past it (a process died mid-way,
+// or a message was lost) is published again by the relay.
 
 // only while Jira is connected and has a project and issue type chosen; otherwise nothing is queued,
 // so auditorias made before connecting don't all land in Jira at once later
@@ -33,6 +40,9 @@ export async function enqueueForCategoria(tx: DrizzleDB, auditoriaId: string, ca
     on conflict (auditoria_id, categoria_id) do nothing`);
 }
 
+// what the relay puts on the topic: just the outbox row; the consumer reads the rest from the database
+export type OutboxMessage = { outboxId: string; auditoriaId: string; categoriaNome: string };
+
 export type QueuedIssue = {
   id: string;
   auditoriaId: string;
@@ -51,7 +61,7 @@ export type QueuedIssue = {
 
 export type IssueQueueEntry = {
   categoriaNome: string;
-  status: "pendente" | "enviada" | "erro" | "cancelada";
+  status: "pendente" | "publicada" | "enviando" | "enviada" | "erro" | "cancelada";
   issueKey: string | null;
   issueUrl: string | null;
   tentativas: number;
@@ -61,21 +71,43 @@ export type IssueQueueEntry = {
 class JiraOutboxRepository {
   constructor(private readonly db: DrizzleDB) {}
 
-  // Takes up to `limit` due rows and leases them for `leaseMinutes` (proxima_tentativa_em moves ahead,
-  // tentativas + 1) in one statement with SKIP LOCKED: concurrent dispatchers, even in other API
-  // instances, never get the same row. A dispatcher that dies mid-send frees its rows when the lease ends.
-  async claimDue(limit: number, maxAttempts: number, leaseMinutes: number): Promise<QueuedIssue[]> {
+  // Rows to put on Kafka: new ones, and any publicada/enviando/erro row whose deadline passed (its
+  // message or its consumer was lost). They become 'publicada' for `publishWindowMinutes`; SKIP LOCKED
+  // keeps two relays (two API instances) from taking the same rows.
+  async claimForPublish(limit: number, maxAttempts: number, publishWindowMinutes: number): Promise<OutboxMessage[]> {
+    const { rows } = await this.db.execute(sql`
+      update auditoria_jira_issues set status = 'publicada',
+        proxima_tentativa_em = now() + make_interval(mins => ${publishWindowMinutes})
+      where id in (
+        select id from auditoria_jira_issues
+        where status = 'pendente'
+           or (status in ('publicada', 'enviando') and proxima_tentativa_em < now())
+           or (status = 'erro' and tentativas < ${maxAttempts} and proxima_tentativa_em < now() - interval '10 minutes')
+        order by criado_em
+        limit ${limit}
+        for update skip locked)
+      returning id, auditoria_id, categoria_nome`);
+    return (rows as any[]).map((r) => ({ outboxId: r.id, auditoriaId: r.auditoria_id, categoriaNome: r.categoria_nome }));
+  }
+
+  // the relay couldn't reach Kafka: back to 'pendente' so the next tick tries again
+  async releaseUnpublished(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    await this.db.execute(sql`
+      update auditoria_jira_issues set status = 'pendente', proxima_tentativa_em = now()
+      where id in (${idList(ids)}) and status = 'publicada'`);
+  }
+
+  // The consumer takes one row to send it. Single statement: a message delivered twice (Kafka is
+  // at-least-once) or handled by two consumers only creates the issue once. null = nothing to do
+  // (already sent, being sent within its lease, or cancelled).
+  async claimForSend(id: string, leaseMinutes: number): Promise<QueuedIssue | null> {
     const { rows } = await this.db.execute(sql`
       with claimed as (
-        update auditoria_jira_issues set
-          tentativas = tentativas + 1,
+        update auditoria_jira_issues set status = 'enviando', tentativas = tentativas + 1,
           proxima_tentativa_em = now() + make_interval(mins => ${leaseMinutes})
-        where id in (
-          select id from auditoria_jira_issues
-          where status in ('pendente', 'erro') and proxima_tentativa_em <= now() and tentativas < ${maxAttempts}
-          order by criado_em
-          limit ${limit}
-          for update skip locked)
+        where id = ${id}
+          and (status in ('pendente', 'publicada', 'erro') or (status = 'enviando' and proxima_tentativa_em < now()))
         returning *)
       select j.id, j.auditoria_id, j.categoria_nome, j.tentativas,
              a.acao_efetuada::text as acao, (extract(epoch from a.data_de_audicao) * 1000)::float8 as data_de_audicao,
@@ -88,9 +120,10 @@ class JiraOutboxRepository {
       from claimed j
       join auditorias a on a.id = j.auditoria_id
       left join detalhamentos_auditoria d on d.id = a.detalhamento_auditoria_id
-      left join usuarios u on u.id = a.usuario_id
-      order by j.criado_em`);
-    return (rows as any[]).map((r) => ({
+      left join usuarios u on u.id = a.usuario_id`);
+    const r = rows[0] as any;
+    if (!r) return null;
+    return {
       id: r.id,
       auditoriaId: r.auditoria_id,
       categoriaNome: r.categoria_nome,
@@ -104,7 +137,7 @@ class JiraOutboxRepository {
       observacoes: r.observacoes,
       produtos: r.produtos,
       auditoriaRemovida: r.auditoria_removida,
-    }));
+    };
   }
 
   async markSent(id: string, issueKey: string, issueUrl: string): Promise<void> {
@@ -114,10 +147,12 @@ class JiraOutboxRepository {
       where id = ${id}`);
   }
 
-  async markFailed(id: string, message: string, retryInSeconds: number): Promise<void> {
+  // retryInMs: when the retry topic will deliver it again (shown on the pages; past it plus a grace
+  // period, the relay republishes it in case the retry message was lost); null = gave up
+  async markFailed(id: string, message: string, retryInMs: number | null): Promise<void> {
     await this.db.execute(sql`
       update auditoria_jira_issues set status = 'erro', ultimo_erro = ${message.slice(0, 1000)},
-        proxima_tentativa_em = now() + make_interval(secs => ${retryInSeconds})
+        proxima_tentativa_em = ${retryInMs === null ? sql`now()` : sql`now() + make_interval(secs => ${retryInMs / 1000})`}
       where id = ${id}`);
   }
 
@@ -143,13 +178,13 @@ class JiraOutboxRepository {
     enviadas: number;
     pendentes: number;
     comErro: number;
-    esgotadas: number; // gave up after maxAttempts; only "Reenviar" brings them back
+    esgotadas: number; // gave up after maxAttempts (also on the dead-letter topic); only "Reenviar" brings them back
     erros: { categoriaNome: string; auditoriaId: string; ultimoErro: string | null; tentativas: number }[];
   }> {
     const { rows } = await this.db.execute(sql`
       select
         count(*) filter (where status = 'enviada')::int as enviadas,
-        count(*) filter (where status = 'pendente')::int as pendentes,
+        count(*) filter (where status in ('pendente', 'publicada', 'enviando'))::int as pendentes,
         count(*) filter (where status = 'erro' and tentativas < ${maxAttempts})::int as com_erro,
         count(*) filter (where status = 'erro' and tentativas >= ${maxAttempts})::int as esgotadas
       from auditoria_jira_issues`);
@@ -171,10 +206,10 @@ class JiraOutboxRepository {
     };
   }
 
-  // "Reenviar": failed rows (including the ones that gave up) are tried again right away
+  // "Reenviar": failed rows (including the ones that gave up) start over and the relay publishes them
   async retryFailed(): Promise<number> {
     const { rowCount } = await this.db.execute(sql`
-      update auditoria_jira_issues set tentativas = 0, proxima_tentativa_em = now()
+      update auditoria_jira_issues set status = 'pendente', tentativas = 0, proxima_tentativa_em = now()
       where status = 'erro'`);
     return rowCount ?? 0;
   }
