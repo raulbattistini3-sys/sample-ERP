@@ -2,7 +2,15 @@ import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tansta
 import { LIST_PAGE_SIZE } from "../../../lib/pagination";
 import { downloadTextFile } from "../../../lib/csv";
 import { fetchProductsForDownload, productsFileName, productsToCsv } from "../utils/productsSpreadsheet";
-import { getProducts, getProductById, createProduct, updateProduct, deactivateProduct, deleteProduct } from "../api/product.api";
+import {
+  getProducts,
+  getProductById,
+  createProduct,
+  updateProduct,
+  deactivateProduct,
+  deleteProduct,
+  importProducts,
+} from "../api/product.api";
 
 // keeps the current page on screen while the next one loads
 export const useProducts = (page = 1, amount = LIST_PAGE_SIZE) =>
@@ -55,3 +63,13 @@ export const useDownloadProducts = () =>
       downloadTextFile(productsFileName(), productsToCsv(products, totals));
     },
   });
+
+export const useImportProducts = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: importProducts,
+    onSuccess: (result) => {
+      if (result.errors.length === 0) queryClient.invalidateQueries({ queryKey: ["products"] });
+    },
+  });
+};

@@ -1,4 +1,4 @@
-import { Download, Loader2, Plus } from "lucide-react";
+import { Download, Loader2, Plus, Upload } from "lucide-react";
 import { useDownloadProducts, useProducts } from "../hooks/useProducts";
 import { DataTable } from "../../../components/ui/DataTable";
 import { Button } from "../../../components/ui/Button";
@@ -7,12 +7,15 @@ import { ErrorAlert, LoadingState, PageHeader } from "../../../components/ui/Pag
 import { useClampPage, useListPage } from "../../../hooks/useListPage";
 import { getApiErrorMessage } from "../../../lib/api-client";
 import { LIST_PAGE_SIZE } from "../../../lib/pagination";
+import { isAdminRole } from "../../../lib/permissoes";
+import { useAuth } from "../../../context/AuthContext";
 import { productColumns } from "../components/columns";
 
 export function ProductListPage() {
   const { page, setPage, openItem } = useListPage();
   const { data, isLoading, error, isPlaceholderData } = useProducts(page);
   const downloadMutation = useDownloadProducts();
+  const { user } = useAuth();
   useClampPage(page, setPage, data, isPlaceholderData);
 
   return (
@@ -33,6 +36,12 @@ export function ProductListPage() {
               )}
               Baixar planilha
             </Button>
+            {isAdminRole(user?.permissoes) && (
+              <Button variant="secondary" onClick={() => openItem("/products/import")}>
+                <Upload className="h-4 w-4" aria-hidden="true" />
+                Importar planilha
+              </Button>
+            )}
             <Button onClick={() => openItem("/products/new")}>
               <Plus className="h-4 w-4" aria-hidden="true" />
               Novo produto

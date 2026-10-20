@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { DrizzleDB } from "../db/client";
 import { produtos } from "../db/schema/product.schema";
 import { categorias } from "../db/schema/categoria.schema";
@@ -8,6 +8,7 @@ import { Either, left, right } from "../globals/errors/left_right_either.error";
 import { RepositoryError } from "../globals/errors/global_repository_error.error";
 import { BaseAppError } from "../errors/global_error.error";
 import { ValidationError } from "../errors/client_errors/four_xx.error";
+import { ProductImportWrites } from "../dtos/product_dtos/import_products.dto";
 
 class ProductRepository implements IProductRepository {
   constructor(private readonly db: DrizzleDB) {}
@@ -38,6 +39,37 @@ class ProductRepository implements IProductRepository {
         .where(includeInactive ? undefined : eq(produtos.ativo, true))
         .orderBy(asc(produtos.name));
       return right(productData);
+    } catch (error) {
+      return left(new RepositoryError("Database error", error));
+    }
+  }
+
+  // products (active or not) whose SKU is in skus, to decide create vs update on import
+  async getProductsBySkus(skus: string[]): Promise<Either<RepositoryError, { id: string; sku: string }[]>> {
+    try {
+      if (skus.length === 0) return right([]);
+      const rows = await this.db
+        .select({ id: produtos.id, sku: produtos.sku })
+        .from(produtos)
+        .where(inArray(produtos.sku, skus));
+      return right(rows);
+    } catch (error) {
+      return left(new RepositoryError("Database error", error));
+    }
+  }
+
+  // all writes of one import in a single transaction: every row is saved, or none
+  async importProducts({ creates, updates }: ProductImportWrites): Promise<Either<RepositoryError, null>> {
+    try {
+      await this.db.transaction(async (tx: DrizzleDB) => {
+        if (creates.length > 0) {
+          await tx.insert(produtos).values(creates);
+        }
+        for (const { id, values } of updates) {
+          await tx.update(produtos).set(values).where(eq(produtos.id, id));
+        }
+      });
+      return right(null);
     } catch (error) {
       return left(new RepositoryError("Database error", error));
     }

@@ -1,7 +1,7 @@
 // CSV for Excel/LibreOffice in pt-BR: ";" separates columns because "," is the decimal separator,
 // and the UTF-8 BOM makes Excel show accents correctly
 const SEPARATOR = ";";
-const BOM = "﻿";
+const BOM = "\uFEFF";
 
 const escapeField = (value: string) =>
   /[";\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;

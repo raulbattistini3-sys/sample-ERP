@@ -37,6 +37,18 @@ export const CreateProdutoSchema = z.object({
         .nonnegative("É necessário que a quantidade em estoque seja positiva."),
 });
 
+// POST /products/import: the envelope; each row is then checked on its own against
+// CreateProdutoSchema, so every row's problems can be reported at once
+export const MAX_IMPORT_ROWS = 5000;
+export const ImportProdutosSchema = z.object({
+    rows: z
+        .array(z.object({ linha: z.number().int().positive() }).passthrough(), {
+            required_error: "Envie as linhas da planilha.",
+        })
+        .min(1, "A planilha não tem nenhum produto.")
+        .max(MAX_IMPORT_ROWS, `Importe no máximo ${MAX_IMPORT_ROWS} produtos por vez.`),
+});
+
 // PUT /products/:id: same rules as create plus the id (taken from the URL);
 // data_de_cadastro is never changed, so it's ignored if sent
 export const UpdateProdutoSchema = CreateProdutoSchema.extend({
