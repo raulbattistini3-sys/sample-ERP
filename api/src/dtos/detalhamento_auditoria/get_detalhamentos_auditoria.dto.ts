@@ -2,13 +2,13 @@ import {
     BaseMessageGet,
     BaseMessageGetOne,
 } from "../global_get.dto";
-import { DetalhamentoAuditoriaEntity } from "../../entities/detalhamento_auditoria.entity";
+import { DetalhamentoAuditoriaResponseDto } from "./detalhamento_auditoria_response.dto";
 
 type ResponseGetDetalhamentosAuditoriaDto =
-    BaseMessageGet<DetalhamentoAuditoriaEntity>;
+    BaseMessageGet<DetalhamentoAuditoriaResponseDto>;
 
 type ResponseFindDetalhamentoAuditoriaDto =
-    BaseMessageGetOne<DetalhamentoAuditoriaEntity>;
+    BaseMessageGetOne<DetalhamentoAuditoriaResponseDto>;
 
 export {
     ResponseFindDetalhamentoAuditoriaDto,

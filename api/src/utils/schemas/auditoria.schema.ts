@@ -1,39 +1,47 @@
 import { z } from "zod";
-import acaoEfetuadaEnum, {
-    AcaoEfetuadaEnum,
-} from "../../enums/acao_efetuada.enum";
-import DetalhamentoAuditoriaSchema from "./detalhamento_auditoria.schema";
+import acaoEfetuadaEnum from "../../enums/acao_efetuada.enum";
 
-const acaoEfetuadasTipos = Object.values(acaoEfetuadaEnum).join(", ");
+const acaoEfetuadaMessage = `A ação efetuada deve ser uma de: ${acaoEfetuadaEnum.options.join(", ")}`;
 
-const AuditoriaSchema = z.object({
-    id: z
-        .string()
-        .uuid()
-        .nonempty("É necessário prover um ID para a auditoria."),
+// decimals may arrive as numbers or as numeric strings ("12.50")
+const valor = (label: string) =>
+    z.coerce
+        .number({ invalid_type_error: `${label} precisa ser um número` })
+        .nonnegative(`${label} precisa ser positivo`);
+
+// POST /auditoria: creates the detalhamento, the auditoria and its produtos in one go
+export const CreateAuditoriaSchema = z.object({
+    acao_efetuada: z.enum(acaoEfetuadaEnum.options, {
+        errorMap: () => ({ message: acaoEfetuadaMessage }),
+    }),
+    // ISO string over the wire
+    data_de_audicao: z.coerce.date({
+        errorMap: () => ({ message: "Informe uma data de auditoria válida" }),
+    }),
+    // the auditor; their name comes from the usuarios endpoint, it isn't stored here
+    usuario_id: z
+        .string({ required_error: "É necessário prover o usuário auditor." })
+        .uuid("Usuário auditor inválido"),
     itens: z
-        .string()
-        .array()
-        .nonempty("É necessário haver um produto para se fazer a auditoria.")
-        .or(
-            z.string().nonempty("É necesśario prover um Produto na auditoria.")
-        ),
-    acao_efetuada: z
-        .string()
-        .refine(
-            (value) =>
-                Object.values(acaoEfetuadaEnum).includes(
-                    value as AcaoEfetuadaEnum
-                ),
-            {
-                message: `As categorias devem ser dos tipos ${acaoEfetuadasTipos}`,
-            }
-        ),
-    data_de_audicao: z.date().default(new Date()),
-    nome_do_auditor: z
-        .string()
-        .nonempty("É necessário prover o nome do auditor."),
-    detalhamento_auditoria: DetalhamentoAuditoriaSchema,
+        .array(z.string().uuid("Produto inválido"), {
+            required_error: "É necessário haver um produto para se fazer a auditoria.",
+        })
+        .nonempty("É necessário haver um produto para se fazer a auditoria."),
+    detalhamento_auditoria: z.object(
+        {
+            nome_do_produto: z
+                .string()
+                .trim()
+                .nonempty("É necessário prover o nome do produto da auditoria"),
+            valor_anterior: valor("O valor anterior"),
+            valor_atual: valor("O valor atual"),
+            observacoes_adicionais: z.string().trim().default(""),
+        },
+        { required_error: "É necessário prover o detalhamento da auditoria" },
+    ),
 });
 
-export default AuditoriaSchema;
+// PUT /auditoria/:id
+export const UpdateAuditoriaSchema = CreateAuditoriaSchema.extend({
+    id: z.string().uuid("É necessário prover um ID válido para a auditoria."),
+});

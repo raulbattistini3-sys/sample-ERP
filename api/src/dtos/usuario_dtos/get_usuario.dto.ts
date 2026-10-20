@@ -1,8 +1,8 @@
 import { BaseMessageGetOne, BaseMessageGet } from "../global_get.dto";
-import { UsuarioEntity } from "../../entities/usuario.entity";
+import { UsuarioResponseDto } from "./usuario_response.dto";
 
-type ResponseGetUsuariosDto = BaseMessageGet<UsuarioEntity>;
+type ResponseGetUsuariosDto = BaseMessageGet<UsuarioResponseDto>;
 
-type ResponseFindUsuarioByIdDto = BaseMessageGetOne<UsuarioEntity>;
+type ResponseFindUsuarioByIdDto = BaseMessageGetOne<UsuarioResponseDto>;
 
 export { ResponseGetUsuariosDto, ResponseFindUsuarioByIdDto };

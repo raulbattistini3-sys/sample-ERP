@@ -14,6 +14,7 @@ import IDetalhamentoAuditoriaService from "../interfaces/detalhamento_auditoria_
 import DetalhamentoAuditoriaRepository from "../repositories/detalhamento_auditoria.repository";
 import DetalhamentoAuditoriaValidator from "../validators/detalhamento_auditoria.validator";
 import { ServerError } from "../errors/server_errors/five_xx.error";
+import { toDetalhamentoAuditoriaResponse } from "../mappers/auditoria.mapper";
 import paginate from "../utils/helpers/paginate_data.helper";
 
 class DetalhamentoAuditoriaService implements IDetalhamentoAuditoriaService {
@@ -37,7 +38,9 @@ class DetalhamentoAuditoriaService implements IDetalhamentoAuditoriaService {
          const detalhamentosAuditoria =
             await this.detalhamentoAuditoriaRepository.getDetalhamentoAuditorias();
          if (detalhamentosAuditoria.isLeft()) {
-            return left(new ServerError("500", true, "internal server error"));
+            return left(
+               new ServerError("500", true, "internal server error", detalhamentosAuditoria.value),
+            );
          }
          const paginatedData = paginate(
             detalhamentosAuditoria.value,
@@ -45,7 +48,7 @@ class DetalhamentoAuditoriaService implements IDetalhamentoAuditoriaService {
             amount,
          );
          const response: ResponseGetDetalhamentosAuditoriaDto = {
-            data: paginatedData.data,
+            data: paginatedData.data.map(toDetalhamentoAuditoriaResponse),
             pageNumber: paginatedData.currentPage,
             pageSize: paginatedData.perPage,
             totalItems: paginatedData.totalItems,
@@ -79,7 +82,7 @@ class DetalhamentoAuditoriaService implements IDetalhamentoAuditoriaService {
             return left(new ServerError("500", true, "internal server error"));
          }
          const response: ResponseFindDetalhamentoAuditoriaDto = {
-            data: detalhamentoAuditoria.value,
+            data: toDetalhamentoAuditoriaResponse(detalhamentoAuditoria.value),
          };
          return right(response);
       } catch (error) {
@@ -106,7 +109,7 @@ class DetalhamentoAuditoriaService implements IDetalhamentoAuditoriaService {
             return left(detalhamentoAuditoria.value);
          }
          const response: ResponseCreateDetalhamentoAuditoriaDto =
-            detalhamentoAuditoria.value;
+            toDetalhamentoAuditoriaResponse(detalhamentoAuditoria.value);
          return right(response);
       } catch (error) {
          if (error instanceof ValidationError) {

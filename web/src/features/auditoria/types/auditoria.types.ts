@@ -14,7 +14,7 @@ export const AuditoriaSchema = z.object({
   id: z.string(),
   acao_efetuada: AcaoEfetuadaEnum,
   data_de_audicao: z.string(),
-  nome_do_auditor: z.string(), // usuario id — see naming note below
+  usuario_id: z.string(), // the auditor; useAuditorNames resolves it to a name via the usuarios endpoint
   detalhamento_auditoria_id: z.nullable(z.string()),
 });
 export type Auditoria = z.infer<typeof AuditoriaSchema>;
@@ -23,7 +23,7 @@ export type Auditoria = z.infer<typeof AuditoriaSchema>;
 export const CreateAuditoriaSchema = z.object({
   acao_efetuada: AcaoEfetuadaEnum,
   data_de_audicao: z.string(),
-  nome_do_auditor: z.string(),
+  usuario_id: z.string(),
   itens: z.array(z.string()),
   detalhamento_auditoria: CreateDetalhamentoAuditoriaSchema,
 });

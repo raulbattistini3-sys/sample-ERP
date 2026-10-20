@@ -10,6 +10,11 @@ export const saveSession = (token: string, user: Usuario) => {
   localStorage.setItem(USER_KEY, JSON.stringify(user));
 };
 
+// keeps the token, replaces the stored user (e.g. after its role changed on the server)
+export const saveStoredUser = (user: Usuario) => {
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+};
+
 export const clearSession = () => {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);

@@ -1,31 +1,17 @@
-import Categoria from "../../entities/categoria.entity";
-import { ProductEntity } from "../../entities/product.entity";
-import { BaseDefaultMessage } from "../global_get.dto";
+import { Categoria } from "../../entities/categoria.entity";
+import { ProductResponseDto } from "./product_response.dto";
 
-type CreateProductDto = Omit<ProductEntity, "id" | "ativo" | "categoria"> & {
-    categoria: Pick<Categoria, "nome">;
-};
-
-type CreateProductDtoFallback = {
+// the API speaks snake_case; product.mapper.ts converts to/from the camelCase table columns
+type CreateProductDto = {
     name: string;
-    ativo: boolean;
     sku: string;
-    categoria: string;
+    categoria: Pick<Categoria, "nome">;
     valor_de_custo: number;
-    icms: number;
-    valor_de_venda: number;
-    data_de_cadastro: Date;
+    icms?: number;
+    valor_de_venda?: number;
     quantidade_em_estoque: number;
 };
 
-interface MessageCreateProduct extends BaseDefaultMessage {
-    mensagem: string;
-    status: boolean;
-}
+type ResponseCreateProductDto = ProductResponseDto;
 
-type ResponseCreateProductDto = 
-    Omit<ProductEntity, "categoria"> & {
-        categoria: Pick<Categoria, "nome" | "tipo" | "id">;
-    };
-
-export { CreateProductDto, CreateProductDtoFallback, ResponseCreateProductDto };
+export { CreateProductDto, ResponseCreateProductDto };

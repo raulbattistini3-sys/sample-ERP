@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { useBackToList } from "../../../hooks/useListPage";
 import { Archive, ArrowLeft, Trash2 } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { ErrorAlert, FormCard, LoadingState, PageHeader } from "../../../components/ui/PageState";
@@ -27,18 +28,16 @@ const money = (value: string) => {
 
 export const AuditoriaDetailPage = () => {
   const { id = "" } = useParams();
-  const navigate = useNavigate();
   const auditorNames = useAuditorNames();
 
   const { data: auditoria, isLoading, error } = useAuditoria(id);
   const detalhamentoQuery = useDetalhamentoAuditoria(auditoria?.detalhamento_auditoria_id ?? "");
   const archiveMutation = useArchiveAuditoria();
   const deleteMutation = useDeleteAuditoria();
+  const backToList = useBackToList("/auditoria");
 
   if (isLoading) return <LoadingState />;
   if (error || !auditoria) return <ErrorAlert message={getApiErrorMessage(error, "Auditoria não encontrada.")} />;
-
-  const backToList = () => navigate("/auditoria");
 
   const handleArchive = () => {
     if (!window.confirm("Arquivar esta auditoria?")) return;
@@ -84,7 +83,7 @@ export const AuditoriaDetailPage = () => {
           <dl className="grid gap-4 sm:grid-cols-3">
             <Detail label="Ação">{acaoEfetuadaLabels[auditoria.acao_efetuada] ?? auditoria.acao_efetuada}</Detail>
             <Detail label="Data">{formatDateTime(auditoria.data_de_audicao)}</Detail>
-            <Detail label="Auditor">{auditorNames.get(auditoria.nome_do_auditor) ?? auditoria.nome_do_auditor}</Detail>
+            <Detail label="Auditor">{auditorNames.get(auditoria.usuario_id) ?? auditoria.usuario_id}</Detail>
           </dl>
         </FormCard>
 

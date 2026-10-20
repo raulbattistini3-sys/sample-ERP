@@ -1,7 +1,8 @@
 import { apiClient, ItemResponse, ListResponse } from "../../../lib/api-client";
 import { CreateProductPayload, UpdateProductPayload, Product } from "../types/produto.types";
 
-export const getProducts = () => apiClient.get<ListResponse<Product>>("/products").then((r) => r.data.data);
+export const getProducts = (page: number, amount: number) =>
+  apiClient.get<ListResponse<Product>>("/products", { params: { page, amount } }).then((r) => r.data);
 export const getProductById = (id: string) =>
   apiClient.get<ItemResponse<Product>>(`/products/${id}`).then((r) => r.data.data);
 export const getProductsByFilter = (params: Record<string, string>) =>

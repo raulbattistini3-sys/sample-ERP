@@ -1,11 +1,16 @@
-import { eq, isNull } from "drizzle-orm";
+import { desc, eq, isNull } from "drizzle-orm";
 import { DrizzleDB } from "../db/client";
 import { auditorias } from "../db/schema/auditoria.schema";
+import { detalhamentosAuditoria } from "../db/schema/detalhamento_auditoria.schema";
+import { produtosPorAuditoria } from "../db/schema/produtos_por_auditoria.schema";
 import { AuditoriaEntity } from "../entities/auditoria.entity";
 import IAuditoryRepository from "../interfaces/auditory_interfaces/auditoria_repository.interface";
 import { RepositoryError } from "../globals/errors/global_repository_error.error";
 import { Either, right, left } from "../globals/errors/left_right_either.error";
-import { PayloadCreateAuditoria } from "../dtos/auditoria_dtos/create_auditoria.dto";
+import { BaseAppError } from "../errors/global_error.error";
+import { ValidationError } from "../errors/client_errors/four_xx.error";
+import { pgErrorCode } from "../utils/helpers/pg_error.util";
+import { NewAuditoriaWithItens } from "../dtos/auditoria_dtos/create_auditoria.dto";
 import { GetUserPreviousAudictionsDto } from "../dtos/auditoria_dtos/get_auditoria.dto";
 
 class AuditoriaRepository implements IAuditoryRepository {
@@ -13,21 +18,23 @@ class AuditoriaRepository implements IAuditoryRepository {
 
   async getAuditorias(): Promise<Either<RepositoryError, AuditoriaEntity[]>> {
     try {
-      const auditoriasData = await this.db.select().from(auditorias).where(isNull(auditorias.deletedAt));
-      if (!auditoriasData || auditoriasData.length === 0) {
-        return left(new RepositoryError("No auditorias found"));
-      }
+      // newest first, so paging walks back in time
+      const auditoriasData = await this.db
+        .select()
+        .from(auditorias)
+        .where(isNull(auditorias.deletedAt))
+        .orderBy(desc(auditorias.dataDeAudicao));
       return right(auditoriasData);
     } catch (error) {
       return left(new RepositoryError("Database error", error));
     }
   }
 
-  async getAuditoriaById(id: string): Promise<Either<RepositoryError, AuditoriaEntity>> {
+  async getAuditoriaById(id: string): Promise<Either<BaseAppError, AuditoriaEntity>> {
     try {
       const [auditoria] = await this.db.select().from(auditorias).where(eq(auditorias.id, id)).limit(1);
       if (!auditoria) {
-        return left(new RepositoryError("No auditoria found"));
+        return left(new ValidationError("404", "Auditoria não encontrada"));
       }
       return right(auditoria);
     } catch (error) {
@@ -35,14 +42,30 @@ class AuditoriaRepository implements IAuditoryRepository {
     }
   }
 
-  async createAuditoria(payload: PayloadCreateAuditoria): Promise<Either<RepositoryError, AuditoriaEntity>> {
+  // detalhamento, auditoria and its produtos are written together or not at all
+  async createAuditoria({
+    auditoria,
+    detalhamento,
+    produtoIds,
+  }: NewAuditoriaWithItens): Promise<Either<BaseAppError, AuditoriaEntity>> {
     try {
-      if (!payload) {
-        return left(new RepositoryError("No payload found"));
-      }
-      const [auditoria] = await this.db.insert(auditorias).values(payload).returning();
-      return right(auditoria);
+      const created = await this.db.transaction(async (tx: DrizzleDB) => {
+        const [detalhamentoRow] = await tx.insert(detalhamentosAuditoria).values(detalhamento).returning();
+        const [auditoriaRow] = await tx
+          .insert(auditorias)
+          .values({ ...auditoria, detalhamentoAuditoriaId: detalhamentoRow.id })
+          .returning();
+        await tx
+          .insert(produtosPorAuditoria)
+          .values(produtoIds.map((produtoId) => ({ auditoriaId: auditoriaRow.id, produtoId })));
+        return auditoriaRow;
+      });
+      return right(created);
     } catch (error) {
+      // foreign key violation: the usuario or one of the produtos doesn't exist
+      if (pgErrorCode(error) === "23503") {
+        return left(new ValidationError("404", "Usuário auditor ou produto não encontrado", error));
+      }
       return left(new RepositoryError("Database error", error));
     }
   }
@@ -71,7 +94,7 @@ class AuditoriaRepository implements IAuditoryRepository {
       const auditoriasData = await this.db
         .select()
         .from(auditorias)
-        .where(eq(auditorias.nomeDoAuditorId, userId));
+        .where(eq(auditorias.usuarioId, userId));
       if (!auditoriasData || auditoriasData.length === 0) {
         return left(new RepositoryError("No auditorias found"));
       }

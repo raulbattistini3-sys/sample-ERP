@@ -9,13 +9,13 @@ import { produtosPorAuditoria } from "./produtos_por_auditoria.schema";
 export const usuariosRelations = relations(usuarios, ({ one }) => ({
   auditoriaRealizada: one(auditorias, {
     fields: [usuarios.id],
-    references: [auditorias.nomeDoAuditorId],
+    references: [auditorias.usuarioId],
   }),
 }));
 
 export const auditoriasRelations = relations(auditorias, ({ one, many }) => ({
   auditor: one(usuarios, {
-    fields: [auditorias.nomeDoAuditorId],
+    fields: [auditorias.usuarioId],
     references: [usuarios.id],
   }),
   detalhamento: one(detalhamentosAuditoria, {

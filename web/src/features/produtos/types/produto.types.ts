@@ -15,7 +15,8 @@ export const ProductSchema = z.object({
 });
 export type Product = z.infer<typeof ProductSchema>;
 
-export const CreateProductSchema = z.omit(ProductSchema, { id: true, ativo: true });
+// id, ativo and data_de_cadastro are set by the API on create
+export const CreateProductSchema = z.omit(ProductSchema, { id: true, ativo: true, data_de_cadastro: true });
 export type CreateProductPayload = z.infer<typeof CreateProductSchema>;
 
 export const UpdateProductSchema = ProductSchema; // full shape required, matches your PUT /:id
@@ -32,6 +33,6 @@ export const ProductFormSchema = z.object({
   valor_de_custo: amount("o valor de custo"),
   icms: amount("o ICMS"),
   valor_de_venda: amount("o valor de venda"),
-  quantidade_em_estoque: amount("a quantidade"),
+  quantidade_em_estoque: amount("a quantidade").check(z.int("A quantidade precisa ser um número inteiro")),
 });
 export type ProductFormValues = z.infer<typeof ProductFormSchema>;

@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { useBackToList } from "../../../hooks/useListPage";
 import { Archive, Trash2 } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Field, Input, Select } from "../../../components/ui/Field";
@@ -48,8 +49,6 @@ export const UsuarioFormPage = () => {
 };
 
 function UsuarioForm({ usuario }: { usuario?: Usuario }) {
-  const navigate = useNavigate();
-  const location = useLocation();
   const { user } = useAuth();
   const isEdit = !!usuario;
 
@@ -72,9 +71,7 @@ function UsuarioForm({ usuario }: { usuario?: Usuario }) {
     setFieldErrors((prev) => ({ ...prev, [field]: undefined }));
   };
 
-  // set by UsuarioListPage so saving/cancelling returns to the page the admin came from
-  const listSearch = (location.state as { listSearch?: string } | null)?.listSearch ?? "";
-  const backToList = () => navigate(`/usuarios${listSearch}`);
+  const backToList = useBackToList("/usuarios");
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();

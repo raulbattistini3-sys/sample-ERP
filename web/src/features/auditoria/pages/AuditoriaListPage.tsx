@@ -1,25 +1,25 @@
 import { useMemo } from "react";
-import { useNavigate } from "react-router-dom";
 import { Plus } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { DataTable } from "../../../components/ui/DataTable";
+import { Pagination } from "../../../components/ui/Pagination";
 import { ErrorAlert, LoadingState, PageHeader } from "../../../components/ui/PageState";
+import { useClampPage, useListPage } from "../../../hooks/useListPage";
 import { getApiErrorMessage } from "../../../lib/api-client";
+import { LIST_PAGE_SIZE } from "../../../lib/pagination";
 import { AuditoriaRow, auditoriaColumns } from "../components/columns";
 import { useAuditorias } from "../hooks/useAuditoria";
 import { useAuditorNames } from "../hooks/useAuditorNames";
 
 export const AuditoriaListPage = () => {
-  const { data, isLoading, error } = useAuditorias();
+  const { page, setPage, openItem } = useListPage();
+  const { data, isLoading, error, isPlaceholderData } = useAuditorias(page);
+  useClampPage(page, setPage, data, isPlaceholderData);
   const auditorNames = useAuditorNames();
-  const navigate = useNavigate();
 
-  // newest first; the table's own sorting still works on top of this
+  // the API already returns newest first across pages; the table's own sorting still works within a page
   const rows = useMemo<AuditoriaRow[]>(
-    () =>
-      (data ?? [])
-        .map((a) => ({ ...a, auditor: auditorNames.get(a.nome_do_auditor) ?? a.nome_do_auditor }))
-        .sort((a, b) => b.data_de_audicao.localeCompare(a.data_de_audicao)),
+    () => (data?.data ?? []).map((a) => ({ ...a, auditor: auditorNames.get(a.usuario_id) ?? a.usuario_id })),
     [data, auditorNames],
   );
 
@@ -28,7 +28,7 @@ export const AuditoriaListPage = () => {
       <PageHeader
         title="Auditoria"
         actions={
-          <Button onClick={() => navigate("/auditoria/new")}>
+          <Button onClick={() => openItem("/auditoria/new")}>
             <Plus className="h-4 w-4" aria-hidden="true" />
             Nova auditoria
           </Button>
@@ -39,12 +39,22 @@ export const AuditoriaListPage = () => {
       ) : error ? (
         <ErrorAlert message={getApiErrorMessage(error, "Erro ao carregar auditorias.")} />
       ) : (
-        <DataTable
-          columns={auditoriaColumns}
-          data={rows}
-          onRowClick={(a) => navigate(`/auditoria/${a.id}`)}
-          emptyMessage="Nenhuma auditoria registrada."
-        />
+        <>
+          <DataTable
+            columns={auditoriaColumns}
+            data={rows}
+            onRowClick={(a) => openItem(`/auditoria/${a.id}`)}
+            emptyMessage="Nenhuma auditoria registrada."
+          />
+          {data && (
+            <Pagination
+              page={page}
+              pageSize={LIST_PAGE_SIZE}
+              totalItems={data.totalItems}
+              onPageChange={(next) => setPage(next)}
+            />
+          )}
+        </>
       )}
     </div>
   );

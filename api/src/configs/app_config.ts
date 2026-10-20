@@ -36,7 +36,6 @@ class Config {
   }
 
   public getDb(): NodePgDatabase<typeof schema> {
-    console.log("DB host in use:", new URL(process.env.DATABASE_URL!).host);
     if (!this.db) {
       const pool = new Pool({
         connectionString: process.env.DATABASE_URL,

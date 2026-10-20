@@ -1,7 +1,8 @@
 import { UsuarioEntity } from "../../entities/usuario.entity";
+import { UsuarioResponseDto } from "./usuario_response.dto";
 
 type PayloadLoginUsuarioDto = Pick<UsuarioEntity, "id" | "email" | "senha">;
-type ResponseLoginUsuarioDto = Omit<UsuarioEntity, "auditorias_realizadas"> & {
+type ResponseLoginUsuarioDto = UsuarioResponseDto & {
     token: string;
 };
 

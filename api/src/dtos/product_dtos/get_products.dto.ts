@@ -1,34 +1,27 @@
-import Categoria from "../../entities/categoria.entity";
-import { ProductEntity } from "../../entities/product.entity";
+import { z } from "zod";
+import { ProductResponseDto } from "./product_response.dto";
 import { BaseMessageGet, BaseMessageGetOne } from "../global_get.dto";
+import { FilterProdutoSchema } from "../../utils/schemas/produto.schema";
 
-interface MessageGetUniqueProduct<T> extends BaseMessageGetOne<T> {
-   message: string;
-   status: boolean;
-   data: T;
-}
+type ResponseGetProductDto = BaseMessageGetOne<ProductResponseDto>;
 
-type ResponseGetProductDto = BaseMessageGetOne<ProductEntity>;
+type ResponseGetProductsDto = BaseMessageGet<ProductResponseDto>;
 
-type ResponseGetProductsDto = BaseMessageGet<ProductEntity>;
+// parsed /products/filter and /products/download query params
+type ProductFilterDto = z.infer<typeof FilterProdutoSchema>;
 
-type FindFilteredProductsPayloadDto = Partial<
-   Omit<ProductEntity, "categoria" & { categoria: Pick<Categoria, "nome"> }>
->;
+type ResponseFindFilteredProductsDto = BaseMessageGet<ProductResponseDto>;
 
-type ResponseFindFilteredProductsDto = BaseMessageGet<
-   Omit<ProductEntity, "id">
->;
-
-interface ResponseFindProductsToDownloadDto<ProductEntity>
-   extends BaseMessageGet<ProductEntity> {
-   aggregated_value: Map<Categoria, number>;
+interface ResponseFindProductsToDownloadDto
+   extends BaseMessageGet<ProductResponseDto> {
+   // sum of valor_de_venda per categoria nome, over every filtered product (not just this page)
+   aggregated_value: Record<string, number>;
 }
 
 export {
    ResponseGetProductsDto,
    ResponseGetProductDto,
-   FindFilteredProductsPayloadDto,
+   ProductFilterDto,
    ResponseFindFilteredProductsDto,
    ResponseFindProductsToDownloadDto,
 };

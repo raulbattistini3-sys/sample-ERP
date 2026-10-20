@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import BaseController from "./base.controller";
 import LoggerInterface from "../interfaces/logger_interfaces/logger_interface.interface";
-import { FindFilteredProductsPayloadDto } from "../dtos/product_dtos/get_products.dto";
 import IProductService from "../interfaces/product_interfaces/product_service.interface";
 
 class ProductController extends BaseController {
@@ -39,7 +38,8 @@ class ProductController extends BaseController {
   };
 
   update = async (req: Request, res: Response, next: NextFunction) => {
-    const result = await this.productService.updateProduct(req.body);
+    // the URL decides which product is updated, not the body
+    const result = await this.productService.updateProduct({ ...req.body, id: req.params.id });
     if (result.isLeft()) {
       return this.fail(req, next, result.value);
     }
@@ -63,10 +63,10 @@ class ProductController extends BaseController {
   };
 
   getByFilter = async (req: Request, res: Response, next: NextFunction) => {
+    const page = Number(req.query.page ?? 1);
     const amount = Number(req.query.amount ?? 20);
-    const includeParams = req.query as unknown as FindFilteredProductsPayloadDto;
 
-    const result = await this.productService.findProductsByFilter(amount, includeParams);
+    const result = await this.productService.findProductsByFilter(page, amount, req.query);
     if (result.isLeft()) {
       return this.fail(req, next, result.value);
     }
@@ -76,9 +76,8 @@ class ProductController extends BaseController {
   getToDownload = async (req: Request, res: Response, next: NextFunction) => {
     const page = Number(req.query.page ?? 1);
     const amount = Number(req.query.amount ?? 20);
-    const includeParams = req.query as unknown as FindFilteredProductsPayloadDto;
 
-    const result = await this.productService.findProductsToDownload(amount, page, includeParams);
+    const result = await this.productService.findProductsToDownload(page, amount, req.query);
     if (result.isLeft()) {
       return this.fail(req, next, result.value);
     }
