@@ -5,6 +5,10 @@ export const getProducts = (page: number, amount: number) =>
   apiClient.get<ListResponse<Product>>("/products", { params: { page, amount } }).then((r) => r.data);
 export const getProductById = (id: string) =>
   apiClient.get<ItemResponse<Product>>(`/products/${id}`).then((r) => r.data.data);
+// same products as the list, plus the sum of valor_de_venda per categoria over all of them
+export type ProductsDownloadPage = ListResponse<Product> & { aggregated_value: Record<string, number> };
+export const getProductsDownloadPage = (page: number, amount: number) =>
+  apiClient.get<ProductsDownloadPage>("/products/download", { params: { page, amount } }).then((r) => r.data);
 export const getProductsByFilter = (params: Record<string, string>) =>
   apiClient.get<ListResponse<Product>>("/products/filter", { params }).then((r) => r.data.data);
 export const createProduct = (payload: CreateProductPayload) => apiClient.post("/products", payload);
