@@ -7,7 +7,7 @@ class AppLogger implements LoggerInterface {
    private readonly PinoInstance: HttpLogger;
    private readonly levelMap: Record<
       ErrorLevelsEnum,
-      (obj: object, message?: string, ...args: any) => void
+      (obj: object, message?: string, ...args: any[]) => void
    >;
    constructor() {
       this.PinoInstance = pinoLog();
@@ -19,7 +19,8 @@ class AppLogger implements LoggerInterface {
          FATAL: this.PinoInstance.logger.fatal.bind(this.PinoInstance.logger),
       };
    }
-   public getLogger(): AppLogger {
+   // one pino instance for the whole app, so every layer writes to the same stream
+   public static getInstance(): AppLogger {
       if (!AppLogger.instance) {
          AppLogger.instance = new AppLogger();
       }
@@ -32,7 +33,7 @@ class AppLogger implements LoggerInterface {
       message?: string,
       ...args: any[]
    ) {
-      (this.levelMap[level] || this.levelMap.ERROR)(obj, message, args);
+      (this.levelMap[level] || this.levelMap.ERROR)(obj, message, ...args);
    }
 }
 

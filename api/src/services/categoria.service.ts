@@ -52,7 +52,7 @@ class CategoriaService implements ICategoryService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
 
@@ -74,7 +74,7 @@ class CategoriaService implements ICategoryService {
 
          return right(response);
       } catch (error) {
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
    async findCategoryByName(
@@ -96,7 +96,7 @@ class CategoriaService implements ICategoryService {
 
          return right(response);
       } catch (error) {
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
 
@@ -119,7 +119,7 @@ class CategoriaService implements ICategoryService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
    async updateCategory(
@@ -140,7 +140,7 @@ class CategoriaService implements ICategoryService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
    async archiveCategory(id: string): Promise<Either<BaseAppError, null>> {
@@ -159,7 +159,7 @@ class CategoriaService implements ICategoryService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
    async deleteCategory(id: string): Promise<Either<BaseAppError, null>> {
@@ -177,7 +177,7 @@ class CategoriaService implements ICategoryService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
 }

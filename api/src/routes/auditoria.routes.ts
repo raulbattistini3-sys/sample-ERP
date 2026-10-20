@@ -1,4 +1,5 @@
 import { Router } from "express";
+import AppLogger from "../utils/logger/pino_logger.util";
 import Config from "../configs/app_config";
 import AuditoriaController from "../controllers/auditoria.controller";
 import { AuditoriaService } from "../services/auditoria.service";
@@ -8,6 +9,7 @@ import DetalhamentoAuditoriaRepository from "../repositories/detalhamento_audito
 
 
 const config = Config.getInstance();
+const logger = AppLogger.getInstance();
 const  db = config.getDb();
 
 const detalhamentoAuditoriaRepository = new DetalhamentoAuditoriaRepository(db);
@@ -22,7 +24,7 @@ const auditoriaService = new AuditoriaService(
   auditoriaValidator,
 );
 
-const auditoriaController = new AuditoriaController(auditoriaService);
+const auditoriaController = new AuditoriaController(auditoriaService, logger);
 
 const auditoriaRoutes = Router();
 

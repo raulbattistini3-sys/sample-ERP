@@ -18,7 +18,7 @@ class CategoriaRepository implements CategoryRepositoryInterface {
       }
       return right(categoria);
     } catch (error) {
-      return left(new RepositoryError("Database error"));
+      return left(new RepositoryError("Database error", error));
     }
   }
 
@@ -30,7 +30,7 @@ class CategoriaRepository implements CategoryRepositoryInterface {
       }
       return right(categoria);
     } catch (error) {
-      return left(new RepositoryError("Database error"));
+      return left(new RepositoryError("Database error", error));
     }
   }
 
@@ -42,7 +42,7 @@ class CategoriaRepository implements CategoryRepositoryInterface {
       }
       return right(categoriasData);
     } catch (error) {
-      return left(new RepositoryError("Database error"));
+      return left(new RepositoryError("Database error", error));
     }
   }
 
@@ -51,7 +51,7 @@ class CategoriaRepository implements CategoryRepositoryInterface {
       const [categoria] = await this.db.insert(categorias).values(payload).returning();
       return right(categoria);
     } catch (error) {
-      return left(new RepositoryError("Database error"));
+      return left(new RepositoryError("Database error", error));
     }
   }
 
@@ -64,7 +64,7 @@ class CategoriaRepository implements CategoryRepositoryInterface {
       await this.db.update(categorias).set(payload).where(eq(categorias.id, payload.id));
       return right(undefined);
     } catch (error) {
-      return left(new RepositoryError("Database error"));
+      return left(new RepositoryError("Database error", error));
     }
   }
 
@@ -77,7 +77,7 @@ class CategoriaRepository implements CategoryRepositoryInterface {
       await this.db.update(categorias).set({ ativo: false }).where(eq(categorias.id, id));
       return right(undefined);
     } catch (error) {
-      return left(new RepositoryError("Database error"));
+      return left(new RepositoryError("Database error", error));
     }
   }
 
@@ -90,7 +90,7 @@ class CategoriaRepository implements CategoryRepositoryInterface {
       await this.db.delete(categorias).where(eq(categorias.id, id));
       return right(undefined);
     } catch (error) {
-      return left(new RepositoryError("Database error"));
+      return left(new RepositoryError("Database error", error));
     }
   }
 }

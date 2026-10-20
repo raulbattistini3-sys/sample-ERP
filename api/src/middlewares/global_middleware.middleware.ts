@@ -1,29 +1,39 @@
 import { Request, Response, NextFunction } from "express";
 import { BaseAppError } from "../errors/global_error.error";
 import { DEFAULT_STATUS_CODE } from "../globals/global_error.global";
-import AppLogger from "../utils/logger/pino_logger.util";
 import ErrorLevelsEnum from "../enums/errors_enums/errors_levels.enum";
-  import { INTERNAL_SERVER_ERROR_OBJ } from "../globals/errors/global_http_error.global";
+import { INTERNAL_SERVER_ERROR_OBJ } from "../globals/errors/global_http_error.global";
+import LoggerInterface from "../interfaces/logger_interfaces/logger_interface.interface";
+import serializeError from "../utils/logger/serialize_error.util";
 
 class BaseErrorMiddleware {
-    private AppLoggerUtil: AppLogger; 
-    constructor() {
-        this.AppLoggerUtil = new AppLogger();
-    }
-    async handle(err: Error, req: Request, res: Response, next: NextFunction) {
-        try {
-            if (err instanceof BaseAppError) {
-                return res.status(Number(err.statusCode)).json({
-                    message: err.message,
-                    status: err.status,
-                });
-            }
+    constructor(private readonly logger: LoggerInterface) {}
 
-            this.AppLoggerUtil.handle(INTERNAL_SERVER_ERROR_OBJ, ErrorLevelsEnum.Values.ERROR);
+    // arrow function so `this` survives being passed to app.use; express needs all four params to treat it as an error handler
+    handle = (err: Error, req: Request, res: Response, next: NextFunction) => {
+        // BaseAppErrors were already logged by BaseController.fail; only shape the response here
+        if (err instanceof BaseAppError) {
+            return res.status(Number(err.statusCode)).json({
+                message: err.message,
+                status: err.status,
+            });
+        }
 
-            return res.status(DEFAULT_STATUS_CODE).json(INTERNAL_SERVER_ERROR_OBJ);
-        } catch (error: any) {}
-    }
+        // anything else was thrown outside the Either flow (a bug, a bad JSON body, ...) and hasn't been logged yet
+        this.logger.handle(
+            {
+                layer: "middleware",
+                method: req.method,
+                url: req.originalUrl,
+                statusCode: DEFAULT_STATUS_CODE,
+                error: serializeError(err),
+            },
+            ErrorLevelsEnum.Values.ERROR,
+            err.message,
+        );
+
+        return res.status(DEFAULT_STATUS_CODE).json(INTERNAL_SERVER_ERROR_OBJ);
+    };
 }
 
 export default BaseErrorMiddleware;

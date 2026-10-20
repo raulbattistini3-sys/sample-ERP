@@ -56,7 +56,7 @@ class DetalhamentoAuditoriaService implements IDetalhamentoAuditoriaService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
    async findDetalhamentoAuditoriaById(
@@ -86,7 +86,7 @@ class DetalhamentoAuditoriaService implements IDetalhamentoAuditoriaService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
    async createDetalhamentAuditoria(
@@ -112,7 +112,7 @@ class DetalhamentoAuditoriaService implements IDetalhamentoAuditoriaService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
    async updateDetalhamentoAuditoria(
@@ -136,7 +136,7 @@ class DetalhamentoAuditoriaService implements IDetalhamentoAuditoriaService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
    async deleteDetalhamentoAuditoria(
@@ -160,7 +160,7 @@ class DetalhamentoAuditoriaService implements IDetalhamentoAuditoriaService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
    async archiveDetalhamentoAuditoria(
@@ -184,7 +184,7 @@ class DetalhamentoAuditoriaService implements IDetalhamentoAuditoriaService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
 }

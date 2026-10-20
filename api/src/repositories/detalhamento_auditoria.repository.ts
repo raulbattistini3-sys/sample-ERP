@@ -20,7 +20,7 @@ class DetalhamentoAuditoriaRepository implements IDetalhamentoAuditoriaRepositor
       }
       return right(data);
     } catch (error) {
-      return left(new RepositoryError("Repository error"));
+      return left(new RepositoryError("Repository error", error));
     }
   }
 
@@ -32,7 +32,7 @@ class DetalhamentoAuditoriaRepository implements IDetalhamentoAuditoriaRepositor
       }
       return right(data);
     } catch (error) {
-      return left(new RepositoryError("Repository error"));
+      return left(new RepositoryError("Repository error", error));
     }
   }
 
@@ -46,7 +46,7 @@ class DetalhamentoAuditoriaRepository implements IDetalhamentoAuditoriaRepositor
       const [data] = await this.db.insert(detalhamentosAuditoria).values(payload).returning();
       return right(data);
     } catch (error) {
-      return left(new RepositoryError("Repository error"));
+      return left(new RepositoryError("Repository error", error));
     }
   }
 
@@ -64,7 +64,7 @@ class DetalhamentoAuditoriaRepository implements IDetalhamentoAuditoriaRepositor
       await this.db.update(detalhamentosAuditoria).set(payload).where(eq(detalhamentosAuditoria.id, payload.id));
       return right(null);
     } catch (error) {
-      return left(new RepositoryError("Repository error"));
+      return left(new RepositoryError("Repository error", error));
     }
   }
 
@@ -81,7 +81,7 @@ class DetalhamentoAuditoriaRepository implements IDetalhamentoAuditoriaRepositor
       await this.db.update(detalhamentosAuditoria).set({ deletedAt: new Date() }).where(eq(detalhamentosAuditoria.id, id));
       return right(null);
     } catch (error) {
-      return left(new RepositoryError("Repository error"));
+      return left(new RepositoryError("Repository error", error));
     }
   }
 
@@ -97,7 +97,7 @@ class DetalhamentoAuditoriaRepository implements IDetalhamentoAuditoriaRepositor
       await this.db.delete(detalhamentosAuditoria).where(eq(detalhamentosAuditoria.id, id));
       return right(null);
     } catch (error) {
-      return left(new RepositoryError("Repository error"));
+      return left(new RepositoryError("Repository error", error));
     }
   }
 }

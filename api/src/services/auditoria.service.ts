@@ -57,7 +57,7 @@ class AuditoriaService implements IAuditoriaService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
    async findAuditoriasById(
@@ -80,7 +80,7 @@ class AuditoriaService implements IAuditoriaService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
    async createAuditoria(
@@ -102,7 +102,7 @@ class AuditoriaService implements IAuditoriaService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
    async updateAuditoria(
@@ -142,7 +142,7 @@ class AuditoriaService implements IAuditoriaService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
    async deleteAuditoria(id: string): Promise<Either<BaseAppError, null>> {
@@ -163,7 +163,7 @@ class AuditoriaService implements IAuditoriaService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
    async archiveAuditoria(id: string): Promise<Either<BaseAppError, null>> {
@@ -185,7 +185,7 @@ class AuditoriaService implements IAuditoriaService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
 }

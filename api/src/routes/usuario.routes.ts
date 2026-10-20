@@ -1,4 +1,5 @@
 import { Router } from "express";
+import AppLogger from "../utils/logger/pino_logger.util";
 import Config from "../configs/app_config";
 import UsuarioController from "../controllers/usuario.controller";
 import UsuarioService from "../services/usuario.service";
@@ -6,6 +7,7 @@ import UsuarioRepository from "../repositories/usuario.repository";
 import UsuarioValidator from "../validators/usuario.validator";
 
 const config = Config.getInstance();
+const logger = AppLogger.getInstance();
 const  db = config.getDb();
 
 const usuarioRepository = new UsuarioRepository(db);
@@ -14,7 +16,7 @@ const usuarioValidator = new UsuarioValidator();
 
 const usuarioService = new UsuarioService(usuarioRepository, usuarioValidator);
 
-const usuarioController = new UsuarioController(usuarioService);
+const usuarioController = new UsuarioController(usuarioService, logger);
 
 const usuarioRoutes = Router();
 

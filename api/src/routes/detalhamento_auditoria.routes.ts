@@ -1,4 +1,5 @@
 import { Router } from "express";
+import AppLogger from "../utils/logger/pino_logger.util";
 import Config from "../configs/app_config";
 import DetalhamentoAuditoriaController from "../controllers/detalhamento_auditoria.controller";
 import DetalhamentoAuditoriaService from "../services/detalhamento_auditoria.service";
@@ -6,6 +7,7 @@ import DetalhamentoAuditoriaRepository from "../repositories/detalhamento_audito
 
 
 const config = Config.getInstance();
+const logger = AppLogger.getInstance();
 const  db = config.getDb();
 const detalhamentoAuditoriaRepository = new DetalhamentoAuditoriaRepository(db);
 const detalhamentoAuditoriaValidator = new DetalhamentoAuditoriaValidator();
@@ -15,7 +17,7 @@ const detalhamentoAuditoriaService = new DetalhamentoAuditoriaService(
   detalhamentoAuditoriaValidator
 );
 
-const detalhamentoController = new DetalhamentoAuditoriaController(detalhamentoAuditoriaService);
+const detalhamentoController = new DetalhamentoAuditoriaController(detalhamentoAuditoriaService, logger);
 
 const detalhamentoAuditoriaRoutes = Router();
 
