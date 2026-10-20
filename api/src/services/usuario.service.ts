@@ -40,10 +40,10 @@ class UsuarioService implements IUserService {
       amount: number,
    ): Promise<Either<BaseAppError, ResponseGetUsuariosDto>> {
       try {
-         const validation = this.userValidator.validatePayload({
+         const validation = this.userValidator.validatePageAndAmount(
             page,
             amount,
-         });
+         );
          if (validation.isLeft()) {
             return left(validation.value);
          }
@@ -51,13 +51,9 @@ class UsuarioService implements IUserService {
          if (usuarios.isLeft()) {
             return left(usuarios.value);
          }
-         const paginatedData = paginate(
-            usuarios.value,
-            1,
-            usuarios.value.length,
-         );
+         const paginatedData = paginate(usuarios.value, page, amount);
          const response: ResponseGetUsuariosDto = {
-            data: usuarios.value,
+            data: paginatedData.data,
             pageNumber: paginatedData.currentPage,
             totalItems: paginatedData.totalItems,
             pageSize: paginatedData.perPage,
@@ -191,7 +187,7 @@ class UsuarioService implements IUserService {
    payload: PayloadLoginUsuarioDto,
 ): Promise<Either<BaseAppError, ResponseLoginUsuarioDto>> {
    try {
-      const validation = this.userValidator.validatePayload(payload);
+      const validation = this.userValidator.validateLoginPayload(payload);
       if (validation.isLeft()) {
          return left(validation.value);
       }
@@ -221,7 +217,7 @@ async registerUsuario(
    payloadUsuario: PayloadRegisterUsuarioDto,
 ): Promise<Either<BaseAppError, ResponseRegisterUsuarioDto>> {
    try {
-      const validation = this.userValidator.validatePayload(payloadUsuario);
+      const validation = this.userValidator.validateRegisterPayload(payloadUsuario);
       if (validation.isLeft()) {
          return left(validation.value);
       }
@@ -230,8 +226,8 @@ async registerUsuario(
          nome: payloadUsuario.nome,
          email: payloadUsuario.email,
          senha: hashed,
-         permissoes: permissoesUsuarioEnum.Values.Estoque,
-         ativo: true,
+         permissoes: payloadUsuario.permissoes ?? permissoesUsuarioEnum.Values.Estoque,
+         ativo: payloadUsuario.ativo ?? true,
       });
       if (userData.isLeft()) {
          return left(userData.value);

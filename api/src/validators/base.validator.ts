@@ -32,7 +32,8 @@ class BaseValidator implements IBaseValidator {
       ) {
          return left(new ValidationError("400", "Invalid page or amount"));
       }
-      if (page < 0 || amount < 0) {
+      // pages are 1-based; page 0 or amount 0 would slice out an empty list
+      if (page < 1 || amount < 1) {
          return left(new ValidationError("400", "Invalid page or amount"));
       }
       return right(null);

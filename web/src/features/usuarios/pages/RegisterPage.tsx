@@ -11,7 +11,8 @@ import { toFieldErrors } from "../../../lib/form";
 import { useLogin, useRegisterUsuario } from "../hooks/useUsuarios";
 import { RegisterUsuarioPayload, RegisterUsuarioSchema } from "../types/usuario.types";
 
-type FormValues = RegisterUsuarioPayload & { confirmarSenha: string };
+// permissoes/ativo aren't user-editable here; the schema defaults them on parse
+type FormValues = Pick<RegisterUsuarioPayload, "nome" | "email" | "senha"> & { confirmarSenha: string };
 type FieldErrors = Partial<Record<keyof FormValues, string>>;
 
 export const RegisterPage = () => {

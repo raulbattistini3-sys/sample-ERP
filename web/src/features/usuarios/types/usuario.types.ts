@@ -15,6 +15,8 @@ export const RegisterUsuarioSchema = z.object({
   nome: z.string().check(z.trim(), z.minLength(1, "Informe o nome")),
   email: z.email("Informe um e-mail válido"),
   senha: z.string().check(z.minLength(6, "A senha deve ter pelo menos 6 caracteres")),
+  permissoes: z._default(PermissoesEnum, "Estoque"),
+  ativo: z._default(z.boolean(), true),
 });
 export type RegisterUsuarioPayload = z.infer<typeof RegisterUsuarioSchema>;
 
