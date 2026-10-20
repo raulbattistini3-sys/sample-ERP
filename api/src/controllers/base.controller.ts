@@ -3,6 +3,7 @@ import { BaseAppError } from "../errors/global_error.error";
 import ErrorLevelsEnum from "../enums/errors_enums/errors_levels.enum";
 import LoggerInterface from "../interfaces/logger_interfaces/logger_interface.interface";
 import serializeError from "../utils/logger/serialize_error.util";
+import toHttpStatus from "../utils/helpers/http_status.util";
 
 // controllers depend on LoggerInterface only; the routes (composition root) inject the concrete logger
 abstract class BaseController {
@@ -10,7 +11,7 @@ abstract class BaseController {
 
    // logs an error returned by the service/repository layers, then hands it to BaseErrorMiddleware for the response
    protected fail(req: Request, next: NextFunction, error: BaseAppError) {
-      const statusCode = Number(error.statusCode);
+      const statusCode = toHttpStatus(error.statusCode);
       const level =
          statusCode >= 500
             ? ErrorLevelsEnum.Values.ERROR

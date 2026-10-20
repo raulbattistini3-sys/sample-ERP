@@ -4,6 +4,9 @@ import router from "./routes";
 
 const app = express();
 
+// Express 5 defaults to the "simple" parser; keep nested params like ?categoria[nome]=x working for the product filters
+app.set("query parser", "extended");
+
 app.use(express.json());
 app.use(cors())
 app.use(router);
