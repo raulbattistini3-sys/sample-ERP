@@ -1,4 +1,4 @@
-import { Package, Tags, Users, ClipboardList, LogOut } from "lucide-react";
+import { Package, Tags, Users, ClipboardList, LogOut, Plug } from "lucide-react";
 import { NavItem } from "../components/ui/NavItem";
 import { Avatar } from "../components/ui/Avatar";
 import { useAuth } from "../context/AuthContext";
@@ -10,6 +10,7 @@ const navItems = [
   { to: "/categorias", label: "Categorias", icon: Tags, requiresAdm: false },
   { to: "/usuarios", label: "Usuários", icon: Users, requiresAdm: true },
   { to: "/auditoria", label: "Auditoria", icon: ClipboardList, requiresAdm: false },
+  { to: "/integracoes", label: "Integrações", icon: Plug, requiresAdm: true },
 ];
 
 type SidebarProps = { className?: string };
