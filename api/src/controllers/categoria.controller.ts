@@ -38,7 +38,7 @@ class CategoriaController extends BaseController {
   };
 
   update = async (req: Request, res: Response, next: NextFunction) => {
-    const result = await this.categoriaService.updateCategory(req.body);
+    const result = await this.categoriaService.updateCategory(req.body, req.user!.id);
     if (result.isLeft()) {
       return this.fail(req, next, result.value);
     }
@@ -54,7 +54,7 @@ class CategoriaController extends BaseController {
   };
 
   archiveCategory = async (req: Request, res: Response, next: NextFunction) => {
-    const result = await this.categoriaService.archiveCategory(req.params.id as string);
+    const result = await this.categoriaService.archiveCategory(req.params.id as string, req.user!.id);
     if (result.isLeft()) {
       return this.fail(req, next, result.value);
     }

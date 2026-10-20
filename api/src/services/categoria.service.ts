@@ -128,6 +128,7 @@ class CategoriaService implements ICategoryService {
    }
    async updateCategory(
       payload: PayloadUpdateCategory,
+      usuarioId: string,
    ): Promise<Either<BaseAppError, null>> {
       try {
          const validation = this.categoriaValidator.validateUpdatePayload(payload);
@@ -135,7 +136,7 @@ class CategoriaService implements ICategoryService {
             return left(validation.value);
          }
          const categoria =
-            await this.categoriaRepository.updateCategoria(payload);
+            await this.categoriaRepository.updateCategoria(payload, usuarioId);
          if (categoria.isLeft()) {
             return left(categoria.value);
          }
@@ -147,14 +148,14 @@ class CategoriaService implements ICategoryService {
          return left(new ServerError("500", true, "internal server error", error));
       }
    }
-   async archiveCategory(id: string): Promise<Either<BaseAppError, null>> {
+   async archiveCategory(id: string, usuarioId: string): Promise<Either<BaseAppError, null>> {
       try {
          const validation = this.categoriaValidator.validateUUIDv4(id);
          if (validation.isLeft()) {
             return left(validation.value);
          }
          const categoria =
-            await this.categoriaRepository.deactivateCategoria(id);
+            await this.categoriaRepository.deactivateCategoria(id, usuarioId);
          if (categoria.isLeft()) {
             return left(categoria.value);
          }

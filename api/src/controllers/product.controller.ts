@@ -43,7 +43,7 @@ class ProductController extends BaseController {
 
   update = async (req: Request, res: Response, next: NextFunction) => {
     // the URL decides which product is updated, not the body
-    const result = await this.productService.updateProduct({ ...req.body, id: req.params.id }, includeInactive(req));
+    const result = await this.productService.updateProduct({ ...req.body, id: req.params.id }, req.user!.id, includeInactive(req));
     if (result.isLeft()) {
       return this.fail(req, next, result.value);
     }
@@ -59,7 +59,7 @@ class ProductController extends BaseController {
   };
 
   deactivate = async (req: Request, res: Response, next: NextFunction) => {
-    const result = await this.productService.deactivateProduct(req.params.id as string);
+    const result = await this.productService.deactivateProduct(req.params.id as string, req.user!.id);
     if (result.isLeft()) {
       return this.fail(req, next, result.value);
     }
@@ -79,7 +79,7 @@ class ProductController extends BaseController {
 
   // 200 with created/updated counts, or 422 with the errors per line (nothing saved)
   importSpreadsheet = async (req: Request, res: Response, next: NextFunction) => {
-    const result = await this.productService.importProducts(req.body);
+    const result = await this.productService.importProducts(req.body, req.user!.id);
     if (result.isLeft()) {
       return this.fail(req, next, result.value);
     }

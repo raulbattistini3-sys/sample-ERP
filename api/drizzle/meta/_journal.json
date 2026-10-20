@@ -29,6 +29,13 @@
       "when": 1792512316260,
       "tag": "0003_usuarios_sessao_versao",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792517990593,
+      "tag": "0004_auditorias_vinculo",
+      "breakpoints": true
     }
   ]
 }

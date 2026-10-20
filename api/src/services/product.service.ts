@@ -234,6 +234,7 @@ class ProductService implements IProductService {
    // an inactive product is a 404 and `ativo` in the body is ignored
    async updateProduct(
       product: PayloadUpdateProductDto,
+      usuarioId: string,
       includeInactive = false,
    ): Promise<Either<BaseAppError, null>> {
       try {
@@ -254,6 +255,7 @@ class ProductService implements IProductService {
                includeInactive ? product : { ...product, ativo: undefined },
                categoriaData.value.id,
             ),
+            usuarioId,
             includeInactive,
          );
          if (productData.isLeft()) {
@@ -277,6 +279,7 @@ class ProductService implements IProductService {
    // and nothing is written unless every row is valid.
    async importProducts(
       payload: unknown,
+      usuarioId: string,
    ): Promise<Either<BaseAppError, ImportProductsResultDto>> {
       try {
          const envelope = this.productValidator.validateImportPayload(payload);
@@ -352,7 +355,7 @@ class ProductService implements IProductService {
             return right({ created: 0, updated: 0, errors: report });
          }
 
-         const saved = await this.productRepository.importProducts(writes);
+         const saved = await this.productRepository.importProducts(writes, usuarioId);
          if (saved.isLeft()) {
             return left(new ServerError("500", true, "internal server error", saved.value));
          }
@@ -382,9 +385,9 @@ class ProductService implements IProductService {
          return left(new ServerError("500", true, "internal server error", error));
       }
    }
-   async deactivateProduct(id: string): Promise<Either<BaseAppError, null>> {
+   async deactivateProduct(id: string, usuarioId: string): Promise<Either<BaseAppError, null>> {
       try {
-         const productData = await this.productRepository.deactivateProduct(id);
+         const productData = await this.productRepository.deactivateProduct(id, usuarioId);
          if (productData.isLeft()) {
             if (productData.value instanceof ValidationError) {
                return left(productData.value);
