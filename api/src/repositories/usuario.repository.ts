@@ -1,4 +1,4 @@
-import { and, count, eq, ne, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { DrizzleDB } from "../db/client";
 import { usuarios } from "../db/schema/usuario.schema";
 import { UsuarioEntity } from "../entities/usuario.entity";
@@ -11,6 +11,15 @@ import { pgErrorCode } from "../utils/helpers/pg_error.util";
 
 // the insert/update raced past the service's email check and hit usuarios_email_lower_unique
 const UNIQUE_VIOLATION = "23505";
+
+export const LAST_ACTIVE_ADM_MESSAGE = "Não é possível remover o último administrador ativo";
+
+// thrown inside a transaction to roll it back while keeping the Either's error
+class RollbackWith extends Error {
+  constructor(readonly reason: BaseAppError) {
+    super(reason.message);
+  }
+}
 
 class UsuarioRepository implements IUsuarioRepository {
   constructor(private readonly db: DrizzleDB) {}
@@ -86,14 +95,38 @@ class UsuarioRepository implements IUsuarioRepository {
     }
   }
 
-  async countActiveAdms(exceptId: string): Promise<Either<BaseAppError, number>> {
+  // Runs `write` (which may demote, deactivate or delete targetId) in one transaction that first locks
+  // every active ADM row with SELECT ... FOR UPDATE. If targetId is the only active ADM, nothing is written.
+  // A concurrent call blocks on those row locks until this one commits; Postgres then re-checks the rows
+  // it waited on and skips any that stopped matching (no longer ADM/ativo), so the second call sees the
+  // first one's change. Two ADMs removing each other at once can't leave the system with none.
+  async writeKeepingAnActiveAdm(
+    targetId: string,
+    write: (repository: IUsuarioRepository) => Promise<Either<BaseAppError, null>>,
+  ): Promise<Either<BaseAppError, null>> {
     try {
-      const [row] = await this.db
-        .select({ total: count() })
-        .from(usuarios)
-        .where(and(eq(usuarios.permissoes, "ADM"), eq(usuarios.ativo, true), ne(usuarios.id, exceptId)));
-      return right(Number(row?.total ?? 0));
+      return await this.db.transaction(async (tx: DrizzleDB) => {
+        const activeAdms = await tx
+          .select({ id: usuarios.id })
+          .from(usuarios)
+          .where(and(eq(usuarios.permissoes, "ADM"), eq(usuarios.ativo, true)))
+          .for("update");
+        const targetIsActiveAdm = activeAdms.some((adm: { id: string }) => adm.id === targetId);
+        if (targetIsActiveAdm && activeAdms.length === 1) {
+          return left(new ValidationError("409", LAST_ACTIVE_ADM_MESSAGE));
+        }
+        // same class bound to the transaction, so the write runs under the locks taken above
+        const txRepository = new (this.constructor as new (db: DrizzleDB) => IUsuarioRepository)(tx);
+        const result = await write(txRepository);
+        if (result.isLeft()) {
+          throw new RollbackWith(result.value);
+        }
+        return result;
+      });
     } catch (error) {
+      if (error instanceof RollbackWith) {
+        return left(error.reason);
+      }
       return left(new RepositoryError("Database error", error));
     }
   }

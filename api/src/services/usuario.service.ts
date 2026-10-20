@@ -149,13 +149,7 @@ class UsuarioService implements IUserService {
             return left(emailCheck.value);
          }
          const nextAtivo = payload.ativo ?? existing.value.ativo;
-         if (payload.permissoes !== permissoesUsuarioEnum.Values.ADM || !nextAtivo) {
-            const admCheck = await this.ensureAnotherActiveAdm(existing.value);
-            if (admCheck.isLeft()) {
-               return left(admCheck.value);
-            }
-         }
-         const updated = await this.userRepository.updateUsuario({
+         const row: UsuarioEntity = {
             id,
             nome: payload.nome,
             email: payload.email,
@@ -165,7 +159,15 @@ class UsuarioService implements IUserService {
             senha: payload.senha
                ? await hashPassword(payload.senha)
                : existing.value.senha,
-         });
+         };
+         // only a change that leaves the usuario without active ADM rights needs the guard
+         const removesAdm =
+            payload.permissoes !== permissoesUsuarioEnum.Values.ADM || !nextAtivo;
+         const updated = removesAdm
+            ? await this.userRepository.writeKeepingAnActiveAdm(id, (repository) =>
+                 repository.updateUsuario(row),
+              )
+            : await this.userRepository.updateUsuario(row);
          if (updated.isLeft()) {
             if (updated.value instanceof ValidationError) {
                return left(updated.value);
@@ -191,11 +193,10 @@ class UsuarioService implements IUserService {
          if (userData.isLeft()) {
             return left(userData.value);
          }
-         const admCheck = await this.ensureAnotherActiveAdm(userData.value);
-         if (admCheck.isLeft()) {
-            return left(admCheck.value);
-         }
-         const userDeletion = await this.userRepository.deleteUsuario(id);
+         const userDeletion = await this.userRepository.writeKeepingAnActiveAdm(
+            id,
+            (repository) => repository.deleteUsuario(id),
+         );
          if (userDeletion.isLeft()) {
             return left(userDeletion.value);
          }
@@ -219,10 +220,6 @@ class UsuarioService implements IUserService {
          if (userData.isLeft()) {
             return left(userData.value);
          }
-         const admCheck = await this.ensureAnotherActiveAdm(userData.value);
-         if (admCheck.isLeft()) {
-            return left(admCheck.value);
-         }
          const userClass = userData.value;
          let userToUpdate: UsuarioEntity = {
             id,
@@ -232,8 +229,10 @@ class UsuarioService implements IUserService {
             permissoes: userClass.permissoes,
             email: userClass.email,
          };
-         const userArchiving =
-            await this.userRepository.updateUsuario(userToUpdate);
+         const userArchiving = await this.userRepository.writeKeepingAnActiveAdm(
+            id,
+            (repository) => repository.updateUsuario(userToUpdate),
+         );
          if (userArchiving.isLeft()) {
             return left(userArchiving.value);
          }
@@ -343,24 +342,6 @@ async registerUsuario(
         return left(new ServerError("500", true, undefined, existing.value));
      }
      return left(new ValidationError("404", "Usuário não encontrado"));
-  }
-
-  // called before demoting, deactivating, archiving or deleting `target`: if it is an active ADM,
-  // another active ADM must remain, or nobody could manage usuarios anymore (including undoing this)
-  private async ensureAnotherActiveAdm(target: UsuarioEntity): Promise<Either<BaseAppError, null>> {
-     if (target.permissoes !== permissoesUsuarioEnum.Values.ADM || !target.ativo) {
-        return right(null);
-     }
-     const others = await this.userRepository.countActiveAdms(target.id);
-     if (others.isLeft()) {
-        return left(new ServerError("500", true, undefined, others.value));
-     }
-     if (others.value === 0) {
-        return left(
-           new ValidationError("409", "Não é possível remover o último administrador ativo"),
-        );
-     }
-     return right(null);
   }
 }
 

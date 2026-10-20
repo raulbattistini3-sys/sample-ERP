@@ -14,8 +14,12 @@ interface IUsuarioRepository {
       payload: UsuarioEntity,
    ): Promise<Either<BaseAppError, null>>;
    deleteUsuario(id: string): Promise<Either<BaseAppError, null>>;
-   // active ADM usuarios other than exceptId
-   countActiveAdms(exceptId: string): Promise<Either<BaseAppError, number>>;
+   // runs write in a transaction that locks the active ADM rows; 409 (nothing written)
+   // when targetId is the only active ADM
+   writeKeepingAnActiveAdm(
+      targetId: string,
+      write: (repository: IUsuarioRepository) => Promise<Either<BaseAppError, null>>,
+   ): Promise<Either<BaseAppError, null>>;
 }
 
 export default IUsuarioRepository;
