@@ -105,12 +105,15 @@ class CategoriaService implements ICategoryService {
       payload: PayloadCreateCategoria,
    ): Promise<Either<BaseAppError, ResponseCreateCategoria>> {
       try {
-         const validation = this.categoriaValidator.validatePayload(payload);
+         const validation = this.categoriaValidator.validateCreatePayload(payload);
          if (validation.isLeft()) {
             return left(validation.value);
          }
-         const categoria =
-            await this.categoriaRepository.createCategoria(payload);
+         const categoria = await this.categoriaRepository.createCategoria({
+            nome: payload.nome,
+            tipo: payload.tipo,
+            ativo: payload.ativo ?? true,
+         });
          if (categoria.isLeft()) {
             return left(categoria.value);
          }
@@ -127,7 +130,7 @@ class CategoriaService implements ICategoryService {
       payload: PayloadUpdateCategory,
    ): Promise<Either<BaseAppError, null>> {
       try {
-         const validation = this.categoriaValidator.validatePayload(payload);
+         const validation = this.categoriaValidator.validateUpdatePayload(payload);
          if (validation.isLeft()) {
             return left(validation.value);
          }

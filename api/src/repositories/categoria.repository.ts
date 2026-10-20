@@ -3,7 +3,7 @@ import { DrizzleDB } from "../db/client";
 import { categorias } from "../db/schema/categoria.schema";
 import { Categoria } from "../entities/categoria.entity";
 import CategoryRepositoryInterface from "../interfaces/category_interfaces/categoria_repository.interface";
-import { PayloadCreateCategoria, ResponseCreateCategoria } from "../dtos/category_dtos/create_categoria.dto";
+import { NewCategoria, ResponseCreateCategoria } from "../dtos/category_dtos/create_categoria.dto";
 import { RepositoryError } from "../globals/errors/global_repository_error.error";
 import { BaseAppError } from "../errors/global_error.error";
 import { ValidationError } from "../errors/client_errors/four_xx.error";
@@ -45,7 +45,7 @@ class CategoriaRepository implements CategoryRepositoryInterface {
     }
   }
 
-  async createCategoria(payload: PayloadCreateCategoria): Promise<Either<RepositoryError, ResponseCreateCategoria>> {
+  async createCategoria(payload: NewCategoria): Promise<Either<RepositoryError, ResponseCreateCategoria>> {
     try {
       const [categoria] = await this.db.insert(categorias).values(payload).returning();
       return right(categoria);
