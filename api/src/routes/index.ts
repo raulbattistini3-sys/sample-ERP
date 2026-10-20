@@ -2,9 +2,16 @@ import { Router } from "express";
 import { auditoriaRoutes } from "./auditoria.routes";
 import { productRoutes } from "./product.routes";
 import { detalhamentoAuditoriaRoutes } from "./detalhamento_auditoria.routes";
-import { usuarioRoutes } from "./usuario.routes";
+import { publicUsuarioRoutes, usuarioRoutes } from "./usuario.routes";
 import { categoriaRoutes } from "./categoria.routes";
+import { authMiddleware } from "./auth_middleware.instance";
 const router = Router();
+
+// POST /user/register and /user/login
+router.use("/user", publicUsuarioRoutes);
+
+// everything below requires a valid token from an active usuario
+router.use(authMiddleware.authenticate);
 
 router.use("/user", usuarioRoutes);
 router.use("/auditoria", auditoriaRoutes);

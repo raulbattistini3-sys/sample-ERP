@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from "react
 import { getUsuarioById, loginUsuario } from "../features/usuarios/api/usuario.api";
 import { LoginUsuarioPayload, Usuario } from "../features/usuarios/types/usuario.types";
 import { clearSession, loadStoredUser, saveSession, saveStoredUser } from "../lib/auth-storage";
+import { queryClient } from "../lib/query-client";
 
 type AuthContextValue = {
   user: Usuario | null;
@@ -49,6 +50,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     clearSession();
+    // drop cached lists so the next person to sign in on this tab never sees them
+    queryClient.clear();
     setUser(null);
   };
 

@@ -5,6 +5,7 @@ import UsuarioController from "../controllers/usuario.controller";
 import UsuarioService from "../services/usuario.service";
 import UsuarioRepository from "../repositories/usuario.repository";
 import UsuarioValidator from "../validators/usuario.validator";
+import { authMiddleware } from "./auth_middleware.instance";
 
 const config = Config.getInstance();
 const logger = AppLogger.getInstance();
@@ -18,17 +19,19 @@ const usuarioService = new UsuarioService(usuarioRepository, usuarioValidator);
 
 const usuarioController = new UsuarioController(usuarioService, logger);
 
+// the only routes reachable without a token (mounted before AuthMiddleware in routes/index.ts)
+const publicUsuarioRoutes = Router();
+publicUsuarioRoutes.post("/register", usuarioController.register);
+publicUsuarioRoutes.post("/login", usuarioController.login);
+
+// mounted after AuthMiddleware.authenticate, so req.user is set
 const usuarioRoutes = Router();
-
-// auth routes — no :id, must come before or independent of /:id anyway since path differs
-usuarioRoutes.post("/register", usuarioController.register);
-usuarioRoutes.post("/login", usuarioController.login);
-
-usuarioRoutes.post("/", usuarioController.create);
+// any signed-in usuario can read (the auditoria pages show auditor names); only ADM can manage
 usuarioRoutes.get("/", usuarioController.getAll);
 usuarioRoutes.get("/:id", usuarioController.getById);
-usuarioRoutes.put("/:id", usuarioController.update);
-usuarioRoutes.delete("/:id", usuarioController.delete);
-usuarioRoutes.patch("/:id/archive", usuarioController.archive);
+usuarioRoutes.post("/", authMiddleware.requireAdm, usuarioController.create);
+usuarioRoutes.put("/:id", authMiddleware.requireAdm, usuarioController.update);
+usuarioRoutes.delete("/:id", authMiddleware.requireAdm, usuarioController.delete);
+usuarioRoutes.patch("/:id/archive", authMiddleware.requireAdm, usuarioController.archive);
 
-export { usuarioRoutes };
+export { publicUsuarioRoutes, usuarioRoutes };

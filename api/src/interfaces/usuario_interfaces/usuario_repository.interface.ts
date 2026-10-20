@@ -1,4 +1,3 @@
-import { PayloadUpdateUsuarioDto } from "../../dtos/usuario_dtos/update_usuario.dto";
 import { UsuarioEntity } from "../../entities/usuario.entity";
 import { BaseAppError } from "../../errors/global_error.error";
 import { Either } from "../../globals/errors/left_right_either.error";
@@ -10,8 +9,9 @@ interface IUsuarioRepository {
    createUsuario(
       payload: Omit<UsuarioEntity, "id" | "auditorias_realizadas">,
    ): Promise<Either<BaseAppError, UsuarioEntity>>;
+   // payload is the full row to save (senha already hashed)
    updateUsuario(
-      payload: PayloadUpdateUsuarioDto,
+      payload: UsuarioEntity,
    ): Promise<Either<BaseAppError, null>>;
    deleteUsuario(id: string): Promise<Either<BaseAppError, null>>;
 }

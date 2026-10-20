@@ -8,7 +8,10 @@ import {
   UsuarioSchema,
 } from "../types/usuario.types";
 
+// public sign-up: the API always creates an active Estoque usuario
 export const registerUsuario = (payload: RegisterUsuarioPayload) => apiClient.post("/user/register", payload);
+// ADM only: honors permissoes and ativo
+export const createUsuario = (payload: RegisterUsuarioPayload) => apiClient.post("/user", payload);
 export const loginUsuario = async (payload: LoginUsuarioPayload) => {
   const { data } = await apiClient.post("/user/login", payload);
   return LoginResponseSchema.parse(data);

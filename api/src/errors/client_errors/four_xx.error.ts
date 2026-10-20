@@ -6,6 +6,7 @@ const ValidationErrorsStatusCodeValues = [
    "401",
    "403",
    "404",
+   "409",
    "422",
 ] as const;
 type ValidationErrorsStatusCode =

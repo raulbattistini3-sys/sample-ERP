@@ -11,7 +11,7 @@ import { toFieldErrors } from "../../../lib/form";
 import {
   useArchiveUsuario,
   useDeleteUsuario,
-  useRegisterUsuario,
+  useCreateUsuario,
   useUpdateUsuario,
   useUsuario,
 } from "../hooks/useUsuarios";
@@ -52,7 +52,7 @@ function UsuarioForm({ usuario }: { usuario?: Usuario }) {
   const { user } = useAuth();
   const isEdit = !!usuario;
 
-  const registerMutation = useRegisterUsuario();
+  const createMutation = useCreateUsuario();
   const updateMutation = useUpdateUsuario();
   const archiveMutation = useArchiveUsuario();
   const deleteMutation = useDeleteUsuario();
@@ -86,7 +86,7 @@ function UsuarioForm({ usuario }: { usuario?: Usuario }) {
         ativo: true,
       });
       if (!result.success) return setFieldErrors(toFieldErrors<keyof FormValues>(result.error.issues));
-      registerMutation.mutate(result.data, { onSuccess: backToList });
+      createMutation.mutate(result.data, { onSuccess: backToList });
       return;
     }
 
@@ -112,8 +112,8 @@ function UsuarioForm({ usuario }: { usuario?: Usuario }) {
     deleteMutation.mutate(usuario.id, { onSuccess: backToList });
   };
 
-  const mutationError = [registerMutation, updateMutation, archiveMutation, deleteMutation].find((m) => m.isError)?.error;
-  const isSaving = registerMutation.isPending || updateMutation.isPending;
+  const mutationError = [createMutation, updateMutation, archiveMutation, deleteMutation].find((m) => m.isError)?.error;
+  const isSaving = createMutation.isPending || updateMutation.isPending;
   const isSelf = usuario?.id === user?.id;
 
   return (

@@ -58,7 +58,7 @@ class UsuarioRepository implements IUsuarioRepository {
   }
 
   async updateUsuario(
-    payload: PayloadUpdateUsuarioDto,
+    payload: UsuarioEntity,
   ): Promise<Either<BaseAppError, null>> {
     try {
       if (!payload) return left(new RepositoryError("No payload found"));
