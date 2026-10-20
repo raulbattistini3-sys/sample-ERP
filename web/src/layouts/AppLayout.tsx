@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
-// @ts-ignore
-import { Topbar } from "./Topbar";
+import { Topbar } from "./TopBar";
 
 const pageTitles: Record<string, string> = {
   "/products": "Produtos",
@@ -14,6 +13,13 @@ const pageTitles: Record<string, string> = {
 export function AppLayout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const { pathname } = useLocation();
+
+  // tapping a link in the mobile drawer navigates; close the drawer when the page changes
+  const [drawerPath, setDrawerPath] = useState(pathname);
+  if (drawerPath !== pathname) {
+    setDrawerPath(pathname);
+    setMobileNavOpen(false);
+  }
   const title = pageTitles[pathname] ?? "ERP Estoque";
 
   return (

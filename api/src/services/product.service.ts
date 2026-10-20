@@ -28,6 +28,11 @@ import {
 } from "../mappers/product.mapper";
 import filterProducts from "../utils/helpers/filter_products_params.helper";
 import IProductRepository from "../interfaces/product_interfaces/product_repository.interface";
+import {
+   ImportProductsResultDto,
+   ImportRowErrorDto,
+   ProductImportWrites,
+} from "../dtos/product_dtos/import_products.dto";
 import ICategoriaRepository from "../interfaces/category_interfaces/categoria_repository.interface";
 import { IProductValidator } from "../interfaces/product_interfaces/produto_validator.interface";
 import { ICategoriaValidator } from "../interfaces/category_interfaces/categoria_validatoria.validator";
@@ -267,6 +272,99 @@ class ProductService implements IProductService {
          return left(new ServerError("500", true, "internal server error", error));
       }
    }
+   // Spreadsheet import (ADM/SU). Rows were read in column order by the web; here every row is
+   // validated again, SKUs decide create vs update (an update also reactivates the product),
+   // and nothing is written unless every row is valid.
+   async importProducts(
+      payload: unknown,
+   ): Promise<Either<BaseAppError, ImportProductsResultDto>> {
+      try {
+         const envelope = this.productValidator.validateImportPayload(payload);
+         if (envelope.isLeft()) {
+            return left(envelope.value);
+         }
+         const rows = (payload as { rows: ({ linha: number } & Record<string, unknown>)[] }).rows;
+
+         const errors = new Map<number, string[]>();
+         const addError = (linha: number, message: string) =>
+            errors.set(linha, [...(errors.get(linha) ?? []), message]);
+
+         const parsed: { linha: number; dto: CreateProductDto }[] = [];
+         const firstLineBySku = new Map<string, number>();
+         for (const row of rows) {
+            const result = this.productValidator.parseImportRow(row);
+            if (result.isLeft()) {
+               result.value.forEach((message) => addError(row.linha, message));
+               continue;
+            }
+            const sku = result.value.sku;
+            const firstLine = firstLineBySku.get(sku);
+            if (firstLine !== undefined) {
+               addError(row.linha, `SKU ${sku} repetido (já está na linha ${firstLine})`);
+               continue;
+            }
+            firstLineBySku.set(sku, row.linha);
+            parsed.push({ linha: row.linha, dto: result.value });
+         }
+
+         const categoriasData = await this.categoriaRepository.getCategorias();
+         if (categoriasData.isLeft()) {
+            return left(new ServerError("500", true, "internal server error", categoriasData.value));
+         }
+         const categoriaIds = new Map(
+            categoriasData.value.filter((c) => c.ativo).map((c) => [c.nome, c.id]),
+         );
+
+         const existingData = await this.productRepository.getProductsBySkus([...firstLineBySku.keys()]);
+         if (existingData.isLeft()) {
+            return left(new ServerError("500", true, "internal server error", existingData.value));
+         }
+         const existingBySku = new Map<string, string[]>();
+         for (const { id, sku } of existingData.value) {
+            existingBySku.set(sku, [...(existingBySku.get(sku) ?? []), id]);
+         }
+
+         const writes: ProductImportWrites = { creates: [], updates: [] };
+         const now = new Date();
+         for (const { linha, dto } of parsed) {
+            const categoriaId = categoriaIds.get(dto.categoria.nome);
+            if (!categoriaId) {
+               addError(linha, `Categoria "${dto.categoria.nome}" não encontrada ou inativa`);
+               continue;
+            }
+            const existingIds = existingBySku.get(dto.sku) ?? [];
+            if (existingIds.length > 1) {
+               addError(linha, `SKU ${dto.sku} já existe em ${existingIds.length} produtos; não dá para saber qual atualizar`);
+            } else if (existingIds.length === 1) {
+               writes.updates.push({
+                  id: existingIds[0],
+                  values: toProductUpdateEntity({ ...dto, id: existingIds[0], ativo: true }, categoriaId),
+               });
+            } else {
+               writes.creates.push(toNewProductEntity(dto, categoriaId, now));
+            }
+         }
+
+         if (errors.size > 0) {
+            const report: ImportRowErrorDto[] = [...errors.entries()]
+               .sort(([a], [b]) => a - b)
+               .map(([linha, mensagens]) => ({ linha, mensagens }));
+            return right({ created: 0, updated: 0, errors: report });
+         }
+
+         const saved = await this.productRepository.importProducts(writes);
+         if (saved.isLeft()) {
+            return left(new ServerError("500", true, "internal server error", saved.value));
+         }
+         return right({ created: writes.creates.length, updated: writes.updates.length, errors: [] });
+      } catch (error) {
+         if (error instanceof ValidationError) {
+            return left(error);
+         }
+         return left(new ServerError("500", true, "internal server error", error));
+      }
+   }
+
    async deleteProduct(id: string): Promise<Either<BaseAppError, null>> {
       try {
          const productData = await this.productRepository.removeProduct(id);

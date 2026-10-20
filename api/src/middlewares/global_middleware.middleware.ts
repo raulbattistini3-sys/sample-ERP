@@ -20,7 +20,20 @@ class BaseErrorMiddleware {
             });
         }
 
-        // anything else was thrown outside the Either flow (a bug, a bad JSON body, ...) and hasn't been logged yet;
+        // express.json() rejects malformed or oversized bodies with a 4xx status: the client's mistake, not ours
+        const bodyParserStatus = (err as { status?: unknown }).status;
+        if (typeof bodyParserStatus === "number" && bodyParserStatus >= 400 && bodyParserStatus < 500) {
+            const type = (err as { type?: unknown }).type;
+            const message =
+                type === "entity.too.large"
+                    ? "Requisição grande demais."
+                    : type === "entity.parse.failed"
+                      ? "O corpo da requisição não é um JSON válido."
+                      : "Requisição inválida.";
+            return res.status(bodyParserStatus).json({ message, status: "error" });
+        }
+
+        // anything else was thrown outside the Either flow (a bug, ...) and hasn't been logged yet;
         // Express 5 forwards rejected promises from async controllers here too
         this.logger.handle(
             {

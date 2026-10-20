@@ -11,6 +11,7 @@ import { UsuarioFormPage } from "../features/usuarios/pages/UsuarioFormPage";
 
 import { ProductListPage } from "../features/produtos/pages/ProductListPage";
 import { ProductFormPage } from "../features/produtos/pages/ProductFormPage";
+import { ProductImportPage } from "../features/produtos/pages/ProductImportPage";
 
 import { CategoriaListPage } from "../features/categoria/pages/CategoriaListPage";
 import { CategoriaFormPage } from "../features/categoria/pages/CategoriaFormPage";
@@ -35,6 +36,7 @@ export const router = createBrowserRouter([
 
           { path: "products", element: <ProductListPage /> },
           { path: "products/new", element: <ProductFormPage /> },
+          { path: "products/import", element: <ProductImportPage /> },
           { path: "products/:id", element: <ProductFormPage /> },
 
           { path: "categorias", element: <CategoriaListPage /> },

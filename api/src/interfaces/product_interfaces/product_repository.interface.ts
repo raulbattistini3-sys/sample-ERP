@@ -2,6 +2,7 @@ import { NewProductEntity, ProductEntity, ProductWithCategoria } from "../../ent
 import { BaseAppError } from "../../errors/global_error.error";
 import { Either } from "../../globals/errors/left_right_either.error";
 import { RepositoryError } from "../../globals/errors/global_repository_error.error";
+import { ProductImportWrites } from "../../dtos/product_dtos/import_products.dto";
 
 interface IProductRepository {
    // includeInactive: ADM/SU see deactivated products; everyone else gets 404 / only active ones
@@ -18,6 +19,9 @@ interface IProductRepository {
       values: Partial<NewProductEntity>,
       includeInactive?: boolean,
    ): Promise<Either<BaseAppError, null>>;
+   getProductsBySkus(skus: string[]): Promise<Either<RepositoryError, { id: string; sku: string }[]>>;
+   // creates and updates of one spreadsheet import, in a single transaction
+   importProducts(writes: ProductImportWrites): Promise<Either<RepositoryError, null>>;
    deactivateProduct(id: string): Promise<Either<RepositoryError, null>>;
    removeProduct(id: string): Promise<Either<RepositoryError, null>>;
 }

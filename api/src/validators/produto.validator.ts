@@ -6,8 +6,10 @@ import { ZodError, ZodTypeAny } from "zod";
 import {
    CreateProdutoSchema,
    FilterProdutoSchema,
+   ImportProdutosSchema,
    UpdateProdutoSchema,
 } from "../utils/schemas/produto.schema";
+import { CreateProductDto } from "../dtos/product_dtos/create_product.dto";
 import { ProductFilterDto } from "../dtos/product_dtos/get_products.dto";
 import BaseValidator from "./base.validator";
 
@@ -28,6 +30,19 @@ class ProdutoValidator extends BaseValidator implements IProductValidator {
       const result = FilterProdutoSchema.safeParse(query);
       if (!result.success) {
          return left(this.toValidationError(result.error));
+      }
+      return right(result.data);
+   }
+
+   validateImportPayload(payload: unknown): Either<BaseAppError, void> {
+      return this.validateWith(ImportProdutosSchema, payload);
+   }
+
+   // one spreadsheet row: the parsed product, or every problem with it (not just the first)
+   parseImportRow(row: unknown): Either<string[], CreateProductDto> {
+      const result = CreateProdutoSchema.safeParse(row);
+      if (!result.success) {
+         return left(result.error.errors.map((err) => err.message));
       }
       return right(result.data);
    }

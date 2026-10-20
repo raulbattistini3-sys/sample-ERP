@@ -7,6 +7,7 @@ import ProductRepository from "../repositories/product.repository";
 import CategoriaRepository from "../repositories/categoria.repository";
 import ProdutoValidator from "../validators/produto.validator";
 import CategoriaValidator from "../validators/categoria.validator";
+import { authMiddleware } from "./auth_middleware.instance";
 
 
 const config = Config.getInstance();
@@ -30,6 +31,8 @@ const productRoutes = Router();
 
 productRoutes.get("/filter", productController.getByFilter);
 productRoutes.get("/download", productController.getToDownload);
+// bulk create/update from a spreadsheet: ADM and SU only
+productRoutes.post("/import", authMiddleware.requireAdminRole, productController.importSpreadsheet);
 
 productRoutes.post("/", productController.create);
 productRoutes.get("/", productController.getAll);
