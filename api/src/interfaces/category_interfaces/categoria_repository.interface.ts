@@ -10,7 +10,9 @@ interface ICategoriaRepository {
     createCategoria(
         payload: Omit<Categoria, "id">
     ): Promise<Either<RepositoryError, Categoria>>;
-    updateCategoria(payload: Categoria): Promise<Either<RepositoryError, void>>;
+    // usuarioId: who made the change; recorded as an "Alteracao" auditoria in the same transaction
+    updateCategoria(payload: Categoria, usuarioId: string): Promise<Either<BaseAppError, void>>;
+    deactivateCategoria(id: string, usuarioId: string): Promise<Either<BaseAppError, void>>;
     deleteCategoria(id: string): Promise<Either<RepositoryError, void>>;
 }
 

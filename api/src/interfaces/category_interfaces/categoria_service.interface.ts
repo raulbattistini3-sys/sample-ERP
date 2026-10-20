@@ -27,11 +27,13 @@ interface ICategoryService {
       payload: PayloadCreateCategoria,
    ) => Promise<Either<BaseAppError, ResponseCreateCategoria>>;
    // TODO: is null better than undefined? in order to clean up memory allocation
+   // usuarioId: who made the change; recorded as an "Alteracao" auditoria unless a manual one covers it
    updateCategory: (
       payload: PayloadUpdateCategory,
+      usuarioId: string,
    ) => Promise<Either<BaseAppError, null>>;
    deleteCategory: (id: string) => Promise<Either<BaseAppError, null>>;
-   archiveCategory: (id: string) => Promise<Either<BaseAppError, null>>;
+   archiveCategory: (id: string, usuarioId: string) => Promise<Either<BaseAppError, null>>;
 }
 
 export { ICategoryService };

@@ -1,4 +1,5 @@
 import { asc, eq, inArray } from "drizzle-orm";
+import { applyChanges, diffProduct, recordProductChange } from "./audit_trail.repository";
 import { DrizzleDB } from "../db/client";
 import { produtos } from "../db/schema/product.schema";
 import { categorias } from "../db/schema/categoria.schema";
@@ -59,14 +60,15 @@ class ProductRepository implements IProductRepository {
   }
 
   // all writes of one import in a single transaction: every row is saved, or none
-  async importProducts({ creates, updates }: ProductImportWrites): Promise<Either<RepositoryError, null>> {
+  async importProducts({ creates, updates }: ProductImportWrites, usuarioId: string): Promise<Either<RepositoryError, null>> {
     try {
       await this.db.transaction(async (tx: DrizzleDB) => {
         if (creates.length > 0) {
           await tx.insert(produtos).values(creates);
         }
+        const categoriaNomes = await this.categoriaNomes(tx);
         for (const { id, values } of updates) {
-          await tx.update(produtos).set(values).where(eq(produtos.id, id));
+          await this.updateAudited(tx, id, values, usuarioId, categoriaNomes);
         }
       });
       return right(null);
@@ -90,31 +92,64 @@ class ProductRepository implements IProductRepository {
   async updateProduct(
     id: string,
     values: Partial<NewProductEntity>,
+    usuarioId: string,
     includeInactive = false,
   ): Promise<Either<BaseAppError, null>> {
     try {
-      const [productData] = await this.db.select().from(produtos).where(eq(produtos.id, id)).limit(1);
-      if (!productData || (!includeInactive && !productData.ativo)) {
-        return left(new ValidationError("404", "Produto não encontrado"));
-      }
-      await this.db.update(produtos).set(values).where(eq(produtos.id, id));
-      return right(null);
+      const found = await this.db.transaction((tx: DrizzleDB) =>
+        this.updateAudited(tx, id, values, usuarioId, null, includeInactive),
+      );
+      return found ? right(null) : left(new ValidationError("404", "Produto não encontrado"));
     } catch (error) {
       return left(new RepositoryError("500", error));
     }
   }
 
-  async deactivateProduct(id: string): Promise<Either<RepositoryError, null>> {
+  async deactivateProduct(id: string, usuarioId: string): Promise<Either<BaseAppError, null>> {
     try {
-      const [productData] = await this.db.select().from(produtos).where(eq(produtos.id, id)).limit(1);
-      if (!productData) {
-        return left(new RepositoryError("404"));
-      }
-      await this.db.update(produtos).set({ ativo: false }).where(eq(produtos.id, id));
-      return right(null);
+      const found = await this.db.transaction((tx: DrizzleDB) =>
+        this.updateAudited(tx, id, { ativo: false }, usuarioId, null),
+      );
+      return found ? right(null) : left(new ValidationError("404", "Produto não encontrado"));
     } catch (error) {
       return left(new RepositoryError("500", error));
     }
+  }
+
+  // Locks the product row, applies `values` and records the change in the same transaction: an
+  // automatic "Alteracao" auditoria, unless a manual one already covers it (see audit_trail.repository).
+  // Nothing is recorded when no field actually changed. false = no such product (or inactive and
+  // includeInactive is off).
+  private async updateAudited(
+    tx: DrizzleDB,
+    id: string,
+    values: Partial<NewProductEntity>,
+    usuarioId: string,
+    categoriaNomes: Map<string, string> | null,
+    includeInactive = true,
+  ): Promise<boolean> {
+    const [before] = await tx.select().from(produtos).where(eq(produtos.id, id)).for("update");
+    if (!before || (!includeInactive && !before.ativo)) {
+      return false;
+    }
+    await tx.update(produtos).set(values).where(eq(produtos.id, id));
+    const after = applyChanges(before, values as Partial<typeof before>);
+    const nomes = categoriaNomes ?? (await this.categoriaNomes(tx));
+    const snapshot = (p: typeof before) => ({ ...p, categoriaNome: nomes.get(p.categoriaId) ?? p.categoriaId });
+    await recordProductChange(tx, {
+      usuarioId,
+      produtoId: id,
+      nomeProduto: after.name,
+      vendaAntes: Number(before.valorDeVenda),
+      vendaDepois: Number(after.valorDeVenda),
+      changes: diffProduct(snapshot(before), snapshot(after)),
+    });
+    return true;
+  }
+
+  private async categoriaNomes(tx: DrizzleDB): Promise<Map<string, string>> {
+    const rows = await tx.select({ id: categorias.id, nome: categorias.nome }).from(categorias);
+    return new Map(rows.map((c: { id: string; nome: string }) => [c.id, c.nome]));
   }
 
   async removeProduct(id: string): Promise<Either<RepositoryError, null>> {

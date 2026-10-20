@@ -45,12 +45,14 @@ interface IProductService {
    ) => Promise<Either<BaseAppError, ResponseFindProductsToDownloadDto>>;
    updateProduct: (
       payload: PayloadUpdateProductDto,
+      // who made the change: recorded as an "Alteracao" auditoria unless a manual one covers it
+      usuarioId: string,
       includeInactive?: boolean,
    ) => Promise<Either<BaseAppError, null>>;
    // payload: { rows: [{ linha, sku, name, categoria: { nome }, ... }] }; errors non-empty = nothing saved
-   importProducts: (payload: unknown) => Promise<Either<BaseAppError, ImportProductsResultDto>>;
+   importProducts: (payload: unknown, usuarioId: string) => Promise<Either<BaseAppError, ImportProductsResultDto>>;
    deleteProduct: (id: string) => Promise<Either<BaseAppError, null>>;
-   deactivateProduct: (id: string) => Promise<Either<BaseAppError, null>>;
+   deactivateProduct: (id: string, usuarioId: string) => Promise<Either<BaseAppError, null>>;
 }
 
 export default IProductService;

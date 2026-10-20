@@ -14,15 +14,17 @@ interface IProductRepository {
       payload: NewProductEntity,
    ): Promise<Either<RepositoryError, ProductEntity>>;
    // categoria is resolved to categoriaId by the service; 404 when the product doesn't exist
+   // usuarioId: who made the change; it's recorded as an "Alteracao" auditoria in the same transaction
    updateProduct(
       id: string,
       values: Partial<NewProductEntity>,
+      usuarioId: string,
       includeInactive?: boolean,
    ): Promise<Either<BaseAppError, null>>;
    getProductsBySkus(skus: string[]): Promise<Either<RepositoryError, { id: string; sku: string }[]>>;
    // creates and updates of one spreadsheet import, in a single transaction
-   importProducts(writes: ProductImportWrites): Promise<Either<RepositoryError, null>>;
-   deactivateProduct(id: string): Promise<Either<RepositoryError, null>>;
+   importProducts(writes: ProductImportWrites, usuarioId: string): Promise<Either<RepositoryError, null>>;
+   deactivateProduct(id: string, usuarioId: string): Promise<Either<BaseAppError, null>>;
    removeProduct(id: string): Promise<Either<RepositoryError, null>>;
 }
 export default IProductRepository;
