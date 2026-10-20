@@ -5,6 +5,8 @@ declare global {
       interface Request {
          // set by AuthMiddleware.authenticate for every route behind it
          user?: UsuarioResponseDto;
+         // the usuario's current session version, already checked against the token
+         sessaoVersao?: number;
       }
    }
 }

@@ -64,7 +64,7 @@ class UsuarioRepository implements IUsuarioRepository {
   }
 
   async createUsuario(
-    payload: Omit<UsuarioEntity, "id">,
+    payload: Omit<UsuarioEntity, "id" | "sessaoVersao">,
   ): Promise<Either<BaseAppError, UsuarioEntity>> {
     try {
       if (!payload) return left(new RepositoryError("No payload found"));

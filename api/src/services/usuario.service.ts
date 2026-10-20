@@ -179,6 +179,8 @@ class UsuarioService implements IUserService {
             senha: payload.senha
                ? await hashPassword(payload.senha)
                : existing.value.senha,
+            // a new senha ends every session opened with the old one
+            sessaoVersao: existing.value.sessaoVersao + (payload.senha ? 1 : 0),
          };
          // only a change that leaves the usuario without active SU rights needs the guard
          const removesSu = !isSu(payload.permissoes) || !nextAtivo;
@@ -251,6 +253,7 @@ class UsuarioService implements IUserService {
             id,
             ativo: false,
             senha: userClass.senha,
+            sessaoVersao: userClass.sessaoVersao,
             nome: userClass.nome,
             permissoes: userClass.permissoes,
             email: userClass.email,
@@ -302,8 +305,8 @@ class UsuarioService implements IUserService {
 }
 
 // sliding session: a signed-in, active usuario trades its token for a new one
-refreshToken(usuario: UsuarioResponseDto): ResponseLoginUsuarioDto {
-   return { ...usuario, token: generateToken(usuario) };
+refreshToken(usuario: UsuarioResponseDto, sessaoVersao: number): ResponseLoginUsuarioDto {
+   return { ...usuario, token: generateToken({ ...usuario, sessaoVersao }) };
 }
 
 async registerUsuario(

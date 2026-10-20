@@ -7,7 +7,8 @@ interface IUsuarioRepository {
    getUsuarioByEmail(email: string): Promise<Either<BaseAppError, UsuarioEntity>>;
    getUsuarios(): Promise<Either<BaseAppError, UsuarioEntity[]>>;
    createUsuario(
-      payload: Omit<UsuarioEntity, "id" | "auditorias_realizadas">,
+      // sessaoVersao starts at the database default (0)
+      payload: Omit<UsuarioEntity, "id" | "sessaoVersao">,
    ): Promise<Either<BaseAppError, UsuarioEntity>>;
    // payload is the full row to save (senha already hashed)
    updateUsuario(

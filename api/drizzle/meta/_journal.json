@@ -22,6 +22,13 @@
       "when": 1792511157548,
       "tag": "0002_password_reset_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792512316260,
+      "tag": "0003_usuarios_sessao_versao",
+      "breakpoints": true
     }
   ]
 }

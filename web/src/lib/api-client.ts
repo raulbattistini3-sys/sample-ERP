@@ -23,7 +23,8 @@ apiClient.interceptors.response.use(
     const isLoginRequest = error.config?.url?.endsWith("/user/login");
     if (error.response?.status === 401 && !isLoginRequest) {
       clearSession();
-      window.location.href = "/login";
+      // expired, deactivated, or the senha was changed (reset / admin): the login page says so
+      window.location.href = "/login?sessao=encerrada";
     }
     return Promise.reject(error);
   },

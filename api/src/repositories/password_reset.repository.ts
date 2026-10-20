@@ -78,7 +78,8 @@ class PasswordResetRepository implements IPasswordResetRepository {
         }
         const [updated] = await tx
           .update(usuarios)
-          .set({ senha: senhaHash })
+          // bumping sessao_versao ends every session opened with the old senha
+          .set({ senha: senhaHash, sessaoVersao: sql`${usuarios.sessaoVersao} + 1` })
           .where(and(eq(usuarios.id, claimed.usuarioId), eq(usuarios.ativo, true)))
           .returning({ id: usuarios.id });
         if (!updated) {

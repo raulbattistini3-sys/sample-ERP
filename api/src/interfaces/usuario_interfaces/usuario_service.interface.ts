@@ -33,7 +33,7 @@ interface IUsuarioService {
       payload: PayloadCreateUsuario,
       actor: UsuarioResponseDto,
    ) => Promise<Either<BaseAppError, ResponseCreateUsuario>>;
-   refreshToken: (usuario: UsuarioResponseDto) => ResponseLoginUsuarioDto;
+   refreshToken: (usuario: UsuarioResponseDto, sessaoVersao: number) => ResponseLoginUsuarioDto;
    updateUser: (
       id: string,
       payload: PayloadUpdateUsuarioDto,

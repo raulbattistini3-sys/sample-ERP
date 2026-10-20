@@ -22,12 +22,12 @@ class AuthMiddleware {
       if (!token) {
          return this.reject(req, next, "401", "Token de autenticação ausente");
       }
-      const usuarioId = verifyToken(token);
-      if (!usuarioId) {
+      const claims = verifyToken(token);
+      if (!claims) {
          return this.reject(req, next, "401", "Token inválido ou expirado");
       }
 
-      const usuario = await this.userRepository.getUsuario(usuarioId);
+      const usuario = await this.userRepository.getUsuario(claims.usuarioId);
       if (usuario.isLeft()) {
          // a cause means the query itself failed; without one the usuario no longer exists
          if (usuario.value.cause) {
@@ -38,8 +38,13 @@ class AuthMiddleware {
       if (!usuario.value.ativo) {
          return this.reject(req, next, "401", "Usuário inativo");
       }
+      // the senha changed after this token was issued (reset or an admin setting a new one)
+      if (claims.sessaoVersao !== usuario.value.sessaoVersao) {
+         return this.reject(req, next, "401", "Sessão encerrada porque a senha foi alterada. Entre novamente.");
+      }
 
       req.user = toUsuarioResponse(usuario.value);
+      req.sessaoVersao = usuario.value.sessaoVersao;
       return next();
    };
 

@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { Link, Location, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Location, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Field, Input } from "../../../components/ui/Field";
@@ -17,6 +17,9 @@ export const LoginPage = () => {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  // set by the api client when the API ended the session
+  const [searchParams] = useSearchParams();
+  const sessionEnded = searchParams.get("sessao") === "encerrada";
   const loginMutation = useLogin();
 
   const [form, setForm] = useState<LoginUsuarioPayload>({ email: "", senha: "" });
@@ -64,6 +67,11 @@ export const LoginPage = () => {
         </>
       }
     >
+      {sessionEnded && !state?.passwordReset && !submitError && (
+        <p role="status" className="mt-4 rounded-md bg-canvas px-3 py-2 text-sm text-muted">
+          Sua sessão foi encerrada. Entre novamente.
+        </p>
+      )}
       {state?.passwordReset && !submitError && (
         <SuccessAlert message="Senha redefinida. Entre com a nova senha." className="mt-4" />
       )}
