@@ -15,9 +15,6 @@ class DetalhamentoAuditoriaRepository implements IDetalhamentoAuditoriaRepositor
         .select()
         .from(detalhamentosAuditoria)
         .where(isNull(detalhamentosAuditoria.deletedAt)); // exclude soft-deleted rows
-      if (!data || data.length === 0) {
-        return left(new RepositoryError("No detalhamento auditorias found"));
-      }
       return right(data);
     } catch (error) {
       return left(new RepositoryError("Repository error", error));

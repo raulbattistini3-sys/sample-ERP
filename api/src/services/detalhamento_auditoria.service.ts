@@ -38,7 +38,9 @@ class DetalhamentoAuditoriaService implements IDetalhamentoAuditoriaService {
          const detalhamentosAuditoria =
             await this.detalhamentoAuditoriaRepository.getDetalhamentoAuditorias();
          if (detalhamentosAuditoria.isLeft()) {
-            return left(new ServerError("500", true, "internal server error"));
+            return left(
+               new ServerError("500", true, "internal server error", detalhamentosAuditoria.value),
+            );
          }
          const paginatedData = paginate(
             detalhamentosAuditoria.value,

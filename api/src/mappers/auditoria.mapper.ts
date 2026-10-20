@@ -7,7 +7,7 @@ export const toAuditoriaResponse = (auditoria: AuditoriaEntity): AuditoriaRespon
    id: auditoria.id,
    acao_efetuada: auditoria.acaoEfetuada,
    data_de_audicao: auditoria.dataDeAudicao,
-   nome_do_auditor: auditoria.nomeDoAuditorId,
+   nome_do_auditor: auditoria.usuarioId, // the API keeps the old field name
    detalhamento_auditoria_id: auditoria.detalhamentoAuditoriaId,
 });
 

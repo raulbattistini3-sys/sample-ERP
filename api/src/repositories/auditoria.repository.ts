@@ -5,6 +5,8 @@ import { AuditoriaEntity } from "../entities/auditoria.entity";
 import IAuditoryRepository from "../interfaces/auditory_interfaces/auditoria_repository.interface";
 import { RepositoryError } from "../globals/errors/global_repository_error.error";
 import { Either, right, left } from "../globals/errors/left_right_either.error";
+import { BaseAppError } from "../errors/global_error.error";
+import { ValidationError } from "../errors/client_errors/four_xx.error";
 import { PayloadCreateAuditoria } from "../dtos/auditoria_dtos/create_auditoria.dto";
 import { GetUserPreviousAudictionsDto } from "../dtos/auditoria_dtos/get_auditoria.dto";
 
@@ -25,11 +27,11 @@ class AuditoriaRepository implements IAuditoryRepository {
     }
   }
 
-  async getAuditoriaById(id: string): Promise<Either<RepositoryError, AuditoriaEntity>> {
+  async getAuditoriaById(id: string): Promise<Either<BaseAppError, AuditoriaEntity>> {
     try {
       const [auditoria] = await this.db.select().from(auditorias).where(eq(auditorias.id, id)).limit(1);
       if (!auditoria) {
-        return left(new RepositoryError("No auditoria found"));
+        return left(new ValidationError("404", "Auditoria não encontrada"));
       }
       return right(auditoria);
     } catch (error) {
@@ -73,7 +75,7 @@ class AuditoriaRepository implements IAuditoryRepository {
       const auditoriasData = await this.db
         .select()
         .from(auditorias)
-        .where(eq(auditorias.nomeDoAuditorId, userId));
+        .where(eq(auditorias.usuarioId, userId));
       if (!auditoriasData || auditoriasData.length === 0) {
         return left(new RepositoryError("No auditorias found"));
       }
