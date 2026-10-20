@@ -43,18 +43,6 @@ class ProductRepository implements IProductRepository {
     }
   }
 
-  async getProducts(): Promise<Either<RepositoryError, ProductEntity[]>> {
-    try {
-      const productData = await this.db.select().from(produtos).where(eq(produtos.ativo, true));
-      if (!productData) {
-        return left(new RepositoryError("404"));
-      }
-      return right(productData);
-    } catch (error) {
-      return left(new RepositoryError("500", error));
-    }
-  }
-
   async createProduct(payload: NewProductEntity): Promise<Either<RepositoryError, ProductEntity>> {
     try {
       const [productData] = await this.db.insert(produtos).values(payload).returning();

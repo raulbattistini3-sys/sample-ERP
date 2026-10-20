@@ -5,9 +5,8 @@ import { RepositoryError } from "../../globals/errors/global_repository_error.er
 
 interface IProductRepository {
    getProductById(id: string): Promise<Either<BaseAppError, ProductWithCategoria>>;
-   // active products with their category, for the list endpoint
+   // active products with their category, for the list, filter and download endpoints
    getProductsWithCategoria(): Promise<Either<RepositoryError, ProductWithCategoria[]>>;
-   getProducts(): Promise<Either<RepositoryError, ProductEntity[]>>;
    // categoria is resolved to categoriaId by the service before inserting
    createProduct(
       payload: NewProductEntity,
