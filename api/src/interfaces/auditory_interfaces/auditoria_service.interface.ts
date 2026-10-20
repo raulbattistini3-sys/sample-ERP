@@ -1,7 +1,4 @@
-import {
-   PayloadCreateAuditoria,
-   ResponseCreateAuditoria,
-} from "../../dtos/auditoria_dtos/create_auditoria.dto";
+import { ResponseCreateAuditoria } from "../../dtos/auditoria_dtos/create_auditoria.dto";
 import {
    ResponseFindAuditoriaById,
    ResponseGetAuditorias,
@@ -18,8 +15,9 @@ interface IAuditoriaService {
    findAuditoriasById: (
       id: string,
    ) => Promise<Either<BaseAppError, ResponseFindAuditoriaById>>;
+   // payload is the raw request body; the service validates and coerces it
    createAuditoria: (
-      payload: PayloadCreateAuditoria,
+      payload: unknown,
    ) => Promise<Either<BaseAppError, ResponseCreateAuditoria>>;
    updateAuditoria: (
       payload: PayloadUpdateAuditoria,

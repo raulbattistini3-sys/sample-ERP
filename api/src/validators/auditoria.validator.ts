@@ -1,28 +1,45 @@
+import { ZodError, ZodTypeAny } from "zod";
 import { IAuditoriaValidator } from "../interfaces/auditory_interfaces/auditoria_validator.interface";
-import AuditoriaSchema from "../utils/schemas/auditoria.schema";
-import ZodErrorStatusEnum from "../enums/errors_enums/errors_status.enum";
+import {
+   CreateAuditoriaSchema,
+   UpdateAuditoriaSchema,
+} from "../utils/schemas/auditoria.schema";
+import { CreateAuditoriaDto } from "../dtos/auditoria_dtos/create_auditoria.dto";
 import { Either, left, right } from "../globals/errors/left_right_either.error";
 import { BaseAppError } from "../errors/global_error.error";
+import { ValidationError } from "../errors/client_errors/four_xx.error";
 import BaseValidator from "./base.validator";
 
 class AuditoriaValidator extends BaseValidator implements IAuditoriaValidator {
    constructor() {
       super();
    }
-   validatePayload(payload: unknown): Either<BaseAppError, void> {
-      const result = AuditoriaSchema.safeParse(payload);
-
+   // returns the parsed payload: dates and decimals are coerced, defaults applied
+   parseCreatePayload(payload: unknown): Either<BaseAppError, CreateAuditoriaDto> {
+      const result = CreateAuditoriaSchema.safeParse(payload);
       if (!result.success) {
-         return left(
-            new BaseAppError(
-               "400",
-               ZodErrorStatusEnum.Values.error,
-               false,
-               result.error.errors.map((err) => err.message).join(", "),
-            ),
-         );
+         return left(this.toValidationError(result.error));
+      }
+      return right(result.data);
+   }
+
+   validatePayload(payload: unknown): Either<BaseAppError, void> {
+      return this.validateWith(UpdateAuditoriaSchema, payload);
+   }
+
+   private validateWith(schema: ZodTypeAny, payload: unknown): Either<BaseAppError, void> {
+      const result = schema.safeParse(payload);
+      if (!result.success) {
+         return left(this.toValidationError(result.error));
       }
       return right(undefined);
+   }
+
+   private toValidationError(error: ZodError) {
+      return new ValidationError(
+         "400",
+         error.errors.map((err) => err.message).join(", "),
+      );
    }
 }
 

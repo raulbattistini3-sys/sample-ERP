@@ -5,7 +5,7 @@ type AuditoriaResponseDto = {
     id: string;
     acao_efetuada: AuditoriaEntity["acaoEfetuada"];
     data_de_audicao: Date;
-    nome_do_auditor: string; // the auditor's usuario id
+    usuario_id: string; // the auditor; the web resolves the name through the usuarios endpoint
     detalhamento_auditoria_id: string | null;
 };
 

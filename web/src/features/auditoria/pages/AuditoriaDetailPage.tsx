@@ -83,7 +83,7 @@ export const AuditoriaDetailPage = () => {
           <dl className="grid gap-4 sm:grid-cols-3">
             <Detail label="Ação">{acaoEfetuadaLabels[auditoria.acao_efetuada] ?? auditoria.acao_efetuada}</Detail>
             <Detail label="Data">{formatDateTime(auditoria.data_de_audicao)}</Detail>
-            <Detail label="Auditor">{auditorNames.get(auditoria.nome_do_auditor) ?? auditoria.nome_do_auditor}</Detail>
+            <Detail label="Auditor">{auditorNames.get(auditoria.usuario_id) ?? auditoria.usuario_id}</Detail>
           </dl>
         </FormCard>
 

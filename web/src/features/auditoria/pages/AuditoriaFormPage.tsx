@@ -74,7 +74,7 @@ export const AuditoriaFormPage = () => {
       {
         acao_efetuada: values.acao_efetuada,
         data_de_audicao: new Date(values.data_de_audicao).toISOString(),
-        nome_do_auditor: user.id,
+        usuario_id: user.id,
         itens: [product.id],
         detalhamento_auditoria: {
           nome_do_produto: product.name,

@@ -19,7 +19,7 @@ export const AuditoriaListPage = () => {
 
   // the API already returns newest first across pages; the table's own sorting still works within a page
   const rows = useMemo<AuditoriaRow[]>(
-    () => (data?.data ?? []).map((a) => ({ ...a, auditor: auditorNames.get(a.nome_do_auditor) ?? a.nome_do_auditor })),
+    () => (data?.data ?? []).map((a) => ({ ...a, auditor: auditorNames.get(a.usuario_id) ?? a.usuario_id })),
     [data, auditorNames],
   );
 
