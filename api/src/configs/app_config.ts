@@ -11,7 +11,8 @@ export type ApiConfig = {
 class Config {
   private appConfig: { api: ApiConfig };
   private static instance: Config;
-
+  private db?: NodePgDatabase<typeof schema>;
+  
   constructor() {
     this.appConfig = { api: this.loadApiConfig() };
   }
@@ -26,7 +27,7 @@ class Config {
   private loadApiConfig(): ApiConfig {
     return {
       port: Number(process.env.APP_PORT) || 3333,
-      host: String(process.env.APP_HOST) || "localhost",
+      host: process.env.APP_HOST || "localhost",
     };
   }
 
@@ -34,15 +35,16 @@ class Config {
     return this.appConfig.api;
   }
 
-  public getDb(): NodePgDatabase | any {
-  const pool = new Pool({
-    database: process.env.DB_NAME,
-    host: process.env.DB_HOST,
-    port: Number(process.env.DB_PORT) || 5432,
-    user: process.env.DB_USERNAME,
-  });
-  const db = drizzle(pool, { schema });
-  return db;
+  public getDb(): NodePgDatabase<typeof schema> {
+    console.log("DB host in use:", new URL(process.env.DATABASE_URL!).host);
+    if (!this.db) {
+      const pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: { rejectUnauthorized: false },
+      });
+      this.db = drizzle(pool, { schema });
+    }
+    return this.db;
   }
 }
 
