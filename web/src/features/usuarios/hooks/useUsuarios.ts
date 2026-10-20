@@ -1,11 +1,10 @@
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getUsuarios, getUsuarioById, registerUsuario, updateUsuario, archiveUsuario, deleteUsuario } from "../api/usuario.api";
 import { useAuth } from "../../../context/AuthContext";
-
-export const USUARIOS_PAGE_SIZE = 20;
+import { LIST_PAGE_SIZE } from "../../../lib/pagination";
 
 // keeps the current page on screen while the next one loads
-export const useUsuarios = (page = 1, amount = USUARIOS_PAGE_SIZE) =>
+export const useUsuarios = (page = 1, amount = LIST_PAGE_SIZE) =>
   useQuery({
     queryKey: ["usuarios", "list", page, amount],
     queryFn: () => getUsuarios(page, amount),

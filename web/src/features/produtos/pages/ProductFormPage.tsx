@@ -1,11 +1,13 @@
 import { FormEvent, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { useBackToList } from "../../../hooks/useListPage";
 import { PowerOff, Trash2 } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Field, Input, Select } from "../../../components/ui/Field";
 import { ErrorAlert, FormCard, LoadingState, PageHeader } from "../../../components/ui/PageState";
 import { getApiErrorMessage } from "../../../lib/api-client";
 import { toFieldErrors, toNumber } from "../../../lib/form";
+import { ALL_ITEMS_AMOUNT } from "../../../lib/pagination";
 import { CategoriaNomesEnum } from "../../categoria/types/categoria.types";
 import { useCategorias } from "../../categoria/hooks/useCategorias";
 import {
@@ -32,9 +34,9 @@ export function ProductFormPage() {
 }
 
 function ProductForm({ product }: { product?: Product }) {
-  const navigate = useNavigate();
   const isEdit = !!product;
-  const { data: categorias } = useCategorias();
+  const { data: categoriasPage } = useCategorias(1, ALL_ITEMS_AMOUNT);
+  const categorias = categoriasPage?.data;
 
   const createMutation = useCreateProduct();
   const updateMutation = useUpdateProduct();
@@ -60,7 +62,7 @@ function ProductForm({ product }: { product?: Product }) {
     setFieldErrors((prev) => ({ ...prev, [field]: undefined }));
   };
 
-  const backToList = () => navigate("/products");
+  const backToList = useBackToList("/products");
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();

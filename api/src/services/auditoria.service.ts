@@ -39,13 +39,11 @@ class AuditoriaService implements IAuditoriaService {
          }
          const auditorias = await this.auditoriaRepository.getAuditorias();
          if (auditorias.isLeft()) {
-            return left(new ServerError("500", true, "internal server error"));
+            return left(
+               new ServerError("500", true, "internal server error", auditorias.value),
+            );
          }
-         const paginatedData = paginate(
-            auditorias.value,
-            1,
-            auditorias.value.length,
-         );
+         const paginatedData = paginate(auditorias.value, page, amount);
          const response: ResponseGetAuditorias = {
             data: paginatedData.data,
             pageNumber: paginatedData.currentPage,

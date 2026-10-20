@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { ALL_ITEMS_AMOUNT } from "../../../lib/pagination";
+import { useBackToList } from "../../../hooks/useListPage";
 import { Button } from "../../../components/ui/Button";
 import { Field, Input, Select, Textarea } from "../../../components/ui/Field";
 import { ErrorAlert, FormCard, PageHeader } from "../../../components/ui/PageState";
@@ -20,9 +21,10 @@ type FormValues = Omit<Record<keyof AuditoriaFormValues, string>, "acao_efetuada
 type FieldErrors = Partial<Record<keyof AuditoriaFormValues, string>>;
 
 export const AuditoriaFormPage = () => {
-  const navigate = useNavigate();
+  const backToList = useBackToList("/auditoria");
   const { user } = useAuth();
-  const { data: products, isLoading: loadingProducts } = useProducts();
+  const { data: productsPage, isLoading: loadingProducts } = useProducts(1, ALL_ITEMS_AMOUNT);
+  const products = productsPage?.data;
   const createMutation = useCreateAuditoria();
 
   const [form, setForm] = useState<FormValues>({
@@ -81,7 +83,7 @@ export const AuditoriaFormPage = () => {
           observacoes_adicionais: values.observacoes_adicionais,
         },
       },
-      { onSuccess: () => navigate("/auditoria") },
+      { onSuccess: backToList },
     );
   };
 
@@ -180,7 +182,7 @@ export const AuditoriaFormPage = () => {
           <p className="text-xs text-muted">Registrada como {user?.nome}.</p>
 
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="secondary" onClick={() => navigate("/auditoria")}>
+            <Button type="button" variant="secondary" onClick={backToList}>
               Cancelar
             </Button>
             <Button type="submit" disabled={createMutation.isPending}>

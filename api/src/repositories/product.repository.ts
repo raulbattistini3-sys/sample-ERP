@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { DrizzleDB } from "../db/client";
 import { produtos } from "../db/schema/product.schema";
 import { categorias } from "../db/schema/categoria.schema";
@@ -35,7 +35,8 @@ class ProductRepository implements IProductRepository {
         .select({ produto: produtos, categoria: categorias })
         .from(produtos)
         .innerJoin(categorias, eq(produtos.categoriaId, categorias.id))
-        .where(eq(produtos.ativo, true));
+        .where(eq(produtos.ativo, true))
+        .orderBy(asc(produtos.name));
       return right(productData);
     } catch (error) {
       return left(new RepositoryError("Database error", error));

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { DrizzleDB } from "../db/client";
 import { categorias } from "../db/schema/categoria.schema";
 import { Categoria } from "../entities/categoria.entity";
@@ -38,10 +38,7 @@ class CategoriaRepository implements CategoryRepositoryInterface {
 
   async getCategorias(): Promise<Either<RepositoryError, Categoria[]>> {
     try {
-      const categoriasData = await this.db.select().from(categorias);
-      if (!categoriasData || categoriasData.length === 0) {
-        return left(new RepositoryError("No categories found"));
-      }
+      const categoriasData = await this.db.select().from(categorias).orderBy(asc(categorias.nome));
       return right(categoriasData);
     } catch (error) {
       return left(new RepositoryError("Database error", error));

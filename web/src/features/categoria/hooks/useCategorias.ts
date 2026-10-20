@@ -1,4 +1,5 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { LIST_PAGE_SIZE } from "../../../lib/pagination";
 import {
   getCategorias,
   getCategoriaById,
@@ -8,8 +9,13 @@ import {
   deleteCategoria,
 } from "../api/categorias.api";
 
-export const useCategorias = () =>
-  useQuery({ queryKey: ["categorias"], queryFn: getCategorias });
+// keeps the current page on screen while the next one loads
+export const useCategorias = (page = 1, amount = LIST_PAGE_SIZE) =>
+  useQuery({
+    queryKey: ["categorias", "list", page, amount],
+    queryFn: () => getCategorias(page, amount),
+    placeholderData: keepPreviousData,
+  });
 
 export const useCategoria = (id: string) =>
   useQuery({ queryKey: ["categorias", id], queryFn: () => getCategoriaById(id), enabled: !!id });

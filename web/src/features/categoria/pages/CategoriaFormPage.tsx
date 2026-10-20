@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { useBackToList } from "../../../hooks/useListPage";
 import { Archive, Trash2 } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Field, Select } from "../../../components/ui/Field";
@@ -27,7 +28,6 @@ export const CategoriaFormPage = () => {
 };
 
 function CategoriaForm({ categoria }: { categoria?: Categoria }) {
-  const navigate = useNavigate();
   const isEdit = !!categoria;
 
   const createMutation = useCreateCategoria();
@@ -42,7 +42,7 @@ function CategoriaForm({ categoria }: { categoria?: Categoria }) {
   });
   const [nomeError, setNomeError] = useState<string>();
 
-  const backToList = () => navigate("/categorias");
+  const backToList = useBackToList("/categorias");
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();

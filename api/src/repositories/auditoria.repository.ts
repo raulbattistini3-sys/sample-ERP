@@ -1,4 +1,4 @@
-import { eq, isNull } from "drizzle-orm";
+import { desc, eq, isNull } from "drizzle-orm";
 import { DrizzleDB } from "../db/client";
 import { auditorias } from "../db/schema/auditoria.schema";
 import { AuditoriaEntity } from "../entities/auditoria.entity";
@@ -13,10 +13,12 @@ class AuditoriaRepository implements IAuditoryRepository {
 
   async getAuditorias(): Promise<Either<RepositoryError, AuditoriaEntity[]>> {
     try {
-      const auditoriasData = await this.db.select().from(auditorias).where(isNull(auditorias.deletedAt));
-      if (!auditoriasData || auditoriasData.length === 0) {
-        return left(new RepositoryError("No auditorias found"));
-      }
+      // newest first, so paging walks back in time
+      const auditoriasData = await this.db
+        .select()
+        .from(auditorias)
+        .where(isNull(auditorias.deletedAt))
+        .orderBy(desc(auditorias.dataDeAudicao));
       return right(auditoriasData);
     } catch (error) {
       return left(new RepositoryError("Database error", error));
