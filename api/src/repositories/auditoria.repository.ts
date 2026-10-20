@@ -10,6 +10,7 @@ import { Either, right, left } from "../globals/errors/left_right_either.error";
 import { BaseAppError } from "../errors/global_error.error";
 import { ValidationError } from "../errors/client_errors/four_xx.error";
 import { pgErrorCode } from "../utils/helpers/pg_error.util";
+import { enqueueForProducts } from "./jira_outbox.repository";
 import { NewAuditoriaWithItens } from "../dtos/auditoria_dtos/create_auditoria.dto";
 import { GetUserPreviousAudictionsDto } from "../dtos/auditoria_dtos/get_auditoria.dto";
 
@@ -58,6 +59,8 @@ class AuditoriaRepository implements IAuditoryRepository {
         await tx
           .insert(produtosPorAuditoria)
           .values(produtoIds.map((produtoId) => ({ auditoriaId: auditoriaRow.id, produtoId })));
+        // one Jira issue per categoria of these products (when Jira is connected), sent after commit
+        await enqueueForProducts(tx, auditoriaRow.id, produtoIds);
         return auditoriaRow;
       });
       return right(created);

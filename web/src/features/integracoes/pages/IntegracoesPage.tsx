@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ExternalLink, Link2, Loader2, Send, Unlink } from "lucide-react";
+import { ExternalLink, Link2, Loader2, RotateCcw, Send, Unlink } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Field, Select } from "../../../components/ui/Field";
 import { ErrorAlert, FormCard, LoadingState, PageHeader, SuccessAlert } from "../../../components/ui/PageState";
@@ -14,7 +14,9 @@ import {
   useDisconnectIntegracao,
   useIntegracoes,
   useJiraProjects,
+  useJiraQueue,
   useJiraTestIssue,
+  useRetryJiraQueue,
   useSaveJiraConfig,
 } from "../hooks/useIntegracoes";
 
@@ -119,6 +121,42 @@ function JiraSettings({ integracao }: { integracao: Integracao }) {
   );
 }
 
+// automatic issues: one per categoria of every new auditoria (sent by the API's dispatcher)
+function JiraQueueStatus() {
+  const { data } = useJiraQueue(true);
+  const retryMutation = useRetryJiraQueue();
+  if (!data) return null;
+  const failing = data.comErro + data.esgotadas;
+
+  return (
+    <div className="mt-4 border-t border-border pt-4">
+      <h4 className="text-sm font-semibold text-ink">Auditorias no Jira</h4>
+      <p className="mt-1 text-sm text-muted">
+        Cada nova auditoria cria uma issue no projeto acima para cada categoria envolvida.
+      </p>
+      <p className="mt-2 text-sm text-ink">
+        {data.enviadas} enviada(s) · {data.pendentes} na fila · {failing} com erro
+        {data.esgotadas > 0 && ` (${data.esgotadas} desistiram após ${data.maxTentativas} tentativas)`}
+      </p>
+      {data.erros.length > 0 && (
+        <ul className="mt-2 space-y-1 text-sm text-red-700">
+          {data.erros.map((erro) => (
+            <li key={`${erro.auditoriaId}-${erro.categoriaNome}`}>
+              {erro.categoriaNome} (tentativa {erro.tentativas}): {erro.ultimoErro ?? "erro desconhecido"}
+            </li>
+          ))}
+        </ul>
+      )}
+      {failing > 0 && (
+        <Button variant="secondary" className="mt-3" onClick={() => retryMutation.mutate()} disabled={retryMutation.isPending}>
+          <RotateCcw className="h-4 w-4" aria-hidden="true" />
+          Reenviar com erro
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function IntegracaoCard({ integracao }: { integracao: Integracao }) {
   const connectMutation = useConnectIntegracao();
   const disconnectMutation = useDisconnectIntegracao();
@@ -180,6 +218,7 @@ function IntegracaoCard({ integracao }: { integracao: Integracao }) {
         <ErrorAlert className="mt-3" message={getApiErrorMessage(disconnectMutation.error, "Não foi possível desconectar.")} />
       )}
       {integracao.provider === "jira" && integracao.conectado && <JiraSettings integracao={integracao} />}
+      {integracao.provider === "jira" && integracao.conectado && integracao.config?.projectKey && <JiraQueueStatus />}
     </FormCard>
   );
 }

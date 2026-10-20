@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { DrizzleDB } from "../db/client";
+import { enqueueForCategoria, enqueueForProducts } from "./jira_outbox.repository";
 
 // Automatic "Alteracao" auditorias for product and categoria changes. Every function runs on the
 // caller's transaction, so a change is never saved without its auditoria (or a claimed manual one).
@@ -42,6 +43,7 @@ async function createAutomaticAuditoria(
   valorAtual: string,
   changes: FieldChange[],
   produtoIds: string[],
+  categoriaId: string | null, // set for a categoria change: its Jira issue goes to that categoria
 ): Promise<string> {
   const detalhamentoId = firstId(
     await tx.execute(sql`
@@ -58,6 +60,9 @@ async function createAutomaticAuditoria(
   for (const produtoId of produtoIds) {
     await tx.execute(sql`insert into produtos_por_auditoria (auditoria_id, produto_id) values (${auditoriaId}, ${produtoId})`);
   }
+  // Jira issue(s) for the new auditoria, sent after commit (only when Jira is connected)
+  if (categoriaId) await enqueueForCategoria(tx, auditoriaId, categoriaId);
+  else await enqueueForProducts(tx, auditoriaId, produtoIds);
   return auditoriaId;
 }
 
@@ -100,7 +105,7 @@ export async function recordProductChange(
   if (claimed) return { auditoriaId: claimed, automatica: false };
 
   const auditoriaId = await createAutomaticAuditoria(
-    tx, change.usuarioId, change.nomeProduto, antes, depois, change.changes, [change.produtoId],
+    tx, change.usuarioId, change.nomeProduto, antes, depois, change.changes, [change.produtoId], null,
   );
   return { auditoriaId, automatica: true };
 }
@@ -143,6 +148,7 @@ export async function recordCategoriaChange(
   const auditoriaId = await createAutomaticAuditoria(
     tx, change.usuarioId, `Categoria: ${change.nomeDepois}`, "0.00", "0.00", change.changes,
     (produtos.rows as { id: string }[]).map((p) => p.id),
+    change.categoriaId,
   );
   return { auditoriaId, automatica: true };
 }

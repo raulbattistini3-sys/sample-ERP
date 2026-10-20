@@ -43,6 +43,13 @@
       "when": 1792520119399,
       "tag": "0005_integracoes",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792522881083,
+      "tag": "0006_auditoria_jira_issues",
+      "breakpoints": true
     }
   ]
 }

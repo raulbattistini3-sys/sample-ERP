@@ -28,5 +28,30 @@ export const listJiraProjects = () =>
 export const saveJiraConfig = (config: { projectKey: string; issueTypeId: string }) =>
   apiClient.put("/integracoes/jira/config", config);
 
+export type AuditoriaJiraIssue = {
+  categoriaNome: string;
+  status: "pendente" | "enviada" | "erro" | "cancelada";
+  issueKey: string | null;
+  issueUrl: string | null;
+  tentativas: number;
+  ultimoErro: string | null;
+};
+
+export type JiraQueue = {
+  enviadas: number;
+  pendentes: number;
+  comErro: number;
+  esgotadas: number;
+  maxTentativas: number;
+  erros: { categoriaNome: string; auditoriaId: string; ultimoErro: string | null; tentativas: number }[];
+};
+
+export const getAuditoriaJiraIssues = (auditoriaId: string) =>
+  apiClient.get<{ data: AuditoriaJiraIssue[] }>(`/integracoes/jira/auditorias/${auditoriaId}`).then((r) => r.data.data);
+
+export const getJiraQueue = () => apiClient.get<{ data: JiraQueue }>("/integracoes/jira/fila").then((r) => r.data.data);
+
+export const retryJiraQueue = () => apiClient.post("/integracoes/jira/fila/reenviar");
+
 export const createJiraTestIssue = () =>
   apiClient.post<{ key: string; url: string }>("/integracoes/jira/teste").then((r) => r.data);

@@ -208,25 +208,46 @@ class IntegracaoService {
   }
 
   async createJiraTestIssue(usuarioNome: string): Promise<Either<BaseAppError, { key: string; url: string }>> {
+    return this.createJiraIssue({
+      summary: "Teste de integração — ERP Estoque",
+      paragraphs: [
+        `Issue de teste criada por ${usuarioNome} em ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}.`,
+        "A conexão entre o ERP Estoque e o Jira está funcionando. Esta issue pode ser apagada.",
+      ],
+      labels: ["erp-teste"],
+    });
+  }
+
+  // An issue in the configured project/issue type. Many projects leave Labels off their create screen,
+  // and Jira then rejects the whole issue; in that case it's sent again without labels.
+  async createJiraIssue(issue: {
+    summary: string;
+    paragraphs: string[];
+    labels: string[];
+  }): Promise<Either<BaseAppError, { key: string; url: string }>> {
     const row = await this.repository.find("jira");
     if (!row) return left(notConnected());
     const { projectKey, issueTypeId } = row.config as { projectKey?: string; issueTypeId?: string };
-    if (!projectKey || !issueTypeId) return left(new ValidationError("409", "Escolha o projeto e o tipo de issue antes de testar."));
-
-    const response = await this.jiraRequest("/rest/api/3/issue", {
-      method: "POST",
-      body: JSON.stringify({
-        fields: {
-          project: { key: projectKey },
-          issuetype: { id: issueTypeId },
-          summary: "Teste de integração — ERP Estoque",
-          description: adfParagraphs(
-            `Issue de teste criada por ${usuarioNome} em ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}.`,
-            "A conexão entre o ERP Estoque e o Jira está funcionando. Esta issue pode ser apagada.",
-          ),
-        },
-      }),
-    });
+    if (!projectKey || !issueTypeId) {
+      return left(new ValidationError("409", "Escolha o projeto e o tipo de issue do Jira em Integrações."));
+    }
+    const send = (labels: string[]) =>
+      this.jiraRequest("/rest/api/3/issue", {
+        method: "POST",
+        body: JSON.stringify({
+          fields: {
+            project: { key: projectKey },
+            issuetype: { id: issueTypeId },
+            summary: issue.summary.slice(0, 255),
+            description: adfParagraphs(...issue.paragraphs),
+            ...(labels.length > 0 && { labels }),
+          },
+        }),
+      });
+    let response = await send(issue.labels);
+    if (response.isLeft() && issue.labels.length > 0 && response.value.message.includes("labels")) {
+      response = await send([]);
+    }
     if (response.isLeft()) return left(response.value);
     const { key } = response.value as { key: string };
     return right({ key, url: `${String(row.contaExterna.siteUrl ?? "").replace(/\/$/, "")}/browse/${key}` });
