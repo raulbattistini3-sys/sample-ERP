@@ -136,4 +136,10 @@ dist
 .pnp.*
 requisitor.txt
 /src/errors/test.txt
-bun.lock
+# this package is installed with bun; lockfiles from other package managers go stale
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# the sample env file is meant to be committed
+!.env.example
