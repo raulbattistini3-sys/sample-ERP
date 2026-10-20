@@ -1,10 +1,6 @@
 import { QueuedIssue } from "../repositories/jira_outbox.repository";
-import { RETRY_TIERS, RetryTier } from "../configs/kafka.config";
 
-export const MAX_ATTEMPTS = 8; // then the dead-letter topic, and "Reenviar" on the Integrações page
-
-// after the 1st failure wait 1 min, after the 2nd 5 min, then 30 min each time
-export const retryTierFor = (tentativas: number): RetryTier => RETRY_TIERS[Math.min(Math.max(tentativas, 1), RETRY_TIERS.length) - 1];
+// the Jira issue for one (auditoria, categoria) row: summary, description paragraphs and labels
 
 const acaoLabels: Record<string, string> = { Criacao: "Criação", Alteracao: "Alteração", Delecao: "Deleção" };
 
@@ -12,7 +8,7 @@ const acaoLabels: Record<string, string> = { Criacao: "Criação", Alteracao: "A
 export const categoriaLabel = (nome: string) =>
   `categoria-${nome
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")}`;

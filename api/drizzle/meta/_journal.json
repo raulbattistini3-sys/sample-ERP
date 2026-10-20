@@ -57,6 +57,13 @@
       "when": 1792523944972,
       "tag": "0007_jira_issues_kafka",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792524965529,
+      "tag": "0008_jira_issues_pgboss",
+      "breakpoints": true
     }
   ]
 }

@@ -4,6 +4,7 @@ import { useAuditoriaJiraIssues } from "../hooks/useIntegracoes";
 
 const statusText = {
   pendente: "Na fila para o Jira",
+  enviando: "Sendo criada no Jira",
   erro: "Falhou; nova tentativa em breve",
   cancelada: "Cancelada (auditoria removida)",
 } as const;

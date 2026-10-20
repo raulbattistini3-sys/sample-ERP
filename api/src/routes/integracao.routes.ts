@@ -8,9 +8,8 @@ import IntegracaoService from "../services/integracao.service";
 import IntegracaoController from "../controllers/integracao.controller";
 import { authMiddleware } from "./auth_middleware.instance";
 import JiraOutboxRepository from "../repositories/jira_outbox.repository";
-import KafkaClient from "../messaging/kafka.client";
-import JiraIssuePipeline from "../messaging/jira_issue_pipeline";
-import { kafkaSettings } from "../configs/kafka.config";
+import JiraIssueWorker from "../queues/jira_issues.worker";
+import { queueClient } from "../queues/queue.client";
 
 const logger = AppLogger.getInstance();
 const db = Config.getInstance().getDb();
@@ -23,9 +22,9 @@ const integracaoService = new IntegracaoService(new IntegracaoRepository(db), pr
   fetch: globalThis.fetch,
 });
 const jiraOutbox = new JiraOutboxRepository(db);
-// outbox -> Kafka -> Jira for the issues of new auditorias; started and stopped by index.ts
-export const jiraIssuePipeline = new JiraIssuePipeline(new KafkaClient(kafkaSettings(), logger), jiraOutbox, integracaoService, logger);
-const integracaoController = new IntegracaoController(integracaoService, jiraOutbox, jiraIssuePipeline.relay, logger);
+// runs the pg-boss jobs that create the Jira issues of new auditorias; started and stopped by index.ts
+export const jiraIssueWorker = new JiraIssueWorker(queueClient, jiraOutbox, integracaoService, logger);
+const integracaoController = new IntegracaoController(integracaoService, jiraOutbox, jiraIssueWorker, logger);
 
 // mounted before AuthMiddleware: the provider redirects the browser here without our token;
 // the single-use OAuth state identifies who started the connection

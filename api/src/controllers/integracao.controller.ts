@@ -3,14 +3,14 @@ import BaseController from "./base.controller";
 import LoggerInterface from "../interfaces/logger_interfaces/logger_interface.interface";
 import IntegracaoService from "../services/integracao.service";
 import JiraOutboxRepository from "../repositories/jira_outbox.repository";
-import JiraIssueRelay from "../services/jira_issue_relay.service";
-import { MAX_ATTEMPTS } from "../services/jira_issue_content";
+import JiraIssueWorker from "../queues/jira_issues.worker";
+import { MAX_ATTEMPTS } from "../queues/jira_issues.jobs";
 
 class IntegracaoController extends BaseController {
   constructor(
     private integracaoService: IntegracaoService,
     private jiraOutbox: JiraOutboxRepository,
-    private jiraRelay: JiraIssueRelay,
+    private jiraWorker: JiraIssueWorker,
     logger: LoggerInterface,
   ) {
     super(logger);
@@ -59,10 +59,10 @@ class IntegracaoController extends BaseController {
     return res.status(200).json({ data: { ...(await this.jiraOutbox.summary(MAX_ATTEMPTS)), maxTentativas: MAX_ATTEMPTS } });
   };
 
-  // failed issues start over: back to the outbox, and the relay publishes them to Kafka now
+  // issues that gave up start over with a new job (the ones still retrying keep their schedule)
   retryJiraQueue = async (req: Request, res: Response) => {
-    const reenviadas = await this.jiraOutbox.retryFailed();
-    void this.jiraRelay.runOnce();
+    const reenviadas = (await this.jiraOutbox.resetExhausted(MAX_ATTEMPTS)).length;
+    await this.jiraWorker.enqueueMissing();
     return res.status(202).json({ reenviadas });
   };
 

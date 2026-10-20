@@ -30,7 +30,7 @@ export const saveJiraConfig = (config: { projectKey: string; issueTypeId: string
 
 export type AuditoriaJiraIssue = {
   categoriaNome: string;
-  status: "pendente" | "enviada" | "erro" | "cancelada";
+  status: "pendente" | "enviando" | "enviada" | "erro" | "cancelada";
   issueKey: string | null;
   issueUrl: string | null;
   tentativas: number;

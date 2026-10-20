@@ -3,7 +3,7 @@ import PathParams from "node:path";
 import Config from "./configs/app_config";
 import BaseErrorMiddleware from "./middlewares/global_middleware.middleware";
 import AppLogger from "./utils/logger/pino_logger.util";
-import { jiraIssuePipeline } from "./routes/integracao.routes";
+import { jiraIssueWorker } from "./routes/integracao.routes";
 
 const config = Config.getInstance();
 
@@ -17,13 +17,13 @@ app.use(baseErrorMiddleware.handle);
 app.listen(port, host, async () => {
    pinoLogger.handle({ applicationValues: config }, "DEBUG");
    console.log(`Server listening on host: ${host} and port: ${port}`);
-   // outbox -> Kafka -> Jira for the issues of new auditorias
-   void jiraIssuePipeline.start();
+   // pg-boss worker that creates the Jira issues of new auditorias
+   void jiraIssueWorker.start();
 });
 
-// leave the Kafka consumer group cleanly (no rebalance wait for the other instances), then exit
+// let running jobs finish (up to 20s) and close pg-boss's connections, then exit
 const shutdown = async () => {
-   await jiraIssuePipeline.stop();
+   await jiraIssueWorker.stop();
    process.exit(0);
 };
 process.once("SIGINT", shutdown);

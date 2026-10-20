@@ -47,7 +47,7 @@ export const useAuditoriaJiraIssues = (auditoriaId: string) =>
     queryKey: ["integracoes", "jira", "auditoria", auditoriaId],
     queryFn: () => getAuditoriaJiraIssues(auditoriaId),
     enabled: !!auditoriaId,
-    refetchInterval: (query) => (query.state.data?.some((i) => i.status === "pendente" || i.status === "erro") ? 10_000 : false),
+    refetchInterval: (query) => (query.state.data?.some((i) => i.status === "pendente" || i.status === "enviando" || i.status === "erro") ? 10_000 : false),
   });
 
 export const useJiraQueue = (enabled: boolean) =>
