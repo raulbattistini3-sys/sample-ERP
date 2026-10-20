@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { cn } from "../../lib/cn";
 
 export function PageHeader({ title, actions }: { title: string; actions?: ReactNode }) {
@@ -30,6 +30,21 @@ export function ErrorAlert({ message, className }: { message: string; className?
       )}
     >
       <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+      <span>{message}</span>
+    </div>
+  );
+}
+
+export function SuccessAlert({ message, className }: { message: string; className?: string }) {
+  return (
+    <div
+      role="status"
+      className={cn(
+        "flex items-start gap-2 rounded-md border border-accent/30 bg-accent-soft px-3 py-2 text-sm text-accent",
+        className,
+      )}
+    >
+      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
       <span>{message}</span>
     </div>
   );

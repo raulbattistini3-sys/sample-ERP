@@ -34,6 +34,17 @@ export const LoginUsuarioSchema = z.object({
 });
 export type LoginUsuarioPayload = z.infer<typeof LoginUsuarioSchema>;
 
+export const ForgotPasswordSchema = z.object({
+  email: z.email("Informe um e-mail válido"),
+});
+
+// the reset page's fields; the token comes from the link's ?token=
+export const ResetPasswordFormSchema = z.object({
+  senha: z.string().check(z.minLength(6, "A senha deve ter pelo menos 6 caracteres")),
+  confirmarSenha: z.string(),
+});
+export type ResetPasswordFormValues = z.infer<typeof ResetPasswordFormSchema>;
+
 // matches ResponseLoginUsuarioDto — parsing strips anything else the API sends back (e.g. senha)
 export const LoginResponseSchema = z.extend(UsuarioSchema, {
   token: z.string(),

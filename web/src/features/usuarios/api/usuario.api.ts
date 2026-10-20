@@ -16,6 +16,13 @@ export const loginUsuario = async (payload: LoginUsuarioPayload) => {
   const { data } = await apiClient.post("/user/login", payload);
   return LoginResponseSchema.parse(data);
 };
+// always answers with the same message, whether or not the email has an account
+export const forgotPassword = (email: string) =>
+  apiClient.post<{ message: string }>("/user/forgot-password", { email }).then((r) => r.data.message);
+// 400 when the link's token is unknown, used or expired
+export const resetPassword = (payload: { token: string; senha: string }) =>
+  apiClient.post("/user/reset-password", payload);
+
 // trades the current (still valid) token for a new one; 401 if it already expired
 export const refreshSession = async () => {
   const { data } = await apiClient.post("/user/refresh-token");

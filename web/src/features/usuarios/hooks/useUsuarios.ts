@@ -3,6 +3,8 @@ import {
   getUsuarios,
   getUsuarioById,
   registerUsuario,
+  forgotPassword,
+  resetPassword,
   createUsuario,
   updateUsuario,
   archiveUsuario,
@@ -32,6 +34,10 @@ export const useCreateUsuario = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["usuarios"] }),
   });
 };
+
+export const useForgotPassword = () => useMutation({ mutationFn: forgotPassword });
+
+export const useResetPassword = () => useMutation({ mutationFn: resetPassword });
 
 export const useLogin = () => {
   const { login } = useAuth();

@@ -6,6 +6,10 @@ import UsuarioService from "../services/usuario.service";
 import UsuarioRepository from "../repositories/usuario.repository";
 import UsuarioValidator from "../validators/usuario.validator";
 import { authMiddleware } from "./auth_middleware.instance";
+import PasswordResetRepository from "../repositories/password_reset.repository";
+import PasswordResetService from "../services/password_reset.service";
+import PasswordResetController from "../controllers/password_reset.controller";
+import ResendMailer from "../utils/mailer/resend_mailer.util";
 
 const config = Config.getInstance();
 const logger = AppLogger.getInstance();
@@ -19,10 +23,23 @@ const usuarioService = new UsuarioService(usuarioRepository, usuarioValidator);
 
 const usuarioController = new UsuarioController(usuarioService, logger);
 
+const passwordResetController = new PasswordResetController(
+  new PasswordResetService(
+    usuarioRepository,
+    new PasswordResetRepository(db),
+    usuarioValidator,
+    new ResendMailer(),
+    logger,
+  ),
+  logger,
+);
+
 // the only routes reachable without a token (mounted before AuthMiddleware in routes/index.ts)
 const publicUsuarioRoutes = Router();
 publicUsuarioRoutes.post("/register", usuarioController.register);
 publicUsuarioRoutes.post("/login", usuarioController.login);
+publicUsuarioRoutes.post("/forgot-password", passwordResetController.forgotPassword);
+publicUsuarioRoutes.post("/reset-password", passwordResetController.resetPassword);
 
 // mounted after AuthMiddleware.authenticate, so req.user is set
 const usuarioRoutes = Router();

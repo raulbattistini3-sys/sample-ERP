@@ -43,4 +43,22 @@ export const UpdateUserSchema = UserSchema.omit({ id: true, senha: true }).exten
 
 export const LoginUserSchema = UserSchema.pick({ email: true, senha: true });
 
+// POST /user/forgot-password (public)
+export const ForgotPasswordSchema = z.object({
+    email: z
+        .string({ required_error: "Informe o e-mail." })
+        .trim()
+        .email("Informe um e-mail válido."),
+});
+
+// POST /user/reset-password (public); token is the one from the emailed link
+export const ResetPasswordSchema = z.object({
+    token: z
+        .string({ required_error: "Link de redefinição inválido." })
+        .min(20, "Link de redefinição inválido."),
+    senha: z
+        .string({ required_error: "Informe a nova senha." })
+        .min(6, "A senha deve ter pelo menos 6 caracteres."),
+});
+
 export default UserSchema;

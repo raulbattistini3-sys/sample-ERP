@@ -15,6 +15,13 @@
       "when": 1792510159163,
       "tag": "0001_permissoes_su",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792511157548,
+      "tag": "0002_password_reset_tokens",
+      "breakpoints": true
     }
   ]
 }

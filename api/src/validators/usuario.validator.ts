@@ -5,7 +5,9 @@ import { IUsuarioValidator } from "../interfaces/usuario_interfaces/usuario_vali
 import { ZodTypeAny } from "zod";
 import {
    CreateUserSchema,
+   ForgotPasswordSchema,
    LoginUserSchema,
+   ResetPasswordSchema,
    RegisterUserSchema,
    UpdateUserSchema,
 } from "../utils/schemas/user.schema";
@@ -26,6 +28,14 @@ class UsuarioValidator extends BaseValidator implements IUsuarioValidator {
 
    validateRegisterPayload(payload: unknown): Either<BaseAppError, void> {
       return this.validateWith(RegisterUserSchema, payload);
+   }
+
+   validateForgotPasswordPayload(payload: unknown): Either<BaseAppError, void> {
+      return this.validateWith(ForgotPasswordSchema, payload);
+   }
+
+   validateResetPasswordPayload(payload: unknown): Either<BaseAppError, void> {
+      return this.validateWith(ResetPasswordSchema, payload);
    }
 
    validateLoginPayload(payload: unknown): Either<BaseAppError, void> {
