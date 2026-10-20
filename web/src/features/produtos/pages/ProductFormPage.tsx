@@ -84,10 +84,7 @@ function ProductForm({ product }: { product?: Product }) {
         { onSuccess: backToList },
       );
     } else {
-      createMutation.mutate(
-        { ...values, categoria: { nome: categoria }, data_de_cadastro: new Date().toISOString() },
-        { onSuccess: backToList },
-      );
+      createMutation.mutate({ ...values, categoria: { nome: categoria } }, { onSuccess: backToList });
     }
   };
 
@@ -176,7 +173,7 @@ function ProductForm({ product }: { product?: Product }) {
             <Field id="quantidade_em_estoque" label="Quantidade em estoque" error={fieldErrors.quantidade_em_estoque}>
               <Input
                 id="quantidade_em_estoque"
-                inputMode="decimal"
+                inputMode="numeric"
                 value={form.quantidade_em_estoque}
                 onChange={(e) => updateField("quantidade_em_estoque")(e.target.value)}
                 invalid={!!fieldErrors.quantidade_em_estoque}

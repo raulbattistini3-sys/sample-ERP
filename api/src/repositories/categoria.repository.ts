@@ -5,6 +5,8 @@ import { Categoria } from "../entities/categoria.entity";
 import CategoryRepositoryInterface from "../interfaces/category_interfaces/categoria_repository.interface";
 import { PayloadCreateCategoria, ResponseCreateCategoria } from "../dtos/category_dtos/create_categoria.dto";
 import { RepositoryError } from "../globals/errors/global_repository_error.error";
+import { BaseAppError } from "../errors/global_error.error";
+import { ValidationError } from "../errors/client_errors/four_xx.error";
 import { Either, right, left } from "../globals/errors/left_right_either.error";
 
 class CategoriaRepository implements CategoryRepositoryInterface {
@@ -22,11 +24,11 @@ class CategoriaRepository implements CategoryRepositoryInterface {
     }
   }
 
-  async getCategoriaByName(nome: Categoria["nome"]): Promise<Either<RepositoryError, Categoria>> {
+  async getCategoriaByName(nome: Categoria["nome"]): Promise<Either<BaseAppError, Categoria>> {
     try {
       const [categoria] = await this.db.select().from(categorias).where(eq(categorias.nome, nome)).limit(1);
       if (!categoria || !categoria.ativo) {
-        return left(new RepositoryError("Categoria not found"));
+        return left(new ValidationError("404", `Categoria "${nome}" não encontrada ou inativa`));
       }
       return right(categoria);
     } catch (error) {

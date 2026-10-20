@@ -4,4 +4,5 @@ import BaseValidator from "../../validators/base.validator";
 
 export interface IProductValidator extends BaseValidator {
    validatePayload(payload: unknown): Either<BaseAppError, void>;
+   validateCreatePayload(payload: unknown): Either<BaseAppError, void>;
 }

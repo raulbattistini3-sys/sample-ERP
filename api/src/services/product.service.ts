@@ -14,8 +14,6 @@ import {
    ResponseFindProductsToDownloadDto,
 } from "../dtos/product_dtos/get_products.dto";
 import { PayloadUpdateProductDto } from "../dtos/product_dtos/update_product.dto";
-import { generateUUID } from "../utils/helpers/generate_uuid.util";
-import NOW from "../globals/helpers/global_time_constants.util";
 import { ServerError } from "../errors/server_errors/five_xx.error";
 import { Either, left, right } from "../globals/errors/left_right_either.error";
 import { BaseAppError } from "../errors/global_error.error";
@@ -23,6 +21,7 @@ import { ValidationError } from "../errors/client_errors/four_xx.error";
 import ProdutoValidator from "../validators/produto.validator";
 import CategoriaValidator from "../validators/categoria.validator";
 import paginate from "../utils/helpers/paginate_data.helper";
+import { toNewProductEntity, toProductResponse } from "../mappers/product.mapper";
 import filterUniqueProperty from "../utils/helpers/filter_unique_elements.helper";
 import filterProducts from "../utils/helpers/filter_products_params.helper";
 import IProductRepository from "../interfaces/product_interfaces/product_repository.interface";
@@ -43,48 +42,30 @@ class ProductService implements IProductService {
    ): Promise<Either<BaseAppError, ResponseCreateProductDto>> {
       try {
          const validation =
-            this.productValidator.validatePayload(productPayload);
+            this.productValidator.validateCreatePayload(productPayload);
          if (validation.isLeft()) {
             return left(validation.value);
          }
-         const categoriaValidation = this.categoriaValidator.validateNome(
+
+         // 404 when the category doesn't exist or is inactive
+         const categoriaData = await this.categoriaRepository.getCategoriaByName(
             productPayload.categoria.nome,
          );
-         if (categoriaValidation.isLeft()) {
-            return left(categoriaValidation.value);
+         if (categoriaData.isLeft()) {
+            return left(categoriaData.value);
          }
+         const categoria = categoriaData.value;
 
-         productPayload.data_de_cadastro =
-            productPayload.data_de_cadastro ?? NOW;
-
-         const productData = await this.productRepository.createProduct({
-            id: generateUUID(),
-            ativo: true,
-            ...productPayload,
-         });
-         const categoriaData =
-            await this.categoriaRepository.getCategoriaByName(
-               productPayload.categoria.nome,
-            );
+         const productData = await this.productRepository.createProduct(
+            toNewProductEntity(productPayload, categoria.id, new Date()),
+         );
          if (productData.isLeft()) {
-            if (productData.value instanceof ValidationError) {
-               return left(productData.value);
-            }
-            return left(new ServerError("500", true, "internal server error"));
-         } else {
-            let data: ResponseCreateProductDto = productData.value;
-            if (categoriaData.isLeft()) {
-               if (categoriaData.value instanceof ValidationError) {
-                  return left(categoriaData.value);
-               }
-               return left(
-                  new ServerError("500", true, "internal server errror"),
-               );
-            }
-            data.categoria = categoriaData.value;
-
-            return right(data);
+            return left(
+               new ServerError("500", true, "internal server error", productData.value),
+            );
          }
+
+         return right(toProductResponse(productData.value, categoria));
       } catch (error) {
          if (error instanceof ValidationError) {
             return left(error);
