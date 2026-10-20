@@ -8,13 +8,15 @@ class ServerError extends BaseAppError {
     constructor(
         statusCode: ServerSideErrorsEnum,
         isOperational: boolean,
-        message?: string
+        message?: string,
+        cause?: unknown
     ) {
         super(
             statusCode,
             ZodErrorStatusEnum.Values.error,
             isOperational,
-            message
+            message,
+            cause
         );
 
         this.statusCode = statusCode;

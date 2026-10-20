@@ -1,13 +1,20 @@
 import { Request, Response, NextFunction } from "express";
+import BaseController from "./base.controller";
+import LoggerInterface from "../interfaces/logger_interfaces/logger_interface.interface";
 import IDetalhamentoAuditoria from "../interfaces/detalhamento_auditoria_interfaces/detalhamento_auditoria_service.interface";
 
-class DetalhamentoAuditoriaController {
-  constructor(private detalhamentoAuditoriaService: IDetalhamentoAuditoria) {}
+class DetalhamentoAuditoriaController extends BaseController {
+  constructor(
+    private detalhamentoAuditoriaService: IDetalhamentoAuditoria,
+    logger: LoggerInterface,
+  ) {
+    super(logger);
+  }
 
   create = async (req: Request, res: Response, next: NextFunction) => {
     const result = await this.detalhamentoAuditoriaService.createDetalhamentAuditoria(req.body);
     if (result.isLeft()) {
-      return next(result.value);
+      return this.fail(req, next, result.value);
     }
     return res.status(201).json(result.value);
   };
@@ -15,7 +22,7 @@ class DetalhamentoAuditoriaController {
   getById = async (req: Request, res: Response, next: NextFunction) => {
     const result = await this.detalhamentoAuditoriaService.findDetalhamentoAuditoriaById(req.params.id as string);
     if (result.isLeft()) {
-      return next(result.value);
+      return this.fail(req, next, result.value);
     }
     return res.status(200).json(result.value);
   };
@@ -25,7 +32,7 @@ class DetalhamentoAuditoriaController {
     const amount = Number(req.query.amount ?? 20);
     const result = await this.detalhamentoAuditoriaService.getDetalhamentosAuditoria(page, amount);
     if (result.isLeft()) {
-      return next(result.value);
+      return this.fail(req, next, result.value);
     }
     return res.status(200).json(result.value);
   };
@@ -33,7 +40,7 @@ class DetalhamentoAuditoriaController {
   update = async (req: Request, res: Response, next: NextFunction) => {
     const result = await this.detalhamentoAuditoriaService.updateDetalhamentoAuditoria(req.body);
     if (result.isLeft()) {
-      return next(result.value);
+      return this.fail(req, next, result.value);
     }
     return res.status(204).send();
   };
@@ -41,7 +48,7 @@ class DetalhamentoAuditoriaController {
   delete = async (req: Request, res: Response, next: NextFunction) => {
     const result = await this.detalhamentoAuditoriaService.deleteDetalhamentoAuditoria(req.params.id as string);
     if (result.isLeft()) {
-      return next(result.value);
+      return this.fail(req, next, result.value);
     }
     return res.status(204).send();
   };

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import AppLogger from "../utils/logger/pino_logger.util";
 import Config from "../configs/app_config";
 import ProductController from "../controllers/product.controller";
 import ProductService from "../services/product.service";
@@ -9,6 +10,7 @@ import CategoriaValidator from "../validators/categoria.validator";
 
 
 const config = Config.getInstance();
+const logger = AppLogger.getInstance();
 const  db = config.getDb();
 const productRepository = new ProductRepository(db);
 const categoriaRepository = new CategoriaRepository(db);
@@ -22,7 +24,7 @@ const productService = new ProductService(
   categoriaValidator,
 );
 
-const productController = new ProductController(productService);
+const productController = new ProductController(productService, logger);
 
 const productRoutes = Router();
 

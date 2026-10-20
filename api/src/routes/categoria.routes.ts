@@ -1,4 +1,5 @@
 import { Router } from "express";
+import AppLogger from "../utils/logger/pino_logger.util";
 import CategoriaController from "../controllers/categoria.controller";
 import { CategoriaService } from "../services/categoria.service";
 import CategoriaRepository from "../repositories/categoria.repository";
@@ -6,6 +7,7 @@ import CategoriaValidator from "../validators/categoria.validator";
 import Config from "../configs/app_config";
 
 const config = Config.getInstance();
+const logger = AppLogger.getInstance();
 const  db = config.getDb();
 const categoriaRepository = new CategoriaRepository(db);
 const categoriaValidator = new CategoriaValidator();
@@ -15,7 +17,7 @@ const categoriaService = new CategoriaService(
   categoriaValidator,
 );
 
-const categoriaController = new CategoriaController(categoriaService);
+const categoriaController = new CategoriaController(categoriaService, logger);
 
 const categoriaRoutes = Router();
 

@@ -63,7 +63,7 @@ class UsuarioService implements IUserService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true));
+         return left(new ServerError("500", true, undefined, error));
       }
    }
    async findUserById(
@@ -86,7 +86,7 @@ class UsuarioService implements IUserService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true));
+         return left(new ServerError("500", true, undefined, error));
       }
    }
    async createUsuario(
@@ -110,7 +110,7 @@ class UsuarioService implements IUserService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true));
+         return left(new ServerError("500", true, undefined, error));
       }
    }
   async updateUser(id: string, payload: PayloadUpdateUsuarioDto): Promise<Either<BaseAppError, null>> {
@@ -125,7 +125,7 @@ class UsuarioService implements IUserService {
       await this.userRepository.updateUsuario(usuario.value as UsuarioEntity)
       return right(null);
    } catch (error) {
-      return left(new RepositoryError("Database error"));
+      return left(new RepositoryError("Database error", error));
    }
   } async deleteUser(id: string): Promise<Either<BaseAppError, null>> {
       try {
@@ -146,7 +146,7 @@ class UsuarioService implements IUserService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true));
+         return left(new ServerError("500", true, undefined, error));
       }
    }
    async archiveUser(
@@ -180,7 +180,7 @@ class UsuarioService implements IUserService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true));
+         return left(new ServerError("500", true, undefined, error));
       }
    }
   async loginUsuario(
@@ -209,7 +209,7 @@ class UsuarioService implements IUserService {
       if (error instanceof ValidationError) {
          return left(error);
       }
-      return left(new ServerError("500", true));
+      return left(new ServerError("500", true, undefined, error));
    }
 }
 
@@ -238,7 +238,7 @@ async registerUsuario(
       if (error instanceof ValidationError) {
          return left(error);
       }
-      return left(new ServerError("500", true));
+      return left(new ServerError("500", true, undefined, error));
    }
   }
 }

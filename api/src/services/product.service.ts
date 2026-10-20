@@ -89,7 +89,7 @@ class ProductService implements IProductService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
 
@@ -125,7 +125,7 @@ class ProductService implements IProductService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
 
@@ -149,7 +149,7 @@ class ProductService implements IProductService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
    async findProductsByFilter(
@@ -195,7 +195,7 @@ class ProductService implements IProductService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
    async findProductsToDownload(
@@ -256,7 +256,7 @@ class ProductService implements IProductService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
 
@@ -287,7 +287,7 @@ class ProductService implements IProductService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
    async deleteProduct(id: string): Promise<Either<BaseAppError, null>> {
@@ -304,7 +304,7 @@ class ProductService implements IProductService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
    async deactivateProduct(id: string): Promise<Either<BaseAppError, null>> {
@@ -321,7 +321,7 @@ class ProductService implements IProductService {
          if (error instanceof ValidationError) {
             return left(error);
          }
-         return left(new ServerError("500", true, "internal server error"));
+         return left(new ServerError("500", true, "internal server error", error));
       }
    }
 }

@@ -9,8 +9,8 @@ const config = Config.getInstance();
 const host = config.getApiConfig().host;
 const port = config.getApiConfig().port;
 
-const pinoLogger = new AppLogger();
-const baseErrorMiddleware = new BaseErrorMiddleware();
+const pinoLogger = AppLogger.getInstance();
+const baseErrorMiddleware = new BaseErrorMiddleware(pinoLogger);
 app.use(baseErrorMiddleware.handle);
 
 app.listen(port, host, async () => {

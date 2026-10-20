@@ -18,7 +18,7 @@ class UsuarioRepository implements IUsuarioRepository {
       if (!usuario) return left(new RepositoryError("No usuario found"));
       return right(usuario);
     } catch (error) {
-      return left(new RepositoryError("Database error"));
+      return left(new RepositoryError("Database error", error));
     }
   }
 
@@ -29,7 +29,7 @@ class UsuarioRepository implements IUsuarioRepository {
       if (!usuario) return left(new RepositoryError("No usuario found"));
       return right(usuario);
     } catch (error) {
-      return left(new RepositoryError("Database error"));
+      return left(new RepositoryError("Database error", error));
     }
   }
 
@@ -41,7 +41,7 @@ class UsuarioRepository implements IUsuarioRepository {
       }
       return right(usuariosData);
     } catch (error) {
-      return left(new RepositoryError("Database error"));
+      return left(new RepositoryError("Database error", error));
     }
   }
 
@@ -53,7 +53,7 @@ class UsuarioRepository implements IUsuarioRepository {
       const [usuario] = await this.db.insert(usuarios).values(payload).returning();
       return right(usuario);
     } catch (error) {
-      return left(new RepositoryError("Database error"));
+      return left(new RepositoryError("Database error", error));
     }
   }
 
@@ -67,7 +67,7 @@ class UsuarioRepository implements IUsuarioRepository {
       await this.db.update(usuarios).set(payload).where(eq(usuarios.id, payload.id));
       return right(null);
     } catch (error) {
-      return left(new RepositoryError("Database error"));
+      return left(new RepositoryError("Database error", error));
     }
   }
 
@@ -79,7 +79,7 @@ class UsuarioRepository implements IUsuarioRepository {
       await this.db.delete(usuarios).where(eq(usuarios.id, id));
       return right(null);
     } catch (error) {
-      return left(new RepositoryError("Database error"));
+      return left(new RepositoryError("Database error", error));
     }
   }
 }

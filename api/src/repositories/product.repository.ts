@@ -18,7 +18,7 @@ class ProductRepository implements IProductRepository {
       }
       return right(productData);
     } catch (error) {
-      return left(new RepositoryError("500"));
+      return left(new RepositoryError("500", error));
     }
   }
 
@@ -30,7 +30,7 @@ class ProductRepository implements IProductRepository {
       }
       return right(productData);
     } catch (error) {
-      return left(new RepositoryError("500"));
+      return left(new RepositoryError("500", error));
     }
   }
 
@@ -56,7 +56,7 @@ class ProductRepository implements IProductRepository {
       }
       return right(productData);
     } catch (error) {
-      return left(new RepositoryError("500"));
+      return left(new RepositoryError("500", error));
     }
   }
 
@@ -80,7 +80,7 @@ class ProductRepository implements IProductRepository {
       await this.db.update(produtos).set({ ...rest, categoriaId: categoriaData.id }).where(eq(produtos.id, id));
       return right(null);
     } catch (error) {
-      return left(new RepositoryError("500"));
+      return left(new RepositoryError("500", error));
     }
   }
 
@@ -93,7 +93,7 @@ class ProductRepository implements IProductRepository {
       await this.db.update(produtos).set({ ativo: false }).where(eq(produtos.id, id));
       return right(null);
     } catch (error) {
-      return left(new RepositoryError("500"));
+      return left(new RepositoryError("500", error));
     }
   }
 
@@ -106,7 +106,7 @@ class ProductRepository implements IProductRepository {
       await this.db.delete(produtos).where(eq(produtos.id, id));
       return right(null);
     } catch (error) {
-      return left(new RepositoryError("500"));
+      return left(new RepositoryError("500", error));
     }
   }
 }

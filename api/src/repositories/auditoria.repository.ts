@@ -19,7 +19,7 @@ class AuditoriaRepository implements IAuditoryRepository {
       }
       return right(auditoriasData);
     } catch (error) {
-      return left(new RepositoryError("Database error"));
+      return left(new RepositoryError("Database error", error));
     }
   }
 
@@ -31,7 +31,7 @@ class AuditoriaRepository implements IAuditoryRepository {
       }
       return right(auditoria);
     } catch (error) {
-      return left(new RepositoryError("Database error"));
+      return left(new RepositoryError("Database error", error));
     }
   }
 
@@ -43,7 +43,7 @@ class AuditoriaRepository implements IAuditoryRepository {
       const [auditoria] = await this.db.insert(auditorias).values(payload).returning();
       return right(auditoria);
     } catch (error) {
-      return left(new RepositoryError("Database error"));
+      return left(new RepositoryError("Database error", error));
     }
   }
 
@@ -59,7 +59,7 @@ class AuditoriaRepository implements IAuditoryRepository {
       await this.db.update(auditorias).set(auditoria).where(eq(auditorias.id, auditoria.id));
       return right(null);
     } catch (error) {
-      return left(new RepositoryError("error message"));
+      return left(new RepositoryError("error message", error));
     }
   }
 
@@ -77,7 +77,7 @@ class AuditoriaRepository implements IAuditoryRepository {
       }
       return right(auditoriasData);
     } catch (error) {
-      return left(new RepositoryError("error message"));
+      return left(new RepositoryError("error message", error));
     }
   }
 
@@ -95,7 +95,7 @@ class AuditoriaRepository implements IAuditoryRepository {
       }
       return right(auditoria);
     } catch (error) {
-      return left(new RepositoryError("error message"));
+      return left(new RepositoryError("error message", error));
     }
   }
 
@@ -111,7 +111,7 @@ class AuditoriaRepository implements IAuditoryRepository {
       await this.db.delete(auditorias).where(eq(auditorias.id, id));
       return right(null);
     } catch (error) {
-      return left(new RepositoryError("error message"));
+      return left(new RepositoryError("error message", error));
     }
   }
 
@@ -127,7 +127,7 @@ class AuditoriaRepository implements IAuditoryRepository {
       await this.db.update(auditorias).set({ deletedAt: new Date() }).where(eq(auditorias.id, id));
       return right(null);
     } catch (error) {
-      return left(new RepositoryError("error message"));
+      return left(new RepositoryError("error message", error));
     }
   }
 }

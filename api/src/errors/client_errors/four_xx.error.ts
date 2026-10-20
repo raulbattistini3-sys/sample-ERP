@@ -14,8 +14,12 @@ type ValidationErrorsStatusCode =
 class ValidationError extends BaseAppError {
    public statusCode: ValidationErrorsStatusCode;
    public isOperational: false;
-   constructor(statusCode: ValidationErrorsStatusCode, message?: string) {
-      super(statusCode, ZodErrorStatusEnum.Values.error, false, message);
+   constructor(
+      statusCode: ValidationErrorsStatusCode,
+      message?: string,
+      cause?: unknown,
+   ) {
+      super(statusCode, ZodErrorStatusEnum.Values.error, false, message, cause);
 
       this.statusCode = statusCode;
       this.isOperational = false;
