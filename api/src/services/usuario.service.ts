@@ -28,6 +28,7 @@ import { RepositoryError } from "../globals/errors/global_repository_error.error
 import { UsuarioEntity } from "../entities/usuario.entity";
 import { comparePassword, hashPassword } from "../utils/helpers/password.util";
 import { generateToken } from "../utils/helpers/token.util";
+import { toUsuarioResponse } from "../mappers/usuario.mapper";
 import permissoesUsuarioEnum from "../enums/usuarios_permissoes.enum";
 
 class UsuarioService implements IUserService {
@@ -53,7 +54,7 @@ class UsuarioService implements IUserService {
          }
          const paginatedData = paginate(usuarios.value, page, amount);
          const response: ResponseGetUsuariosDto = {
-            data: paginatedData.data,
+            data: paginatedData.data.map(toUsuarioResponse),
             pageNumber: paginatedData.currentPage,
             totalItems: paginatedData.totalItems,
             pageSize: paginatedData.perPage,
@@ -79,7 +80,7 @@ class UsuarioService implements IUserService {
             return left(userData.value);
          }
          const response: ResponseFindUsuarioByIdDto = {
-            data: userData.value,
+            data: toUsuarioResponse(userData.value),
          };
          return right(response);
       } catch (error) {
@@ -104,7 +105,7 @@ class UsuarioService implements IUserService {
             }
             return left(new ServerError("500", true, "internal server error"));
          }
-         const response: ResponseCreateUsuario = userData.value;
+         const response: ResponseCreateUsuario = toUsuarioResponse(userData.value);
          return right(response);
       } catch (error) {
          if (error instanceof ValidationError) {
@@ -175,7 +176,7 @@ class UsuarioService implements IUserService {
          if (userArchiving.isLeft()) {
             return left(userArchiving.value);
          }
-         return right(userToUpdate);
+         return right(toUsuarioResponse({ ...userClass, ativo: false }));
       } catch (error) {
          if (error instanceof ValidationError) {
             return left(error);
@@ -200,10 +201,7 @@ class UsuarioService implements IUserService {
          return left(new ValidationError("401", "credenciais inválidas"));
       }
       const token = generateToken(userData.value);
-      const { senha, auditorias_realizadas, id, ...safeUser } = userData.value;
-      const userDataVal = userData.value
-      const response: 
-        ResponseLoginUsuarioDto = { ...userDataVal, token };
+      const response: ResponseLoginUsuarioDto = { ...toUsuarioResponse(userData.value), token };
       return right(response);
    } catch (error) {
       if (error instanceof ValidationError) {
@@ -232,8 +230,7 @@ async registerUsuario(
       if (userData.isLeft()) {
          return left(userData.value);
       }
-      const { senha, ...safeUser } = userData.value;
-      return right(userData.value);
+      return right(toUsuarioResponse(userData.value));
    } catch (error) {
       if (error instanceof ValidationError) {
          return left(error);

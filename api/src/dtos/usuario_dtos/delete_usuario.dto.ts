@@ -1,8 +1,5 @@
-import { UsuarioEntity } from "../../entities/usuario.entity";
+import { UsuarioResponseDto } from "./usuario_response.dto";
 
-type ResponseArchiveUsuario = Omit<
-   UsuarioEntity,
-   "id" | "auditorias_realizadas"
->;
+type ResponseArchiveUsuario = UsuarioResponseDto;
 
 export { ResponseArchiveUsuario };

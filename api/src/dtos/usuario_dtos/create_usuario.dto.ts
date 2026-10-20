@@ -1,7 +1,8 @@
 import { UsuarioEntity } from "../../entities/usuario.entity";
+import { UsuarioResponseDto } from "./usuario_response.dto";
 
 type PayloadCreateUsuario = Omit<UsuarioEntity, "id">;
 
-type ResponseCreateUsuario = Omit<UsuarioEntity, "auditorias_realizadas">;
+type ResponseCreateUsuario = UsuarioResponseDto;
 
 export { PayloadCreateUsuario, ResponseCreateUsuario };
