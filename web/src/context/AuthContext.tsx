@@ -1,8 +1,10 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from "react";
 import { getUsuarioById, loginUsuario } from "../features/usuarios/api/usuario.api";
 import { LoginUsuarioPayload, Usuario } from "../features/usuarios/types/usuario.types";
 import { clearSession, loadStoredUser, saveSession, saveStoredUser } from "../lib/auth-storage";
 import { queryClient } from "../lib/query-client";
+import { useRefreshSessionOnActivity } from "../hooks/useRefreshSessionOnActivity";
+import { LoginResponse } from "../features/usuarios/types/usuario.types";
 
 type AuthContextValue = {
   user: Usuario | null;
@@ -40,6 +42,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [userId]);
+
+  // the refreshed session also carries the current user, so role changes land here too
+  const handleRefreshed = useCallback(({ token, ...freshUser }: LoginResponse) => {
+    saveSession(token, freshUser);
+    setUser(freshUser);
+  }, []);
+  useRefreshSessionOnActivity(!!userId, handleRefreshed);
 
   const login = async (payload: LoginUsuarioPayload) => {
     const { token, ...loggedUser } = await loginUsuario(payload);

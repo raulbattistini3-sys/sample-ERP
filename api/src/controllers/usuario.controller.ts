@@ -61,6 +61,11 @@ class UsuarioController extends BaseController {
     return res.status(200).json(result.value);
   };
 
+  // behind AuthMiddleware.authenticate, so req.user is the freshly loaded, active usuario
+  refreshToken = (req: Request, res: Response) => {
+    return res.status(200).json(this.usuarioService.refreshToken(req.user!));
+  };
+
   login = async (req: Request, res: Response, next: NextFunction) => {
     const result = await this.usuarioService.loginUsuario(req.body);
     if (result.isLeft()) {

@@ -14,6 +14,8 @@ interface IUsuarioRepository {
       payload: UsuarioEntity,
    ): Promise<Either<BaseAppError, null>>;
    deleteUsuario(id: string): Promise<Either<BaseAppError, null>>;
+   // active ADM usuarios other than exceptId
+   countActiveAdms(exceptId: string): Promise<Either<BaseAppError, number>>;
 }
 
 export default IUsuarioRepository;

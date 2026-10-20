@@ -26,6 +26,8 @@ publicUsuarioRoutes.post("/login", usuarioController.login);
 
 // mounted after AuthMiddleware.authenticate, so req.user is set
 const usuarioRoutes = Router();
+// sliding session: the web calls this on user activity before the token expires
+usuarioRoutes.post("/refresh-token", usuarioController.refreshToken);
 // any signed-in usuario can read (the auditoria pages show auditor names); only ADM can manage
 usuarioRoutes.get("/", usuarioController.getAll);
 usuarioRoutes.get("/:id", usuarioController.getById);

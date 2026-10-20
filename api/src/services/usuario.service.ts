@@ -29,6 +29,7 @@ import { UsuarioEntity } from "../entities/usuario.entity";
 import { comparePassword, hashPassword } from "../utils/helpers/password.util";
 import { generateToken } from "../utils/helpers/token.util";
 import { toUsuarioResponse } from "../mappers/usuario.mapper";
+import { UsuarioResponseDto } from "../dtos/usuario_dtos/usuario_response.dto";
 import permissoesUsuarioEnum from "../enums/usuarios_permissoes.enum";
 
 class UsuarioService implements IUserService {
@@ -110,6 +111,9 @@ class UsuarioService implements IUserService {
             ativo: payload.ativo ?? true,
          });
          if (userData.isLeft()) {
+            if (userData.value instanceof ValidationError) {
+               return left(userData.value);
+            }
             return left(
                new ServerError("500", true, "internal server error", userData.value),
             );
@@ -136,29 +140,36 @@ class UsuarioService implements IUserService {
          if (validation.isLeft()) {
             return left(validation.value);
          }
-         const existing = await this.userRepository.getUsuario(id);
+         const existing = await this.findExisting(id);
          if (existing.isLeft()) {
-            if (existing.value.cause) {
-               return left(new ServerError("500", true, undefined, existing.value));
-            }
-            return left(new ValidationError("404", "Usuário não encontrado"));
+            return left(existing.value);
          }
          const emailCheck = await this.ensureEmailAvailable(payload.email, id);
          if (emailCheck.isLeft()) {
             return left(emailCheck.value);
+         }
+         const nextAtivo = payload.ativo ?? existing.value.ativo;
+         if (payload.permissoes !== permissoesUsuarioEnum.Values.ADM || !nextAtivo) {
+            const admCheck = await this.ensureAnotherActiveAdm(existing.value);
+            if (admCheck.isLeft()) {
+               return left(admCheck.value);
+            }
          }
          const updated = await this.userRepository.updateUsuario({
             id,
             nome: payload.nome,
             email: payload.email,
             permissoes: payload.permissoes,
-            ativo: payload.ativo ?? existing.value.ativo,
+            ativo: nextAtivo,
             // keep the current hash unless a new senha was sent
             senha: payload.senha
                ? await hashPassword(payload.senha)
                : existing.value.senha,
          });
          if (updated.isLeft()) {
+            if (updated.value instanceof ValidationError) {
+               return left(updated.value);
+            }
             return left(new ServerError("500", true, undefined, updated.value));
          }
          return right(null);
@@ -176,9 +187,13 @@ class UsuarioService implements IUserService {
          if (validation.isLeft()) {
             return left(validation.value);
          }
-         const userData = await this.userRepository.getUsuario(id);
+         const userData = await this.findExisting(id);
          if (userData.isLeft()) {
             return left(userData.value);
+         }
+         const admCheck = await this.ensureAnotherActiveAdm(userData.value);
+         if (admCheck.isLeft()) {
+            return left(admCheck.value);
          }
          const userDeletion = await this.userRepository.deleteUsuario(id);
          if (userDeletion.isLeft()) {
@@ -200,9 +215,13 @@ class UsuarioService implements IUserService {
          if (validation.isLeft()) {
             return left(validation.value);
          }
-         const userData = await this.userRepository.getUsuario(id);
+         const userData = await this.findExisting(id);
          if (userData.isLeft()) {
             return left(userData.value);
+         }
+         const admCheck = await this.ensureAnotherActiveAdm(userData.value);
+         if (admCheck.isLeft()) {
+            return left(admCheck.value);
          }
          const userClass = userData.value;
          let userToUpdate: UsuarioEntity = {
@@ -257,6 +276,11 @@ class UsuarioService implements IUserService {
    }
 }
 
+// sliding session: a signed-in, active usuario trades its token for a new one
+refreshToken(usuario: UsuarioResponseDto): ResponseLoginUsuarioDto {
+   return { ...usuario, token: generateToken(usuario) };
+}
+
 async registerUsuario(
    payloadUsuario: PayloadRegisterUsuarioDto,
 ): Promise<Either<BaseAppError, ResponseRegisterUsuarioDto>> {
@@ -305,6 +329,36 @@ async registerUsuario(
      // a cause means the lookup itself failed; without one the email is free
      if (existing.value.cause) {
         return left(new ServerError("500", true, undefined, existing.value));
+     }
+     return right(null);
+  }
+
+  // 404 when the usuario doesn't exist, 500 when the lookup itself failed
+  private async findExisting(id: string): Promise<Either<BaseAppError, UsuarioEntity>> {
+     const existing = await this.userRepository.getUsuario(id);
+     if (existing.isRight()) {
+        return existing;
+     }
+     if (existing.value.cause) {
+        return left(new ServerError("500", true, undefined, existing.value));
+     }
+     return left(new ValidationError("404", "Usuário não encontrado"));
+  }
+
+  // called before demoting, deactivating, archiving or deleting `target`: if it is an active ADM,
+  // another active ADM must remain, or nobody could manage usuarios anymore (including undoing this)
+  private async ensureAnotherActiveAdm(target: UsuarioEntity): Promise<Either<BaseAppError, null>> {
+     if (target.permissoes !== permissoesUsuarioEnum.Values.ADM || !target.ativo) {
+        return right(null);
+     }
+     const others = await this.userRepository.countActiveAdms(target.id);
+     if (others.isLeft()) {
+        return left(new ServerError("500", true, undefined, others.value));
+     }
+     if (others.value === 0) {
+        return left(
+           new ValidationError("409", "Não é possível remover o último administrador ativo"),
+        );
      }
      return right(null);
   }

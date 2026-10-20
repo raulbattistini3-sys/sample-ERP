@@ -16,6 +16,11 @@ export const loginUsuario = async (payload: LoginUsuarioPayload) => {
   const { data } = await apiClient.post("/user/login", payload);
   return LoginResponseSchema.parse(data);
 };
+// trades the current (still valid) token for a new one; 401 if it already expired
+export const refreshSession = async () => {
+  const { data } = await apiClient.post("/user/refresh-token");
+  return LoginResponseSchema.parse(data);
+};
 export const getUsuarios = (page: number, amount: number) =>
   apiClient.get<ListResponse<Usuario>>("/user", { params: { page, amount } }).then((r) => r.data);
 // parsed so only the known fields are kept (the result may be stored in localStorage)

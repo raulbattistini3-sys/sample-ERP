@@ -1,3 +1,4 @@
+import { UsuarioResponseDto } from "../../dtos/usuario_dtos/usuario_response.dto";
 import { ResponseArchiveUsuario } from "../../dtos/usuario_dtos/delete_usuario.dto";
 import {
    ResponseFindUsuarioByIdDto,
@@ -30,6 +31,7 @@ interface IUsuarioService {
    createUsuario: (
       payload: PayloadCreateUsuario,
    ) => Promise<Either<BaseAppError, ResponseCreateUsuario>>;
+   refreshToken: (usuario: UsuarioResponseDto) => ResponseLoginUsuarioDto;
    updateUser: (
       id: string,
       payload: PayloadUpdateUsuarioDto,
