@@ -1,5 +1,10 @@
 import { AuditoriaResponseDto } from "../dtos/auditoria_dtos/auditoria_response.dto";
-import { CreateAuditoriaDto, NewAuditoriaWithItens } from "../dtos/auditoria_dtos/create_auditoria.dto";
+import {
+   CreateAuditoriaDto,
+   CreateAuditoriaManualDto,
+   NewAuditoriaManual,
+   NewAuditoriaWithItens,
+} from "../dtos/auditoria_dtos/create_auditoria.dto";
 import { DetalhamentoAuditoriaResponseDto } from "../dtos/detalhamento_auditoria/detalhamento_auditoria_response.dto";
 import { AuditoriaEntity } from "../entities/auditoria.entity";
 import { DetalhamentoAuditoriaEntity } from "../entities/detalhamento_auditoria.entity";
@@ -29,6 +34,18 @@ export const toNewAuditoriaWithItens = (dto: CreateAuditoriaDto): NewAuditoriaWi
    produtoIds: [...new Set(dto.itens)],
 });
 
+export const toNewAuditoriaManual = (
+   dto: CreateAuditoriaManualDto,
+   includeInactive: boolean,
+): NewAuditoriaManual => ({
+   acao: dto.acao_efetuada,
+   dataDeAudicao: dto.data_de_audicao,
+   usuarioId: dto.usuario_id,
+   observacoes: dto.observacoes_adicionais,
+   alvo: dto.alvo,
+   includeInactive,
+});
+
 export const toDetalhamentoAuditoriaResponse = (
    detalhamento: DetalhamentoAuditoriaEntity,
 ): DetalhamentoAuditoriaResponseDto => ({
@@ -37,4 +54,5 @@ export const toDetalhamentoAuditoriaResponse = (
    valor_anterior: detalhamento.valorAnterior,
    valor_atual: detalhamento.valorAtual,
    observacoes_adicionais: detalhamento.observacoesAdicionais,
+   alteracoes: detalhamento.alteracoes ?? [],
 });

@@ -28,9 +28,13 @@ export function buildAuditoriaIssue(item: QueuedEnvio) {
     `Data: ${quando}`,
     `Auditor: ${item.auditor ?? "—"}`,
     `Categoria: ${item.categoriaNome}`,
-    ...(isCategoriaChange
-      ? []
-      : [`Produto(s): ${item.produtos || item.nomeDoProduto || "—"}`, `Valor: ${money(item.valorAnterior)} → ${money(item.valorAtual)}`]),
+    ...(isCategoriaChange ? [] : [`Produto(s): ${item.produtos || item.nomeDoProduto || "—"}`]),
+    // older auditorias have no field list, only the valor de venda before/after
+    ...(item.alteracoes.length > 0
+      ? item.alteracoes.map(({ campo, antes, depois }) => `${campo}: ${antes} → ${depois}`)
+      : isCategoriaChange
+        ? []
+        : [`Valor: ${money(item.valorAnterior)} → ${money(item.valorAtual)}`]),
     `Observações: ${item.observacoes || "—"}`,
     `Auditoria no ERP: ${item.auditoriaId}`,
   ];

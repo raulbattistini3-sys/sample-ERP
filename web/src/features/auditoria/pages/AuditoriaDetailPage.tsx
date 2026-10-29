@@ -10,6 +10,7 @@ import { useArchiveAuditoria, useAuditoria, useDeleteAuditoria } from "../hooks/
 import { useAuditorNames } from "../hooks/useAuditorNames";
 import { useDetalhamentoAuditoria } from "../hooks/useDetalhamentoAuditoria";
 import { acaoEfetuadaLabels } from "../types/auditoria.types";
+import { DetalhamentoAuditoria } from "../types/detalhamento_auditoria.types";
 import { AuditoriaIntegracoes } from "../../integracoes/components/AuditoriaIntegracoes";
 
 function Detail({ label, children }: { label: string; children: ReactNode }) {
@@ -17,6 +18,31 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
     <div>
       <dt className="text-xs font-medium uppercase tracking-wide text-muted">{label}</dt>
       <dd className="mt-1 text-sm text-ink">{children}</dd>
+    </div>
+  );
+}
+
+function Alteracoes({ alteracoes }: { alteracoes: DetalhamentoAuditoria["alteracoes"] }) {
+  return (
+    <div className="overflow-x-auto rounded-md border border-border">
+      <table className="w-full text-left text-sm">
+        <thead className="bg-canvas text-xs text-muted">
+          <tr>
+            <th scope="col" className="px-3 py-2 font-medium">Campo</th>
+            <th scope="col" className="px-3 py-2 font-medium">Antes</th>
+            <th scope="col" className="px-3 py-2 font-medium">Depois</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {alteracoes.map(({ campo, antes, depois }) => (
+            <tr key={campo}>
+              <td className="px-3 py-2 font-medium text-ink">{campo}</td>
+              <td className="px-3 py-2 text-muted line-through decoration-muted/50">{antes}</td>
+              <td className="px-3 py-2 text-ink">{depois}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -98,9 +124,25 @@ export const AuditoriaDetailPage = () => {
             <ErrorAlert message={getApiErrorMessage(detalhamentoQuery.error, "Não foi possível carregar o detalhamento.")} />
           ) : (
             <dl className="grid gap-4 sm:grid-cols-3">
-              <Detail label="Produto">{detalhamento.nome_do_produto}</Detail>
-              <Detail label="Valor anterior">{money(detalhamento.valor_anterior)}</Detail>
-              <Detail label="Valor atual">{money(detalhamento.valor_atual)}</Detail>
+              {detalhamento.alteracoes.length > 0 ? (
+                <>
+                  <div className="sm:col-span-3">
+                    <Detail label="Alvo">{detalhamento.nome_do_produto}</Detail>
+                  </div>
+                  <div className="sm:col-span-3">
+                    <Detail label="Alterações">
+                      <Alteracoes alteracoes={detalhamento.alteracoes} />
+                    </Detail>
+                  </div>
+                </>
+              ) : (
+                // older auditorias only kept the valor de venda before/after
+                <>
+                  <Detail label="Produto">{detalhamento.nome_do_produto}</Detail>
+                  <Detail label="Valor anterior">{money(detalhamento.valor_anterior)}</Detail>
+                  <Detail label="Valor atual">{money(detalhamento.valor_atual)}</Detail>
+                </>
+              )}
               <div className="sm:col-span-3">
                 <Detail label="Observações">
                   <span className="whitespace-pre-wrap">{detalhamento.observacoes_adicionais}</span>

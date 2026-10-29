@@ -1,5 +1,6 @@
 import { z } from "zod/mini";
-import { CreateDetalhamentoAuditoriaSchema } from "./detalhamento_auditoria.types";
+import { CategoriaNomesEnum, CategoriaTiposEnum } from "../../categoria/types/categoria.types";
+import { CreateProductPayload } from "../../produtos/types/produto.types";
 
 export const AcaoEfetuadaEnum = z.enum(["Criacao", "Alteracao", "Delecao"]);
 export type AcaoEfetuada = z.infer<typeof AcaoEfetuadaEnum>;
@@ -19,22 +20,27 @@ export const AuditoriaSchema = z.object({
 });
 export type Auditoria = z.infer<typeof AuditoriaSchema>;
 
-// follows the API's AuditoriaSchema validator: product ids in `itens`, detalhamento nested
-export const CreateAuditoriaSchema = z.object({
-  acao_efetuada: AcaoEfetuadaEnum,
-  data_de_audicao: z.string(),
-  usuario_id: z.string(),
-  itens: z.array(z.string()),
-  detalhamento_auditoria: CreateDetalhamentoAuditoriaSchema,
-});
-export type CreateAuditoriaPayload = z.infer<typeof CreateAuditoriaSchema>;
+// POST /auditoria/manual: the auditoria applies `valores` (the whole record as it should end up) to one
+// product or categoria and records every field that changed. The auditor is taken from the token.
+export type AuditoriaAlvo =
+  | { tipo: "produto"; id: string; valores: CreateProductPayload & { ativo: boolean } }
+  | { tipo: "categoria"; id: string; valores: { nome: z.infer<typeof CategoriaNomesEnum>; tipo: z.infer<typeof CategoriaTiposEnum>; ativo: boolean } };
 
+export type CreateAuditoriaManualPayload = {
+  acao_efetuada: AcaoEfetuada;
+  data_de_audicao: string;
+  observacoes_adicionais: string;
+  alvo: AuditoriaAlvo;
+};
+
+export const AlvoTipoEnum = z.enum(["produto", "categoria"]);
+export type AlvoTipo = z.infer<typeof AlvoTipoEnum>;
+
+// the fields shared by both targets; the product/categoria fields are checked by their own form schemas
 export const AuditoriaFormSchema = z.object({
   acao_efetuada: AcaoEfetuadaEnum,
   data_de_audicao: z.string().check(z.minLength(1, "Informe a data da auditoria")),
-  produto_id: z.string().check(z.minLength(1, "Selecione um produto")),
-  valor_anterior: z.number("Informe o valor anterior"),
-  valor_atual: z.number("Informe o valor atual"),
+  alvo_id: z.string().check(z.minLength(1, "Selecione o que será auditado")),
   observacoes_adicionais: z.string().check(z.trim(), z.minLength(1, "Descreva a auditoria")),
 });
 export type AuditoriaFormValues = z.infer<typeof AuditoriaFormSchema>;

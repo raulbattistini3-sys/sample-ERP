@@ -29,6 +29,7 @@ const auditoriaController = new AuditoriaController(auditoriaService, logger);
 const auditoriaRoutes = Router();
 
 auditoriaRoutes.post("/", auditoriaController.create);
+auditoriaRoutes.post("/manual", auditoriaController.createManual);
 auditoriaRoutes.get("/", auditoriaController.getAll);
 auditoriaRoutes.get("/:id", auditoriaController.getById);
 auditoriaRoutes.put("/:id", auditoriaController.update);

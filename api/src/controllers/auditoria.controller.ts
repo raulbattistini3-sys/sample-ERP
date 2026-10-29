@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import BaseController from "./base.controller";
 import LoggerInterface from "../interfaces/logger_interfaces/logger_interface.interface";
 import { IAuditoriaService } from "../interfaces/auditory_interfaces/auditoria_service.interface";
+import { isAdminRole } from "../utils/helpers/permissoes.util";
 
 class AuditoriaController extends BaseController {
   constructor(
@@ -14,6 +15,18 @@ class AuditoriaController extends BaseController {
   create = async (req: Request, res: Response, next: NextFunction) => {
     // the auditor is whoever is signed in, not whatever id the body carries
     const result = await this.auditoriaService.createAuditoria({ ...req.body, usuario_id: req.user?.id });
+    if (result.isLeft()) {
+      return this.fail(req, next, result.value);
+    }
+    return res.status(201).json(result.value);
+  };
+
+  // a manual auditoria applies its changes to the product/categoria it audits
+  createManual = async (req: Request, res: Response, next: NextFunction) => {
+    const result = await this.auditoriaService.createAuditoriaManual(
+      { ...req.body, usuario_id: req.user?.id },
+      isAdminRole(req.user?.permissoes),
+    );
     if (result.isLeft()) {
       return this.fail(req, next, result.value);
     }

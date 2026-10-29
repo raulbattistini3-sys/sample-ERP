@@ -1,10 +1,11 @@
 import { ZodError, ZodTypeAny } from "zod";
 import { IAuditoriaValidator } from "../interfaces/auditory_interfaces/auditoria_validator.interface";
 import {
+   CreateAuditoriaManualSchema,
    CreateAuditoriaSchema,
    UpdateAuditoriaSchema,
 } from "../utils/schemas/auditoria.schema";
-import { CreateAuditoriaDto } from "../dtos/auditoria_dtos/create_auditoria.dto";
+import { CreateAuditoriaDto, CreateAuditoriaManualDto } from "../dtos/auditoria_dtos/create_auditoria.dto";
 import { Either, left, right } from "../globals/errors/left_right_either.error";
 import { BaseAppError } from "../errors/global_error.error";
 import { ValidationError } from "../errors/client_errors/four_xx.error";
@@ -17,6 +18,14 @@ class AuditoriaValidator extends BaseValidator implements IAuditoriaValidator {
    // returns the parsed payload: dates and decimals are coerced, defaults applied
    parseCreatePayload(payload: unknown): Either<BaseAppError, CreateAuditoriaDto> {
       const result = CreateAuditoriaSchema.safeParse(payload);
+      if (!result.success) {
+         return left(this.toValidationError(result.error));
+      }
+      return right(result.data);
+   }
+
+   parseCreateManualPayload(payload: unknown): Either<BaseAppError, CreateAuditoriaManualDto> {
+      const result = CreateAuditoriaManualSchema.safeParse(payload);
       if (!result.success) {
          return left(this.toValidationError(result.error));
       }

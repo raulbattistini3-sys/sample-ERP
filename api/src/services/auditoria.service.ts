@@ -11,7 +11,7 @@ import { ServerError } from "../errors/server_errors/five_xx.error";
 import { ValidationError } from "../errors/client_errors/four_xx.error";
 import paginate from "../utils/helpers/paginate_data.helper";
 import { AuditoriaEntity } from "../entities/auditoria.entity";
-import { toAuditoriaResponse, toNewAuditoriaWithItens } from "../mappers/auditoria.mapper";
+import { toAuditoriaResponse, toNewAuditoriaManual, toNewAuditoriaWithItens } from "../mappers/auditoria.mapper";
 import acaoEfetuadaEnum from "../enums/acao_efetuada.enum";
 import IDetalhamentoAuditoriaRepository from "../interfaces/detalhamento_auditoria_interfaces/detalhamento_auditoria_repository.interface";
 import IAuditoryRepository from "../interfaces/auditory_interfaces/auditoria_repository.interface";
@@ -100,6 +100,34 @@ class AuditoriaService implements IAuditoriaService {
          }
          const response: ResponseCreateAuditoria = toAuditoriaResponse(auditoria.value);
          return right(response);
+      } catch (error) {
+         if (error instanceof ValidationError) {
+            return left(error);
+         }
+         return left(new ServerError("500", true, "internal server error", error));
+      }
+   }
+   async createAuditoriaManual(
+      payload: unknown,
+      includeInactive: boolean,
+   ): Promise<Either<BaseAppError, ResponseCreateAuditoria>> {
+      try {
+         const parsed = this.auditoriaValidator.parseCreateManualPayload(payload);
+         if (parsed.isLeft()) {
+            return left(parsed.value);
+         }
+         const auditoria = await this.auditoriaRepository.createAuditoriaManual(
+            toNewAuditoriaManual(parsed.value, includeInactive),
+         );
+         if (auditoria.isLeft()) {
+            if (auditoria.value instanceof ValidationError) {
+               return left(auditoria.value);
+            }
+            return left(
+               new ServerError("500", true, "internal server error", auditoria.value),
+            );
+         }
+         return right(toAuditoriaResponse(auditoria.value));
       } catch (error) {
          if (error instanceof ValidationError) {
             return left(error);

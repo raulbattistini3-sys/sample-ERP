@@ -3,6 +3,8 @@ import { DrizzleDB } from "../db/client";
 import { auditorias } from "../db/schema/auditoria.schema";
 import { detalhamentosAuditoria } from "../db/schema/detalhamento_auditoria.schema";
 import { produtosPorAuditoria } from "../db/schema/produtos_por_auditoria.schema";
+import { produtos } from "../db/schema/product.schema";
+import { categorias } from "../db/schema/categoria.schema";
 import { AuditoriaEntity } from "../entities/auditoria.entity";
 import IAuditoryRepository from "../interfaces/auditory_interfaces/auditoria_repository.interface";
 import { RepositoryError } from "../globals/errors/global_repository_error.error";
@@ -11,7 +13,8 @@ import { BaseAppError } from "../errors/global_error.error";
 import { ValidationError } from "../errors/client_errors/four_xx.error";
 import { pgErrorCode } from "../utils/helpers/pg_error.util";
 import { enqueueForProducts } from "./integracao_envios.repository";
-import { NewAuditoriaWithItens } from "../dtos/auditoria_dtos/create_auditoria.dto";
+import { diffCategoria, diffProduct, insertLinkedAuditoria } from "./audit_trail.repository";
+import { NewAuditoriaManual, NewAuditoriaWithItens } from "../dtos/auditoria_dtos/create_auditoria.dto";
 import { GetUserPreviousAudictionsDto } from "../dtos/auditoria_dtos/get_auditoria.dto";
 
 class AuditoriaRepository implements IAuditoryRepository {
@@ -71,6 +74,124 @@ class AuditoriaRepository implements IAuditoryRepository {
       }
       return left(new RepositoryError("Database error", error));
     }
+  }
+
+  // A manual auditoria that applies its own changes: locks the product or categoria, saves the new
+  // values and records every changed field, all in one transaction. The auditoria is created already
+  // vinculada (see audit_trail.repository), so no other change can claim it.
+  async createAuditoriaManual(input: NewAuditoriaManual): Promise<Either<BaseAppError, AuditoriaEntity>> {
+    try {
+      const auditoriaId: string = await this.db.transaction((tx: DrizzleDB) =>
+        input.alvo.tipo === "produto"
+          ? this.applyToProduct(tx, input, input.alvo)
+          : this.applyToCategoria(tx, input, input.alvo),
+      );
+      return this.getAuditoriaById(auditoriaId);
+    } catch (error) {
+      // thrown inside the transaction so it rolls back: 404 target, 400 nothing changed
+      if (error instanceof ValidationError) {
+        return left(error);
+      }
+      if (pgErrorCode(error) === "23505") {
+        return left(new ValidationError("409", "Já existe um registro com esse nome ou SKU", error));
+      }
+      if (pgErrorCode(error) === "23503") {
+        return left(new ValidationError("404", "Usuário auditor não encontrado", error));
+      }
+      return left(new RepositoryError("Database error", error));
+    }
+  }
+
+  private async applyToProduct(
+    tx: DrizzleDB,
+    input: NewAuditoriaManual,
+    alvo: Extract<NewAuditoriaManual["alvo"], { tipo: "produto" }>,
+  ): Promise<string> {
+    const [before] = await tx.select().from(produtos).where(eq(produtos.id, alvo.id)).for("update");
+    if (!before || (!input.includeInactive && !before.ativo)) {
+      throw new ValidationError("404", "Produto não encontrado");
+    }
+
+    const categoriaRows: { id: string; nome: string; ativo: boolean }[] = await tx
+      .select({ id: categorias.id, nome: categorias.nome, ativo: categorias.ativo })
+      .from(categorias);
+    const { valores } = alvo;
+    const categoria = categoriaRows.find((c) => c.nome === valores.categoria.nome);
+    // moving to an inactive categoria isn't allowed (like PUT /products/:id); staying in one is
+    if (!categoria || (!categoria.ativo && categoria.id !== before.categoriaId)) {
+      throw new ValidationError("404", `Categoria "${valores.categoria.nome}" não encontrada ou inativa`);
+    }
+
+    const values = {
+      name: valores.name,
+      sku: valores.sku,
+      categoriaId: categoria.id,
+      valorDeCusto: valores.valor_de_custo,
+      icms: valores.icms,
+      valorDeVenda: valores.valor_de_venda,
+      quantidadeEmEstoque: valores.quantidade_em_estoque,
+      // only ADM/SU change the status, like PUT /products/:id
+      ativo: input.includeInactive ? valores.ativo : before.ativo,
+    };
+    const after = { ...before, ...values };
+    const nomeDe = (categoriaId: string) => categoriaRows.find((c) => c.id === categoriaId)?.nome ?? categoriaId;
+    const changes = diffProduct(
+      { ...before, categoriaNome: nomeDe(before.categoriaId) },
+      { ...after, categoriaNome: nomeDe(after.categoriaId) },
+    );
+    if (changes.length === 0) {
+      throw new ValidationError("400", "Nenhum campo do produto foi alterado");
+    }
+
+    await tx.update(produtos).set(values).where(eq(produtos.id, alvo.id));
+    return insertLinkedAuditoria(tx, {
+      acao: input.acao,
+      dataDeAudicao: input.dataDeAudicao,
+      usuarioId: input.usuarioId,
+      nome: after.name,
+      valorAnterior: Number(before.valorDeVenda).toFixed(2),
+      valorAtual: Number(after.valorDeVenda).toFixed(2),
+      observacoes: input.observacoes,
+      changes,
+      produtoIds: [alvo.id],
+      categoriaId: null,
+    });
+  }
+
+  private async applyToCategoria(
+    tx: DrizzleDB,
+    input: NewAuditoriaManual,
+    alvo: Extract<NewAuditoriaManual["alvo"], { tipo: "categoria" }>,
+  ): Promise<string> {
+    const [before] = await tx.select().from(categorias).where(eq(categorias.id, alvo.id)).for("update");
+    if (!before) {
+      throw new ValidationError("404", "Categoria não encontrada");
+    }
+
+    const values = { nome: alvo.valores.nome, tipo: alvo.valores.tipo, ativo: alvo.valores.ativo };
+    const changes = diffCategoria(before, { ...before, ...values });
+    if (changes.length === 0) {
+      throw new ValidationError("400", "Nenhum campo da categoria foi alterado");
+    }
+
+    await tx.update(categorias).set(values).where(eq(categorias.id, alvo.id));
+    // the categoria's products, so the auditoria shows up for each of them
+    const produtosDaCategoria: { id: string }[] = await tx
+      .select({ id: produtos.id })
+      .from(produtos)
+      .where(eq(produtos.categoriaId, alvo.id));
+    return insertLinkedAuditoria(tx, {
+      acao: input.acao,
+      dataDeAudicao: input.dataDeAudicao,
+      usuarioId: input.usuarioId,
+      nome: `Categoria: ${values.nome}`,
+      valorAnterior: "0.00",
+      valorAtual: "0.00",
+      observacoes: input.observacoes,
+      changes,
+      produtoIds: produtosDaCategoria.map((p) => p.id),
+      categoriaId: alvo.id,
+    });
   }
 
   async updateAuditoria(auditoria: AuditoriaEntity): Promise<Either<RepositoryError, null>> {

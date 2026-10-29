@@ -62,6 +62,7 @@ export type QueuedEnvio = {
   valorAnterior: string | null;
   valorAtual: string | null;
   observacoes: string | null;
+  alteracoes: { campo: string; antes: string; depois: string }[]; // every field the auditoria changed
   produtos: string; // names of the auditoria's products in this categoria
   auditoriaRemovida: boolean;
 };
@@ -96,6 +97,7 @@ class IntegracaoEnviosRepository {
              a.acao_efetuada::text as acao, (extract(epoch from a.data_de_audicao) * 1000)::float8 as data_de_audicao,
              u.nome as auditor, d.nome_do_produto, d.valor_anterior::text as valor_anterior,
              d.valor_atual::text as valor_atual, d.observacoes_adicionais as observacoes,
+             coalesce(d.alteracoes, '[]'::jsonb) as alteracoes,
              a.deleted_at is not null as auditoria_removida,
              coalesce((select string_agg(p.name, ', ' order by p.name)
                        from produtos_por_auditoria pa join produtos p on p.id = pa.produto_id
@@ -119,6 +121,7 @@ class IntegracaoEnviosRepository {
       valorAnterior: r.valor_anterior,
       valorAtual: r.valor_atual,
       observacoes: r.observacoes,
+      alteracoes: r.alteracoes,
       produtos: r.produtos,
       auditoriaRemovida: r.auditoria_removida,
     };

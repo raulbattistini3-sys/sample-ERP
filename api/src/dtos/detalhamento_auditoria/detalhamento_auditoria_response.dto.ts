@@ -5,6 +5,7 @@ type DetalhamentoAuditoriaResponseDto = {
     valor_anterior: string;
     valor_atual: string;
     observacoes_adicionais: string;
+    alteracoes: { campo: string; antes: string; depois: string }[]; // every field the auditoria changed
 };
 
 export { DetalhamentoAuditoriaResponseDto };

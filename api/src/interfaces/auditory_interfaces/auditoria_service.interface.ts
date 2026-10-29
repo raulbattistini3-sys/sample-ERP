@@ -19,6 +19,12 @@ interface IAuditoriaService {
    createAuditoria: (
       payload: unknown,
    ) => Promise<Either<BaseAppError, ResponseCreateAuditoria>>;
+   // applies the changes to a product or categoria and records them in the new auditoria;
+   // includeInactive: ADM/SU, who can change a product's status and audit inactive ones
+   createAuditoriaManual: (
+      payload: unknown,
+      includeInactive: boolean,
+   ) => Promise<Either<BaseAppError, ResponseCreateAuditoria>>;
    updateAuditoria: (
       payload: PayloadUpdateAuditoria,
    ) => Promise<Either<BaseAppError, null>>;
