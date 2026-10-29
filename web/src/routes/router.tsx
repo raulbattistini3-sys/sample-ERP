@@ -1,6 +1,7 @@
 import { createBrowserRouter } from "react-router-dom";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { AppLayout } from "../layouts/AppLayout";
+import { NotFoundPage } from "./NotFoundPage";
 
 import { LoginPage } from "../features/usuarios/pages/LoginPage";
 import { RegisterPage } from "../features/usuarios/pages/RegisterPage";
@@ -58,4 +59,7 @@ export const router = createBrowserRouter([
       },
     ],
   },
+
+  // anything unmatched: redirects pt-BR/en aliases (/produtos, /audit...) or shows the 404
+  { path: "*", element: <NotFoundPage /> },
 ]);
