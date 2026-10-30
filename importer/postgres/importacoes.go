@@ -12,7 +12,7 @@ import (
 )
 
 // The importacoes table is also the job queue (api/drizzle/0011_importacoes.sql):
-//
+// checkout the main api
 //	Criar            -> pendente      (and NOTIFY CanalImportacoes, so idle workers wake up)
 //	Reivindicar      -> processando   (FOR UPDATE SKIP LOCKED, tentativas + 1)
 //	Finalizar        -> concluida | rejeitada | falhou
@@ -89,6 +89,7 @@ type Resultado struct {
 }
 
 // DBTX is satisfied by *pgxpool.Pool, *pgx.Conn and pgx.Tx.
+// keep
 type DBTX interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
@@ -159,9 +160,6 @@ func (r *Importacoes) Obter(ctx context.Context, id string) (Importacao, error) 
 	return imp, nil
 }
 
-// Reivindicar claims the oldest pending import, or returns nil when the queue is empty. SKIP LOCKED
-// makes concurrent claimers pass over a row another one is taking instead of queueing behind its lock,
-// so any number of workers, in this process or in other instances, never get the same job.
 func (r *Importacoes) Reivindicar(ctx context.Context) (*Job, error) {
 	var planilha []byte
 	imp, err := scanImportacao(r.pool.QueryRow(ctx, `
@@ -184,9 +182,6 @@ func (r *Importacoes) Reivindicar(ctx context.Context) (*Job, error) {
 	return &Job{Importacao: imp, Planilha: planilha}, nil
 }
 
-// Finalizar records the outcome and drops the spreadsheet bytes. It only succeeds while the job is still
-// this worker's (same claim, still processando); otherwise it returns ErrReivindicacaoPerdida. db is the
-// pool, or the transaction that wrote the products so both commit or roll back together.
 func (r *Importacoes) Finalizar(ctx context.Context, db DBTX, job *Job, res Resultado) error {
 	switch res.Status {
 	case StatusConcluida, StatusRejeitada, StatusFalhou:
@@ -213,9 +208,6 @@ func (r *Importacoes) Finalizar(ctx context.Context, db DBTX, job *Job, res Resu
 	return nil
 }
 
-// Devolver puts a job this worker still holds back in the queue right away, without spending one of
-// its tentativas: for a worker that is shutting down mid-import, so another instance can take it now
-// instead of after the lease runs out. A job that was already handed back is left alone.
 func (r *Importacoes) Devolver(ctx context.Context, job *Job) error {
 	_, err := r.pool.Exec(ctx, `
 		WITH devolvida AS (
@@ -231,6 +223,7 @@ func (r *Importacoes) Devolver(ctx context.Context, job *Job) error {
 	return nil
 }
 
+// keep
 // DevolverTravadas hands imports stuck in processando for longer than prazo (their worker crashed or
 // hung) back to the queue, or fails them once they have been claimed maxTentativas times, so a
 // spreadsheet that crashes the importer can't loop forever. Meant to run on a ticker in every instance;
