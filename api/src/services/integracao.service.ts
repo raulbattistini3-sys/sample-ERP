@@ -10,6 +10,8 @@ import { ValidationError } from "../errors/client_errors/four_xx.error";
 import { ServerError } from "../errors/server_errors/five_xx.error";
 import { Either, left, right } from "../globals/errors/left_right_either.error";
 import { decryptSecret, encryptionConfigured, encryptSecret } from "../utils/helpers/crypto.util";
+import { mondayRequest } from "../integrations/monday/monday.client";
+import { MeQuery } from "../integrations/monday/monday.operations";
 
 export type ProviderConfig = {
   authorizeUrl: string;
@@ -24,6 +26,7 @@ export type IntegracaoOptions = {
   webUrl: string; // where the browser lands after the provider's consent screen
   callbackBaseUrl: string; // this API's public address; the provider redirects to <it>/integracoes/<provider>/callback
   atlassianApiUrl: string; // https://api.atlassian.com
+  mondayApiUrl: string; // https://api.monday.com/v2
   fetch: typeof fetch;
 };
 
@@ -39,7 +42,7 @@ export type IntegracaoStatus = {
 };
 
 // only providers with an adapter here can be connected; monday's OAuth config is ready for when it gets one
-const SUPPORTED: Record<string, string> = { jira: "Jira (Atlassian)" };
+const SUPPORTED: Record<string, string> = { jira: "Jira (Atlassian)", monday: "monday.com" };
 const STATE_TTL_MINUTES = 10;
 const REFRESH_MARGIN_SECONDS = 60;
 
@@ -145,18 +148,15 @@ class IntegracaoService {
       const token = await this.requestTokens(provider, { grant_type: "authorization_code", code, redirect_uri: this.redirectUri(provider) });
       if (!token) return back({ erro: "troca_de_token" });
 
-      // Jira: which site(s) the user granted; the API calls go to api.atlassian.com/ex/jira/<cloudId>
-      const sites = await this.jiraAccessibleResources(token.access_token);
-      if (!sites) return back({ erro: "provedor" });
-      const site = sites.find((s) => s.scopes?.includes("write:jira-work")) ?? sites[0];
-      if (!site) return back({ erro: "sem_site" });
+      const account = await this.connectedAccount(provider, token.access_token);
+      if ("erro" in account) return back({ erro: account.erro });
 
       await this.repository.upsertConnection({
         provider,
         tokens: this.encryptTokens(token),
         escopos: token.scope ?? this.providers[provider].scopes,
-        contaExterna: { cloudId: site.id, siteName: site.name, siteUrl: site.url, sites: sites.length },
-        contaChave: "cloudId",
+        contaExterna: account.conta,
+        contaChave: account.chave,
         conectadoPor: usuarioId,
       });
       return back({ status: "conectado" });
@@ -305,12 +305,43 @@ class IntegracaoService {
   }
 
   // POST to the provider's token endpoint; null when it refuses (bad code, revoked refresh token...)
+  // the account the token belongs to; `chave` identifies it, so reconnecting to the same account keeps the config
+  private async connectedAccount(
+    provider: Provider,
+    accessToken: string,
+  ): Promise<{ conta: Record<string, unknown>; chave: string } | { erro: string }> {
+    if (provider === "monday") {
+      const { me } = await mondayRequest({ apiUrl: this.options.mondayApiUrl, token: accessToken, fetch: this.options.fetch }, MeQuery, {});
+      if (!me) return { erro: "provedor" };
+      return {
+        conta: { accountId: me.account.id, accountName: me.account.name, accountSlug: me.account.slug, userName: me.name, siteUrl: `https://${me.account.slug}.monday.com` },
+        chave: "accountId",
+      };
+    }
+    // Jira: which site(s) the user granted; the API calls go to api.atlassian.com/ex/jira/<cloudId>
+    const sites = await this.jiraAccessibleResources(accessToken);
+    if (!sites) return { erro: "provedor" };
+    const site = sites.find((s) => s.scopes?.includes("write:jira-work")) ?? sites[0];
+    if (!site) return { erro: "sem_site" };
+    return { conta: { cloudId: site.id, siteName: site.name, siteUrl: site.url, sites: sites.length }, chave: "cloudId" };
+  }
+
+  // Atlassian takes JSON with grant_type; monday takes a form post of client_id, client_secret, code and
+  // redirect_uri (its tokens don't expire, so there is no refresh grant)
   private async requestTokens(provider: Provider, params: Record<string, string>) {
     const config = this.providers[provider];
+    const credentials = { client_id: config.clientId ?? "", client_secret: config.clientSecret ?? "" };
+    const { grant_type, ...withoutGrant } = params;
     const response = await this.options.fetch(config.tokenUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ ...params, client_id: config.clientId, client_secret: config.clientSecret }),
+      headers:
+        provider === "monday"
+          ? { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" }
+          : { "Content-Type": "application/json", Accept: "application/json" },
+      body:
+        provider === "monday"
+          ? new URLSearchParams({ ...withoutGrant, ...credentials }).toString()
+          : JSON.stringify({ grant_type, ...withoutGrant, ...credentials }),
     });
     if (!response.ok) {
       this.logError("token request refused", provider, { status: response.status, grantType: params.grant_type });

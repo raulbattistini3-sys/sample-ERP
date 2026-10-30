@@ -64,6 +64,20 @@
       "when": 1792524965529,
       "tag": "0008_jira_issues_pgboss",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792530822121,
+      "tag": "0009_integracao_envios",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792540822121,
+      "tag": "0010_detalhamentos_alteracoes",
+      "breakpoints": true
     }
   ]
 }

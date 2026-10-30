@@ -1,6 +1,7 @@
-import { QueuedIssue } from "../repositories/jira_outbox.repository";
+import type { QueuedEnvio } from "../repositories/integracao_envios.repository";
 
-// the Jira issue for one (auditoria, categoria) row: summary, description paragraphs and labels
+// the issue/item for one (auditoria, categoria) row: title, description paragraphs and labels.
+// Jira uses all three; monday uses the title as the item name and the paragraphs as its update.
 
 const acaoLabels: Record<string, string> = { Criacao: "Criação", Alteracao: "Alteração", Delecao: "Deleção" };
 
@@ -15,7 +16,7 @@ export const categoriaLabel = (nome: string) =>
 
 const money = (value: string | null) => (value === null ? "—" : `R$ ${Number(value).toFixed(2).replace(".", ",")}`);
 
-export function buildAuditoriaIssue(item: QueuedIssue) {
+export function buildAuditoriaIssue(item: QueuedEnvio) {
   const acao = acaoLabels[item.acao] ?? item.acao;
   const isCategoriaChange = item.nomeDoProduto?.startsWith("Categoria:") ?? false;
   const quando = new Date(item.dataDeAudicao).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
@@ -27,9 +28,13 @@ export function buildAuditoriaIssue(item: QueuedIssue) {
     `Data: ${quando}`,
     `Auditor: ${item.auditor ?? "—"}`,
     `Categoria: ${item.categoriaNome}`,
-    ...(isCategoriaChange
-      ? []
-      : [`Produto(s): ${item.produtos || item.nomeDoProduto || "—"}`, `Valor: ${money(item.valorAnterior)} → ${money(item.valorAtual)}`]),
+    ...(isCategoriaChange ? [] : [`Produto(s): ${item.produtos || item.nomeDoProduto || "—"}`]),
+    // older auditorias have no field list, only the valor de venda before/after
+    ...(item.alteracoes.length > 0
+      ? item.alteracoes.map(({ campo, antes, depois }) => `${campo}: ${antes} → ${depois}`)
+      : isCategoriaChange
+        ? []
+        : [`Valor: ${money(item.valorAnterior)} → ${money(item.valorAtual)}`]),
     `Observações: ${item.observacoes || "—"}`,
     `Auditoria no ERP: ${item.auditoriaId}`,
   ];

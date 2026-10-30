@@ -1,20 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ProviderId,
   createJiraTestIssue,
+  createMondayTestItem,
   disconnectIntegracao,
-  getAuditoriaJiraIssues,
-  getJiraQueue,
-  retryJiraQueue,
+  getAuditoriaEnvios,
   getAuthorizeUrl,
+  getQueueSummary,
   listIntegracoes,
   listJiraProjects,
+  listMondayBoards,
+  retryQueue,
   saveJiraConfig,
+  saveMondayConfig,
 } from "../api/integracoes.api";
 
 export const useIntegracoes = () => useQuery({ queryKey: ["integracoes"], queryFn: listIntegracoes });
-
-export const useJiraProjects = (enabled: boolean) =>
-  useQuery({ queryKey: ["integracoes", "jira", "projetos"], queryFn: listJiraProjects, enabled });
 
 // leaves the app for the provider's consent screen
 export const useConnectIntegracao = () =>
@@ -31,6 +32,9 @@ export const useDisconnectIntegracao = () => {
   });
 };
 
+export const useJiraProjects = (enabled: boolean) =>
+  useQuery({ queryKey: ["integracoes", "jira", "projetos"], queryFn: listJiraProjects, enabled });
+
 export const useSaveJiraConfig = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -41,22 +45,36 @@ export const useSaveJiraConfig = () => {
 
 export const useJiraTestIssue = () => useMutation({ mutationFn: createJiraTestIssue });
 
-// refreshes while something is still on its way to Jira
-export const useAuditoriaJiraIssues = (auditoriaId: string) =>
-  useQuery({
-    queryKey: ["integracoes", "jira", "auditoria", auditoriaId],
-    queryFn: () => getAuditoriaJiraIssues(auditoriaId),
-    enabled: !!auditoriaId,
-    refetchInterval: (query) => (query.state.data?.some((i) => i.status === "pendente" || i.status === "enviando" || i.status === "erro") ? 10_000 : false),
-  });
+export const useMondayBoards = (enabled: boolean) =>
+  useQuery({ queryKey: ["integracoes", "monday", "boards"], queryFn: listMondayBoards, enabled, staleTime: 60_000 });
 
-export const useJiraQueue = (enabled: boolean) =>
-  useQuery({ queryKey: ["integracoes", "jira", "fila"], queryFn: getJiraQueue, enabled, refetchInterval: 15_000 });
-
-export const useRetryJiraQueue = () => {
+export const useSaveMondayConfig = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: retryJiraQueue,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integracoes", "jira", "fila"] }),
+    mutationFn: saveMondayConfig,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integracoes"] }),
+  });
+};
+
+export const useMondayTestItem = () => useMutation({ mutationFn: createMondayTestItem });
+
+// refreshes while something is still on its way to a provider
+export const useAuditoriaEnvios = (auditoriaId: string) =>
+  useQuery({
+    queryKey: ["integracoes", "auditoria", auditoriaId],
+    queryFn: () => getAuditoriaEnvios(auditoriaId),
+    enabled: !!auditoriaId,
+    refetchInterval: (query) =>
+      query.state.data?.some((e) => e.status === "pendente" || e.status === "enviando" || e.status === "erro") ? 10_000 : false,
+  });
+
+export const useQueueSummary = (provider: ProviderId) =>
+  useQuery({ queryKey: ["integracoes", provider, "fila"], queryFn: () => getQueueSummary(provider), refetchInterval: 15_000 });
+
+export const useRetryQueue = (provider: ProviderId) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => retryQueue(provider),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integracoes", provider, "fila"] }),
   });
 };

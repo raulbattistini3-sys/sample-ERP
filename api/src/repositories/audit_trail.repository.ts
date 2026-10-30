@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { DrizzleDB } from "../db/client";
-import { enqueueForCategoria, enqueueForProducts } from "./jira_outbox.repository";
+import { enqueueForCategoria, enqueueForProducts } from "./integracao_envios.repository";
 
 // Automatic "Alteracao" auditorias for product and categoria changes. Every function runs on the
 // caller's transaction, so a change is never saved without its auditoria (or a claimed manual one).
@@ -35,7 +35,44 @@ const observacoes = (changes: FieldChange[]) => {
 
 const firstId = (result: { rows: { id: string }[] }) => result.rows[0]?.id as string | undefined;
 
-async function createAutomaticAuditoria(
+export type LinkedAuditoria = {
+  acao: string;
+  dataDeAudicao: Date | null; // null = now()
+  usuarioId: string;
+  nome: string; // detalhamento's nome_do_produto ("Categoria: <nome>" for a categoria change)
+  valorAnterior: string;
+  valorAtual: string;
+  observacoes: string;
+  changes: FieldChange[];
+  produtoIds: string[];
+  categoriaId: string | null; // set for a categoria change: its issues/items go to that categoria
+};
+
+// An auditoria already tied (vinculada) to the change it describes, so it can't cover a later one.
+// Used by automatic auditorias and by manual ones that apply their own changes.
+export async function insertLinkedAuditoria(tx: DrizzleDB, a: LinkedAuditoria): Promise<string> {
+  const detalhamentoId = firstId(
+    await tx.execute(sql`
+      insert into detalhamentos_auditoria (nome_do_produto, valor_anterior, valor_atual, observacoes_adicionais, alteracoes)
+      values (${a.nome}, ${a.valorAnterior}::numeric, ${a.valorAtual}::numeric, ${a.observacoes}, ${JSON.stringify(a.changes)}::jsonb)
+      returning id`),
+  )!;
+  const auditoriaId = firstId(
+    await tx.execute(sql`
+      insert into auditorias (acao_efetuada, data_de_audicao, usuario_id, detalhamento_auditoria_id, vinculada_em)
+      values (${a.acao}, ${a.dataDeAudicao ?? sql`now()`}, ${a.usuarioId}, ${detalhamentoId}, now())
+      returning id`),
+  )!;
+  for (const produtoId of a.produtoIds) {
+    await tx.execute(sql`insert into produtos_por_auditoria (auditoria_id, produto_id) values (${auditoriaId}, ${produtoId})`);
+  }
+  // issues/items of the connected integrations for the new auditoria, created after commit
+  if (a.categoriaId) await enqueueForCategoria(tx, auditoriaId, a.categoriaId);
+  else await enqueueForProducts(tx, auditoriaId, a.produtoIds);
+  return auditoriaId;
+}
+
+const createAutomaticAuditoria = (
   tx: DrizzleDB,
   usuarioId: string,
   nome: string,
@@ -43,28 +80,20 @@ async function createAutomaticAuditoria(
   valorAtual: string,
   changes: FieldChange[],
   produtoIds: string[],
-  categoriaId: string | null, // set for a categoria change: its Jira issue goes to that categoria
-): Promise<string> {
-  const detalhamentoId = firstId(
-    await tx.execute(sql`
-      insert into detalhamentos_auditoria (nome_do_produto, valor_anterior, valor_atual, observacoes_adicionais)
-      values (${nome}, ${valorAnterior}::numeric, ${valorAtual}::numeric, ${observacoes(changes)})
-      returning id`),
-  )!;
-  const auditoriaId = firstId(
-    await tx.execute(sql`
-      insert into auditorias (acao_efetuada, data_de_audicao, usuario_id, detalhamento_auditoria_id, vinculada_em)
-      values ('Alteracao', now(), ${usuarioId}, ${detalhamentoId}, now())
-      returning id`),
-  )!;
-  for (const produtoId of produtoIds) {
-    await tx.execute(sql`insert into produtos_por_auditoria (auditoria_id, produto_id) values (${auditoriaId}, ${produtoId})`);
-  }
-  // Jira issue(s) for the new auditoria, sent after commit (only when Jira is connected)
-  if (categoriaId) await enqueueForCategoria(tx, auditoriaId, categoriaId);
-  else await enqueueForProducts(tx, auditoriaId, produtoIds);
-  return auditoriaId;
-}
+  categoriaId: string | null,
+): Promise<string> =>
+  insertLinkedAuditoria(tx, {
+    acao: "Alteracao",
+    dataDeAudicao: null,
+    usuarioId,
+    nome,
+    valorAnterior,
+    valorAtual,
+    observacoes: observacoes(changes),
+    changes,
+    produtoIds,
+    categoriaId,
+  });
 
 export async function recordProductChange(
   tx: DrizzleDB,

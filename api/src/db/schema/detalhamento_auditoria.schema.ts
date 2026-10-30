@@ -1,4 +1,4 @@
-import { mysqlTable, varchar, decimal, timestamp } from "drizzle-orm/mysql-core";
+import { mysqlTable, varchar, decimal, timestamp, json } from "drizzle-orm/mysql-core";
 import { randomUUID } from "crypto";
 
 export const detalhamentosAuditoria = mysqlTable("detalhamentos_auditoria", {
@@ -7,6 +7,8 @@ export const detalhamentosAuditoria = mysqlTable("detalhamentos_auditoria", {
   valorAnterior: decimal("valor_anterior", { precision: 10, scale: 2 }).notNull(), // no mode:"number" — stays string, matches original
   valorAtual: decimal("valor_atual", { precision: 10, scale: 2 }).notNull(),
   observacoesAdicionais: varchar("observacoes_adicionais", { length: 1000 }).notNull(),
+  // every field the auditoria changed (see audit_trail.repository FieldChange)
+  alteracoes: json("alteracoes").$type<{ campo: string; antes: string; depois: string }[]>().notNull().default([]),
   deletedAt: timestamp("deleted_at"),
 });
 

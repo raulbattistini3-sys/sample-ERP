@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CreateAuditoriaSchema } from "../../utils/schemas/auditoria.schema";
+import { CreateAuditoriaManualSchema, CreateAuditoriaSchema } from "../../utils/schemas/auditoria.schema";
 import { AuditoriaResponseDto } from "./auditoria_response.dto";
 import { NewAuditoriaEntity } from "../../entities/auditoria.entity";
 import { NewDetalhamentoAuditoriaEntity } from "../../entities/detalhamento_auditoria.entity";
@@ -14,6 +14,26 @@ type NewAuditoriaWithItens = {
    produtoIds: string[];
 };
 
+// POST /auditoria/manual body, after parsing
+type CreateAuditoriaManualDto = z.infer<typeof CreateAuditoriaManualSchema>;
+
+// what the repository applies and records in one transaction
+type NewAuditoriaManual = {
+   acao: CreateAuditoriaManualDto["acao_efetuada"];
+   dataDeAudicao: Date;
+   usuarioId: string;
+   observacoes: string;
+   alvo: CreateAuditoriaManualDto["alvo"];
+   // only ADM/SU change a product's status or audit an inactive product (like PUT /products/:id)
+   includeInactive: boolean;
+};
+
 type ResponseCreateAuditoria = AuditoriaResponseDto;
 
-export { CreateAuditoriaDto, NewAuditoriaWithItens, ResponseCreateAuditoria };
+export {
+   CreateAuditoriaDto,
+   NewAuditoriaWithItens,
+   CreateAuditoriaManualDto,
+   NewAuditoriaManual,
+   ResponseCreateAuditoria,
+};

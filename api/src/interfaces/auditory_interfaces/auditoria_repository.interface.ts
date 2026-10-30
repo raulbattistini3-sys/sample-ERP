@@ -1,4 +1,4 @@
-import { NewAuditoriaWithItens } from "../../dtos/auditoria_dtos/create_auditoria.dto";
+import { NewAuditoriaManual, NewAuditoriaWithItens } from "../../dtos/auditoria_dtos/create_auditoria.dto";
 import { GetUserPreviousAudictionsDto } from "../../dtos/auditoria_dtos/get_auditoria.dto";
 import { AuditoriaEntity } from "../../entities/auditoria.entity";
 import { BaseAppError } from "../../errors/global_error.error";
@@ -14,6 +14,11 @@ interface IAuditoryRepository {
    // 404 (ValidationError) when the usuario or a produto doesn't exist
    createAuditoria(
       payload: NewAuditoriaWithItens,
+   ): Promise<Either<BaseAppError, AuditoriaEntity>>;
+   // applies the changes to the product/categoria and records them; 404 target, 400 nothing changed,
+   // 409 duplicate nome/SKU (all ValidationError)
+   createAuditoriaManual(
+      payload: NewAuditoriaManual,
    ): Promise<Either<BaseAppError, AuditoriaEntity>>;
    updateAuditoria(
       auditoria: AuditoriaEntity,

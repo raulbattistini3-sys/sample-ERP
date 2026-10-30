@@ -8,16 +8,19 @@ import { useAuth } from "../../../context/AuthContext";
 import { getApiErrorMessage } from "../../../lib/api-client";
 import { formatDateTime } from "../../../lib/form";
 import { isAdminRole } from "../../../lib/permissoes";
-import { Integracao } from "../api/integracoes.api";
+import { Integracao, MondayConfig, ProviderId } from "../api/integracoes.api";
 import {
   useConnectIntegracao,
   useDisconnectIntegracao,
   useIntegracoes,
   useJiraProjects,
-  useJiraQueue,
   useJiraTestIssue,
-  useRetryJiraQueue,
+  useMondayBoards,
+  useMondayTestItem,
+  useQueueSummary,
+  useRetryQueue,
   useSaveJiraConfig,
+  useSaveMondayConfig,
 } from "../hooks/useIntegracoes";
 
 // ?erro=<reason> set by the API's OAuth callback
@@ -30,16 +33,41 @@ const callbackErrors: Record<string, string> = {
   provedor: "O provedor não respondeu como esperado. Tente de novo em instantes.",
 };
 
+const envKeys: Record<ProviderId, string> = {
+  jira: "JIRA_CLIENT_ID, JIRA_CLIENT_SECRET",
+  monday: "MONDAY_CLIENT_ID, MONDAY_CLIENT_SECRET",
+};
+
+const queueTexts: Record<ProviderId, { title: string; description: string }> = {
+  jira: { title: "Auditorias no Jira", description: "Cada nova auditoria cria uma issue no projeto acima para cada categoria envolvida." },
+  monday: { title: "Auditorias no monday.com", description: "Cada nova auditoria cria um item no quadro acima para cada categoria envolvida." },
+};
+
+function CreatedLink({ label, data }: { label: string; data?: { key: string; url: string } }) {
+  if (!data) return null;
+  return (
+    <p className="mt-3 text-sm text-ink">
+      {label}:{" "}
+      <a href={data.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">
+        {data.key}
+        <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+      </a>
+    </p>
+  );
+}
+
 function JiraSettings({ integracao }: { integracao: Integracao }) {
   const projectsQuery = useJiraProjects(true);
   const saveMutation = useSaveJiraConfig();
   const testMutation = useJiraTestIssue();
-  const [projectKey, setProjectKey] = useState(integracao.config?.projectKey ?? "");
-  const [issueTypeId, setIssueTypeId] = useState(integracao.config?.issueTypeId ?? "");
+  const savedProject = (integracao.config?.projectKey as string | undefined) ?? "";
+  const savedType = (integracao.config?.issueTypeId as string | undefined) ?? "";
+  const [projectKey, setProjectKey] = useState(savedProject);
+  const [issueTypeId, setIssueTypeId] = useState(savedType);
 
   const project = projectsQuery.data?.find((p) => p.key === projectKey);
-  const saved = integracao.config?.projectKey && integracao.config?.issueTypeId;
-  const dirty = projectKey !== (integracao.config?.projectKey ?? "") || issueTypeId !== (integracao.config?.issueTypeId ?? "");
+  const saved = !!savedProject && !!savedType;
+  const dirty = projectKey !== savedProject || issueTypeId !== savedType;
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -92,12 +120,7 @@ function JiraSettings({ integracao }: { integracao: Integracao }) {
               {saveMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
               Salvar
             </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => testMutation.mutate()}
-              disabled={!saved || dirty || testMutation.isPending}
-            >
+            <Button type="button" variant="secondary" onClick={() => testMutation.mutate()} disabled={!saved || dirty || testMutation.isPending}>
               {testMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
               Criar issue de teste
             </Button>
@@ -105,35 +128,138 @@ function JiraSettings({ integracao }: { integracao: Integracao }) {
         </form>
       )}
       {saveMutation.isError && <ErrorAlert className="mt-3" message={getApiErrorMessage(saveMutation.error, "Não foi possível salvar.")} />}
-      {testMutation.isError && (
-        <ErrorAlert className="mt-3" message={getApiErrorMessage(testMutation.error, "Não foi possível criar a issue de teste.")} />
-      )}
-      {testMutation.data && (
-        <p className="mt-3 text-sm text-ink">
-          Issue criada:{" "}
-          <a href={testMutation.data.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">
-            {testMutation.data.key}
-            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-          </a>
-        </p>
-      )}
+      {testMutation.isError && <ErrorAlert className="mt-3" message={getApiErrorMessage(testMutation.error, "Não foi possível criar a issue de teste.")} />}
+      <CreatedLink label="Issue criada" data={testMutation.data} />
     </div>
   );
 }
 
-// automatic issues: one per categoria of every new auditoria (sent by the API's dispatcher)
-function JiraQueueStatus() {
-  const { data } = useJiraQueue(true);
-  const retryMutation = useRetryJiraQueue();
+// board + group, and which board column receives each auditoria field (only compatible column types)
+function MondaySettings({ integracao }: { integracao: Integracao }) {
+  const boardsQuery = useMondayBoards(true);
+  const saveMutation = useSaveMondayConfig();
+  const testMutation = useMondayTestItem();
+  const saved = integracao.config as Partial<MondayConfig> | undefined;
+  const savedColumns = Object.fromEntries(Object.entries(saved?.columns ?? {}).map(([field, column]) => [field, column.id]));
+  const [boardId, setBoardId] = useState(saved?.boardId ?? "");
+  const [groupId, setGroupId] = useState(saved?.groupId ?? "");
+  const [columns, setColumns] = useState<Record<string, string>>(savedColumns);
+
+  const board = boardsQuery.data?.boards.find((b) => b.id === boardId);
+  const dirty =
+    boardId !== (saved?.boardId ?? "") ||
+    groupId !== (saved?.groupId ?? "") ||
+    JSON.stringify(columns) !== JSON.stringify(savedColumns);
+
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    testMutation.reset();
+    saveMutation.mutate({ boardId, groupId: groupId || null, columns: Object.fromEntries(Object.entries(columns).filter(([, id]) => id)) });
+  };
+
+  return (
+    <div className="mt-4 border-t border-border pt-4">
+      <h4 className="text-sm font-semibold text-ink">Onde criar os itens</h4>
+      {boardsQuery.isLoading ? (
+        <LoadingState label="Carregando quadros do monday.com..." />
+      ) : boardsQuery.error ? (
+        <ErrorAlert className="mt-2" message={getApiErrorMessage(boardsQuery.error, "Não foi possível carregar os quadros do monday.com.")} />
+      ) : (
+        <form onSubmit={handleSubmit} className="mt-3 space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field id="monday-quadro" label="Quadro">
+              <Select
+                id="monday-quadro"
+                value={boardId}
+                onChange={(e) => {
+                  setBoardId(e.target.value);
+                  setGroupId("");
+                  setColumns({});
+                }}
+              >
+                <option value="" disabled>
+                  Selecione...
+                </option>
+                {boardsQuery.data?.boards.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.workspace ? `${b.name} (${b.workspace})` : b.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field id="monday-grupo" label="Grupo" hint="Vazio: o grupo padrão do quadro.">
+              <Select id="monday-grupo" value={groupId} onChange={(e) => setGroupId(e.target.value)} disabled={!board}>
+                <option value="">Padrão do quadro</option>
+                {board?.groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.title}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+
+          {board && (
+            <fieldset>
+              <legend className="text-sm font-medium text-ink">Colunas</legend>
+              <p className="mt-1 text-xs text-muted">
+                O título do item é a auditoria; os campos abaixo vão para as colunas escolhidas. O detalhamento completo vira uma atualização no item.
+              </p>
+              <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                {boardsQuery.data?.campos.map((campo) => {
+                  const compatible = board.columns.filter((c) => campo.types.includes(c.type));
+                  return (
+                    <Field key={campo.key} id={`monday-col-${campo.key}`} label={campo.label}>
+                      <Select
+                        id={`monday-col-${campo.key}`}
+                        value={columns[campo.key] ?? ""}
+                        onChange={(e) => setColumns((prev) => ({ ...prev, [campo.key]: e.target.value }))}
+                        disabled={compatible.length === 0}
+                      >
+                        <option value="">{compatible.length === 0 ? "Nenhuma coluna compatível" : "Não preencher"}</option>
+                        {compatible.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.title} ({c.type})
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                  );
+                })}
+              </div>
+            </fieldset>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" disabled={!boardId || !dirty || saveMutation.isPending}>
+              {saveMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+              Salvar
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => testMutation.mutate()} disabled={!saved?.boardId || dirty || testMutation.isPending}>
+              {testMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
+              Criar item de teste
+            </Button>
+          </div>
+        </form>
+      )}
+      {saveMutation.isError && <ErrorAlert className="mt-3" message={getApiErrorMessage(saveMutation.error, "Não foi possível salvar.")} />}
+      {testMutation.isError && <ErrorAlert className="mt-3" message={getApiErrorMessage(testMutation.error, "Não foi possível criar o item de teste.")} />}
+      <CreatedLink label="Item criado" data={testMutation.data} />
+    </div>
+  );
+}
+
+// automatic issues/items: one per categoria of every new auditoria (created by the API's queue worker)
+function QueueStatus({ provider }: { provider: ProviderId }) {
+  const { data } = useQueueSummary(provider);
+  const retryMutation = useRetryQueue(provider);
   if (!data) return null;
   const failing = data.comErro + data.esgotadas;
 
   return (
     <div className="mt-4 border-t border-border pt-4">
-      <h4 className="text-sm font-semibold text-ink">Auditorias no Jira</h4>
-      <p className="mt-1 text-sm text-muted">
-        Cada nova auditoria cria uma issue no projeto acima para cada categoria envolvida.
-      </p>
+      <h4 className="text-sm font-semibold text-ink">{queueTexts[provider].title}</h4>
+      <p className="mt-1 text-sm text-muted">{queueTexts[provider].description}</p>
       <p className="mt-2 text-sm text-ink">
         {data.enviadas} enviada(s) · {data.pendentes} na fila · {failing} com erro
         {data.esgotadas > 0 && ` (${data.esgotadas} desistiram após ${data.maxTentativas} tentativas)`}
@@ -147,10 +273,10 @@ function JiraQueueStatus() {
           ))}
         </ul>
       )}
-      {failing > 0 && (
+      {data.esgotadas > 0 && (
         <Button variant="secondary" className="mt-3" onClick={() => retryMutation.mutate()} disabled={retryMutation.isPending}>
           <RotateCcw className="h-4 w-4" aria-hidden="true" />
-          Reenviar com erro
+          Reenviar as que desistiram
         </Button>
       )}
     </div>
@@ -160,7 +286,8 @@ function JiraQueueStatus() {
 function IntegracaoCard({ integracao }: { integracao: Integracao }) {
   const connectMutation = useConnectIntegracao();
   const disconnectMutation = useDisconnectIntegracao();
-  const { conta } = integracao;
+  const { conta, config } = integracao;
+  const ready = integracao.provider === "jira" ? !!config?.projectKey : !!config?.boardId;
 
   const handleDisconnect = () => {
     if (!window.confirm(`Desconectar ${integracao.nome}? O ERP deixa de acessar sua conta.`)) return;
@@ -174,14 +301,14 @@ function IntegracaoCard({ integracao }: { integracao: Integracao }) {
           <h3 className="text-base font-semibold text-ink">{integracao.nome}</h3>
           {!integracao.configurado ? (
             <p className="mt-1 text-sm text-muted">
-              Não configurada no servidor: defina JIRA_CLIENT_ID, JIRA_CLIENT_SECRET e INTEGRATIONS_ENCRYPTION_KEY em api/.env.
+              Não configurada no servidor: defina {envKeys[integracao.provider]} e INTEGRATIONS_ENCRYPTION_KEY em api/.env.
             </p>
           ) : integracao.conectado ? (
             <p className="mt-1 text-sm text-muted">
               Conectado a{" "}
               {conta?.siteUrl ? (
                 <a href={conta.siteUrl} target="_blank" rel="noreferrer" className="font-medium text-accent hover:underline">
-                  {conta.siteName ?? conta.siteUrl}
+                  {conta.siteName ?? conta.accountName ?? conta.siteUrl}
                 </a>
               ) : (
                 "sua conta"
@@ -211,14 +338,11 @@ function IntegracaoCard({ integracao }: { integracao: Integracao }) {
           </Button>
         </div>
       </div>
-      {connectMutation.isError && (
-        <ErrorAlert className="mt-3" message={getApiErrorMessage(connectMutation.error, "Não foi possível iniciar a conexão.")} />
-      )}
-      {disconnectMutation.isError && (
-        <ErrorAlert className="mt-3" message={getApiErrorMessage(disconnectMutation.error, "Não foi possível desconectar.")} />
-      )}
-      {integracao.provider === "jira" && integracao.conectado && <JiraSettings integracao={integracao} />}
-      {integracao.provider === "jira" && integracao.conectado && integracao.config?.projectKey && <JiraQueueStatus />}
+      {connectMutation.isError && <ErrorAlert className="mt-3" message={getApiErrorMessage(connectMutation.error, "Não foi possível iniciar a conexão.")} />}
+      {disconnectMutation.isError && <ErrorAlert className="mt-3" message={getApiErrorMessage(disconnectMutation.error, "Não foi possível desconectar.")} />}
+      {integracao.conectado && integracao.provider === "jira" && <JiraSettings integracao={integracao} />}
+      {integracao.conectado && integracao.provider === "monday" && <MondaySettings integracao={integracao} />}
+      {integracao.conectado && ready && <QueueStatus provider={integracao.provider} />}
     </FormCard>
   );
 }
