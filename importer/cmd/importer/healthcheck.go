@@ -25,7 +25,7 @@ func healthcheck() int {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	conn, err := grpc.NewClient(net.JoinHostPort("localhost", port), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(net.JoinHostPort("127.0.0.1", port), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "healthcheck:", err)
 		return 1
