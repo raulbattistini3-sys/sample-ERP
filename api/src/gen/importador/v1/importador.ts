@@ -24,9 +24,12 @@ export const protobufPackage = "importador.v1";
 
 export const protobufFileName = "importador/v1/importador.proto";
 
+/** Where an import is. CONCLUIDA, REJEITADA and FALHOU are final. */
 export enum StatusImportacao {
   STATUS_IMPORTACAO_UNSPECIFIED = 0,
+  /** STATUS_IMPORTACAO_PENDENTE - waiting for a worker */
   STATUS_IMPORTACAO_PENDENTE = 1,
+  /** STATUS_IMPORTACAO_PROCESSANDO - a worker holds it */
   STATUS_IMPORTACAO_PROCESSANDO = 2,
   /** STATUS_IMPORTACAO_CONCLUIDA - every row was imported */
   STATUS_IMPORTACAO_CONCLUIDA = 3,
@@ -84,9 +87,11 @@ export function statusImportacaoToJSON(object: StatusImportacao): string {
   }
 }
 
+/** An upload to queue. */
 export interface IniciarImportacaoRequest {
-  /** the .xlsx contents; MAX_IMPORT_ROWS rows fit well under gRPC's 4 MB default message size */
+  /** the .xlsx or .csv contents. The whole message must fit gRPC's 4 MB default, which the server doesn't raise */
   planilha: Buffer;
+  /** original name; its extension decides how the file is read */
   nomeArquivo: string;
   /** who uploaded it, for the auditoria */
   usuarioId: string;
@@ -104,12 +109,17 @@ export interface ObterImportacaoResponse {
   importacao: Importacao | undefined;
 }
 
+/** One import and how it went. */
 export interface Importacao {
+  /** UUID */
   id: string;
   status: StatusImportacao;
   nomeArquivo: string;
+  /** product rows in the file, without the header */
   totalLinhas: number;
+  /** linhas_criadas + linhas_atualizadas; 0 unless CONCLUIDA */
   linhasImportadas: number;
+  /** set when status is REJEITADA */
   erros: ErroLinha[];
   /** set when status is FALHOU */
   mensagem: string;
@@ -824,6 +834,11 @@ export const ErroLinha: MessageFns<ErroLinha> = {
  */
 export type ImportadorServiceService = typeof ImportadorServiceService;
 export const ImportadorServiceService = {
+  /**
+   * Queues a .xlsx or .csv and returns the import with status PENDENTE, without waiting for it to run.
+   * INVALID_ARGUMENT: empty file, missing nome_arquivo or usuario_id, unsupported format or invalid UUID.
+   * NOT_FOUND: usuario_id doesn't exist.
+   */
   iniciarImportacao: {
     path: "/importador.v1.ImportadorService/IniciarImportacao" as const,
     requestStream: false as const,
@@ -835,6 +850,10 @@ export const ImportadorServiceService = {
       Buffer.from(IniciarImportacaoResponse.encode(value).finish()),
     responseDeserialize: (value: Buffer): IniciarImportacaoResponse => IniciarImportacaoResponse.decode(value),
   },
+  /**
+   * Returns an import's current state. Poll it until the status is CONCLUIDA, REJEITADA or FALHOU.
+   * INVALID_ARGUMENT: id isn't a UUID. NOT_FOUND: no such import.
+   */
   obterImportacao: {
     path: "/importador.v1.ImportadorService/ObterImportacao" as const,
     requestStream: false as const,
@@ -849,11 +868,25 @@ export const ImportadorServiceService = {
 } as const;
 
 export interface ImportadorServiceServer extends UntypedServiceImplementation {
+  /**
+   * Queues a .xlsx or .csv and returns the import with status PENDENTE, without waiting for it to run.
+   * INVALID_ARGUMENT: empty file, missing nome_arquivo or usuario_id, unsupported format or invalid UUID.
+   * NOT_FOUND: usuario_id doesn't exist.
+   */
   iniciarImportacao: handleUnaryCall<IniciarImportacaoRequest, IniciarImportacaoResponse>;
+  /**
+   * Returns an import's current state. Poll it until the status is CONCLUIDA, REJEITADA or FALHOU.
+   * INVALID_ARGUMENT: id isn't a UUID. NOT_FOUND: no such import.
+   */
   obterImportacao: handleUnaryCall<ObterImportacaoRequest, ObterImportacaoResponse>;
 }
 
 export interface ImportadorServiceClient extends Client {
+  /**
+   * Queues a .xlsx or .csv and returns the import with status PENDENTE, without waiting for it to run.
+   * INVALID_ARGUMENT: empty file, missing nome_arquivo or usuario_id, unsupported format or invalid UUID.
+   * NOT_FOUND: usuario_id doesn't exist.
+   */
   iniciarImportacao(
     request: IniciarImportacaoRequest,
     callback: (error: ServiceError | null, response: IniciarImportacaoResponse) => void,
@@ -869,6 +902,10 @@ export interface ImportadorServiceClient extends Client {
     options: Partial<CallOptions>,
     callback: (error: ServiceError | null, response: IniciarImportacaoResponse) => void,
   ): ClientUnaryCall;
+  /**
+   * Returns an import's current state. Poll it until the status is CONCLUIDA, REJEITADA or FALHOU.
+   * INVALID_ARGUMENT: id isn't a UUID. NOT_FOUND: no such import.
+   */
   obterImportacao(
     request: ObterImportacaoRequest,
     callback: (error: ServiceError | null, response: ObterImportacaoResponse) => void,

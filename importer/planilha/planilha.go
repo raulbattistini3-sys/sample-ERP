@@ -30,6 +30,7 @@ type Linha struct {
 	Celulas []Celula
 }
 
+// ErrFormato is returned for a file that isn't .csv or .xlsx. Its message is shown to the user.
 var ErrFormato = errors.New("Formato não suportado. Envie um arquivo .csv ou .xlsx (o .xls antigo não é aceito).")
 
 // Ler picks the reader by extension and yields the rows in order, stopping at the first read error.

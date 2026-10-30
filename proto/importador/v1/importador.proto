@@ -8,13 +8,21 @@ import "google/protobuf/timestamp.proto";
 // The API uploads the file and gets an importacao back right away; the rows are parsed,
 // validated and written in the background, and the caller polls ObterImportacao for the outcome.
 service ImportadorService {
+  // Queues a .xlsx or .csv and returns the import with status PENDENTE, without waiting for it to run.
+  // INVALID_ARGUMENT: empty file, missing nome_arquivo or usuario_id, unsupported format or invalid UUID.
+  // NOT_FOUND: usuario_id doesn't exist.
   rpc IniciarImportacao(IniciarImportacaoRequest) returns (IniciarImportacaoResponse);
+  // Returns an import's current state. Poll it until the status is CONCLUIDA, REJEITADA or FALHOU.
+  // INVALID_ARGUMENT: id isn't a UUID. NOT_FOUND: no such import.
   rpc ObterImportacao(ObterImportacaoRequest) returns (ObterImportacaoResponse);
 }
 
+// Where an import is. CONCLUIDA, REJEITADA and FALHOU are final.
 enum StatusImportacao {
   STATUS_IMPORTACAO_UNSPECIFIED = 0;
+  // waiting for a worker
   STATUS_IMPORTACAO_PENDENTE = 1;
+  // a worker holds it
   STATUS_IMPORTACAO_PROCESSANDO = 2;
   // every row was imported
   STATUS_IMPORTACAO_CONCLUIDA = 3;
@@ -24,9 +32,11 @@ enum StatusImportacao {
   STATUS_IMPORTACAO_FALHOU = 5;
 }
 
+// An upload to queue.
 message IniciarImportacaoRequest {
-  // the .xlsx contents; MAX_IMPORT_ROWS rows fit well under gRPC's 4 MB default message size
+  // the .xlsx or .csv contents. The whole message must fit gRPC's 4 MB default, which the server doesn't raise
   bytes planilha = 1;
+  // original name; its extension decides how the file is read
   string nome_arquivo = 2;
   // who uploaded it, for the auditoria
   string usuario_id = 3;
@@ -44,12 +54,17 @@ message ObterImportacaoResponse {
   Importacao importacao = 1;
 }
 
+// One import and how it went.
 message Importacao {
+  // UUID
   string id = 1;
   StatusImportacao status = 2;
   string nome_arquivo = 3;
+  // product rows in the file, without the header
   int32 total_linhas = 4;
+  // linhas_criadas + linhas_atualizadas; 0 unless CONCLUIDA
   int32 linhas_importadas = 5;
+  // set when status is REJEITADA
   repeated ErroLinha erros = 6;
   // set when status is FALHOU
   string mensagem = 7;

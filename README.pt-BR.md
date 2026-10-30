@@ -107,7 +107,7 @@ Abra http://localhost:5173 e [crie o primeiro usuário](#criar-o-primeiro-usuár
 
 ### 2.4 Importador de planilhas (opcional)
 
-Sem ele, a própria API roda a importação de produtos em segundo plano. Com ele, a API entrega o arquivo enviado ao importador, que faz esse trabalho em um processo próprio. Em outro terminal:
+Sem ele, a própria API roda a importação de produtos em segundo plano. Com ele, a API entrega o arquivo enviado ao importador, que faz esse trabalho em um processo próprio. O [`importer/README.md`](importer/README.md) explica como ele funciona, a API gRPC e os limites. Em outro terminal:
 
 ```bash
 cd importer
@@ -234,6 +234,16 @@ docker compose exec db psql -U postgres -d sample_erp \
 ```
 
 A API lê o perfil a cada requisição. Saia e entre de novo para a aplicação web também mostrar o novo perfil.
+
+## Documentação da API
+
+| Serviço | Docs interativas | Spec |
+| --- | --- | --- |
+| API | `/docs`, por exemplo http://localhost:3333/docs | `/openapi.json` |
+| Billing | `/docs`, por exemplo http://localhost:8081/docs | `/v3/api-docs` |
+| Importador (gRPC) | [`importer/README.md`](importer/README.md) | [`importador.proto`](proto/importador/v1/importador.proto) |
+
+Nas docs da API, chame `POST /user/login` e cole o token em **Authorize**. O spec da API é gerado por `api/src/docs/openapi.ts` a partir dos mesmos schemas Zod que validam as requisições. Adicione as rotas novas lá também. `/internal/billing` fica de fora porque só o serviço de billing a chama.
 
 ## Variáveis de ambiente
 

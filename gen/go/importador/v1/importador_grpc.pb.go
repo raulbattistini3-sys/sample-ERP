@@ -31,7 +31,12 @@ const (
 // The API uploads the file and gets an importacao back right away; the rows are parsed,
 // validated and written in the background, and the caller polls ObterImportacao for the outcome.
 type ImportadorServiceClient interface {
+	// Queues a .xlsx or .csv and returns the import with status PENDENTE, without waiting for it to run.
+	// INVALID_ARGUMENT: empty file, missing nome_arquivo or usuario_id, unsupported format or invalid UUID.
+	// NOT_FOUND: usuario_id doesn't exist.
 	IniciarImportacao(ctx context.Context, in *IniciarImportacaoRequest, opts ...grpc.CallOption) (*IniciarImportacaoResponse, error)
+	// Returns an import's current state. Poll it until the status is CONCLUIDA, REJEITADA or FALHOU.
+	// INVALID_ARGUMENT: id isn't a UUID. NOT_FOUND: no such import.
 	ObterImportacao(ctx context.Context, in *ObterImportacaoRequest, opts ...grpc.CallOption) (*ObterImportacaoResponse, error)
 }
 
@@ -71,7 +76,12 @@ func (c *importadorServiceClient) ObterImportacao(ctx context.Context, in *Obter
 // The API uploads the file and gets an importacao back right away; the rows are parsed,
 // validated and written in the background, and the caller polls ObterImportacao for the outcome.
 type ImportadorServiceServer interface {
+	// Queues a .xlsx or .csv and returns the import with status PENDENTE, without waiting for it to run.
+	// INVALID_ARGUMENT: empty file, missing nome_arquivo or usuario_id, unsupported format or invalid UUID.
+	// NOT_FOUND: usuario_id doesn't exist.
 	IniciarImportacao(context.Context, *IniciarImportacaoRequest) (*IniciarImportacaoResponse, error)
+	// Returns an import's current state. Poll it until the status is CONCLUIDA, REJEITADA or FALHOU.
+	// INVALID_ARGUMENT: id isn't a UUID. NOT_FOUND: no such import.
 	ObterImportacao(context.Context, *ObterImportacaoRequest) (*ObterImportacaoResponse, error)
 	mustEmbedUnimplementedImportadorServiceServer()
 }

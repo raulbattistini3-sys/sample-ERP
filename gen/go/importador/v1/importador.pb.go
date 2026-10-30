@@ -22,11 +22,14 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Where an import is. CONCLUIDA, REJEITADA and FALHOU are final.
 type StatusImportacao int32
 
 const (
 	StatusImportacao_STATUS_IMPORTACAO_UNSPECIFIED StatusImportacao = 0
-	StatusImportacao_STATUS_IMPORTACAO_PENDENTE    StatusImportacao = 1
+	// waiting for a worker
+	StatusImportacao_STATUS_IMPORTACAO_PENDENTE StatusImportacao = 1
+	// a worker holds it
 	StatusImportacao_STATUS_IMPORTACAO_PROCESSANDO StatusImportacao = 2
 	// every row was imported
 	StatusImportacao_STATUS_IMPORTACAO_CONCLUIDA StatusImportacao = 3
@@ -83,10 +86,12 @@ func (StatusImportacao) EnumDescriptor() ([]byte, []int) {
 	return file_importador_v1_importador_proto_rawDescGZIP(), []int{0}
 }
 
+// An upload to queue.
 type IniciarImportacaoRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// the .xlsx contents; MAX_IMPORT_ROWS rows fit well under gRPC's 4 MB default message size
-	Planilha    []byte `protobuf:"bytes,1,opt,name=planilha,proto3" json:"planilha,omitempty"`
+	// the .xlsx or .csv contents. The whole message must fit gRPC's 4 MB default, which the server doesn't raise
+	Planilha []byte `protobuf:"bytes,1,opt,name=planilha,proto3" json:"planilha,omitempty"`
+	// original name; its extension decides how the file is read
 	NomeArquivo string `protobuf:"bytes,2,opt,name=nome_arquivo,json=nomeArquivo,proto3" json:"nome_arquivo,omitempty"`
 	// who uploaded it, for the auditoria
 	UsuarioId     string `protobuf:"bytes,3,opt,name=usuario_id,json=usuarioId,proto3" json:"usuario_id,omitempty"`
@@ -277,14 +282,19 @@ func (x *ObterImportacaoResponse) GetImportacao() *Importacao {
 	return nil
 }
 
+// One import and how it went.
 type Importacao struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Status           StatusImportacao       `protobuf:"varint,2,opt,name=status,proto3,enum=importador.v1.StatusImportacao" json:"status,omitempty"`
-	NomeArquivo      string                 `protobuf:"bytes,3,opt,name=nome_arquivo,json=nomeArquivo,proto3" json:"nome_arquivo,omitempty"`
-	TotalLinhas      int32                  `protobuf:"varint,4,opt,name=total_linhas,json=totalLinhas,proto3" json:"total_linhas,omitempty"`
-	LinhasImportadas int32                  `protobuf:"varint,5,opt,name=linhas_importadas,json=linhasImportadas,proto3" json:"linhas_importadas,omitempty"`
-	Erros            []*ErroLinha           `protobuf:"bytes,6,rep,name=erros,proto3" json:"erros,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// UUID
+	Id          string           `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Status      StatusImportacao `protobuf:"varint,2,opt,name=status,proto3,enum=importador.v1.StatusImportacao" json:"status,omitempty"`
+	NomeArquivo string           `protobuf:"bytes,3,opt,name=nome_arquivo,json=nomeArquivo,proto3" json:"nome_arquivo,omitempty"`
+	// product rows in the file, without the header
+	TotalLinhas int32 `protobuf:"varint,4,opt,name=total_linhas,json=totalLinhas,proto3" json:"total_linhas,omitempty"`
+	// linhas_criadas + linhas_atualizadas; 0 unless CONCLUIDA
+	LinhasImportadas int32 `protobuf:"varint,5,opt,name=linhas_importadas,json=linhasImportadas,proto3" json:"linhas_importadas,omitempty"`
+	// set when status is REJEITADA
+	Erros []*ErroLinha `protobuf:"bytes,6,rep,name=erros,proto3" json:"erros,omitempty"`
 	// set when status is FALHOU
 	Mensagem     string                 `protobuf:"bytes,7,opt,name=mensagem,proto3" json:"mensagem,omitempty"`
 	CriadaEm     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=criada_em,json=criadaEm,proto3" json:"criada_em,omitempty"`

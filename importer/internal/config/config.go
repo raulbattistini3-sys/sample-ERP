@@ -1,3 +1,4 @@
+// Package config reads the importer's settings from the environment and a local .env file.
 package config
 
 import (
@@ -12,12 +13,14 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// Config is everything the importer needs to start.
 type Config struct {
 	GRPC     GRPCConfig
 	DB       DBConfig
 	Importer ImporterConfig
 }
 
+// GRPCConfig is the address the gRPC server binds to.
 type GRPCConfig struct {
 	Host string
 	Port int
@@ -28,11 +31,13 @@ func (c GRPCConfig) Addr() string {
 	return net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
 }
 
+// DBConfig is the database connection.
 type DBConfig struct {
 	// same connection string the API uses, e.g. postgresql://postgres:postgres@localhost:5432/sample_erp
 	URL string
 }
 
+// ImporterConfig tunes how imports run.
 type ImporterConfig struct {
 	// same cap as the API's MAX_IMPORT_ROWS (api/src/utils/schemas/produto.schema.ts)
 	MaxRows int

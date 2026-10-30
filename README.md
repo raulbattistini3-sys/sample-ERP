@@ -107,7 +107,7 @@ Open http://localhost:5173 and [create the first user](#create-the-first-user).
 
 ### 2.4 Spreadsheet importer (optional)
 
-Without it, the API runs product imports itself, in the background. With it, the API hands the uploaded file to the importer, which does that work in its own process. In another terminal:
+Without it, the API runs product imports itself, in the background. With it, the API hands the uploaded file to the importer, which does that work in its own process. [`importer/README.md`](importer/README.md) covers how it works, its gRPC API and its limits. In another terminal:
 
 ```bash
 cd importer
@@ -234,6 +234,16 @@ docker compose exec db psql -U postgres -d sample_erp \
 ```
 
 The API reads the role on every request. Log out and back in so the web app shows the new role too.
+
+## API documentation
+
+| Service | Interactive docs | Spec |
+| --- | --- | --- |
+| API | `/docs`, for example http://localhost:3333/docs | `/openapi.json` |
+| Billing | `/docs`, for example http://localhost:8081/docs | `/v3/api-docs` |
+| Importer (gRPC) | [`importer/README.md`](importer/README.md) | [`importador.proto`](proto/importador/v1/importador.proto) |
+
+In the API docs, call `POST /user/login`, then paste the token under **Authorize**. The API's spec is built by `api/src/docs/openapi.ts` from the same Zod schemas that validate requests. Add new routes there too. `/internal/billing` is left out because only the billing service calls it.
 
 ## Environment variables
 

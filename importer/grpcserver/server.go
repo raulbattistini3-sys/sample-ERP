@@ -1,3 +1,5 @@
+// Package grpcserver implements ImportadorService, turning repository errors into gRPC status codes with
+// messages meant for the user.
 package grpcserver
 
 import (
@@ -17,15 +19,18 @@ import (
 	"github.com/raulbattistini3-sys/sample-ERP/importer/postgres"
 )
 
+// Server is the ImportadorService implementation. It only reads and queues: workers do the importing.
 type Server struct {
 	importadorv1.UnimplementedImportadorServiceServer
 	repo *postgres.Importacoes
 }
 
+// New returns a Server backed by repo.
 func New(repo *postgres.Importacoes) *Server {
 	return &Server{repo: repo}
 }
 
+// IniciarImportacao queues a .xlsx or .csv and returns the import, without waiting for it to run.
 func (s *Server) IniciarImportacao(ctx context.Context, req *importadorv1.IniciarImportacaoRequest) (*importadorv1.IniciarImportacaoResponse, error) {
 	nome := strings.TrimSpace(req.GetNomeArquivo())
 	switch {
@@ -55,6 +60,7 @@ func (s *Server) IniciarImportacao(ctx context.Context, req *importadorv1.Inicia
 	return &importadorv1.IniciarImportacaoResponse{Importacao: toProto(imp)}, nil
 }
 
+// ObterImportacao returns an import's current state. Callers poll it until the status is final.
 func (s *Server) ObterImportacao(ctx context.Context, req *importadorv1.ObterImportacaoRequest) (*importadorv1.ObterImportacaoResponse, error) {
 	imp, err := s.repo.Obter(ctx, req.GetId())
 	switch {
