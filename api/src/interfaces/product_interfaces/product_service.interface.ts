@@ -8,6 +8,7 @@ import {
 import {
    ResponseGetProductDto,
    ResponseGetProductsDto,
+   ResponseScrollProductsDto,
    ResponseFindFilteredProductsDto,
    ResponseFindProductsToDownloadDto,
 } from "../../dtos/product_dtos/get_products.dto";
@@ -30,6 +31,13 @@ interface IProductService {
       amount: number,
       includeInactive?: boolean,
    ) => Promise<Either<BaseAppError, ResponseGetProductsDto>>;
+   // sessao: who the cached first load belongs to
+   getProductsScroll: (
+      sessao: string,
+      cursor: string | undefined,
+      amount: number,
+      includeInactive?: boolean,
+   ) => Promise<Either<BaseAppError, ResponseScrollProductsDto>>;
    findProductById: (
       id: string,
       includeInactive?: boolean,

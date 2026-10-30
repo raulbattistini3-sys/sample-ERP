@@ -1,9 +1,10 @@
-import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { LIST_PAGE_SIZE } from "../../../lib/pagination";
+import { keepPreviousData, useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { LAZY_PAGE_SIZE, LIST_PAGE_SIZE } from "../../../lib/pagination";
 import { downloadTextFile } from "../../../lib/csv";
 import { fetchProductsForDownload, productsFileName, productsToCsv } from "../utils/productsSpreadsheet";
 import {
   getProducts,
+  getProductsScroll,
   getProductById,
   createProduct,
   updateProduct,
@@ -23,6 +24,14 @@ export const useProducts = (page = 1, amount = LIST_PAGE_SIZE) =>
     queryKey: ["products", "list", page, amount],
     queryFn: () => getProducts(page, amount),
     placeholderData: keepPreviousData,
+  });
+
+export const useProductsScroll = () =>
+  useInfiniteQuery({
+    queryKey: ["products", "scroll"],
+    queryFn: ({ pageParam }) => getProductsScroll(pageParam, LAZY_PAGE_SIZE),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
 
 export const useProduct = (id: string) =>

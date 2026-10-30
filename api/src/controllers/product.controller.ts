@@ -41,6 +41,17 @@ class ProductController extends BaseController {
     return res.status(200).json(result.value);
   };
 
+  // ?cursor= is the previous response's nextCursor; none starts from the top
+  getScroll = async (req: Request, res: Response, next: NextFunction) => {
+    const cursor = typeof req.query.cursor === "string" ? req.query.cursor : undefined;
+    const amount = Number(req.query.amount ?? 30);
+    const result = await this.productService.getProductsScroll(this.session(req), cursor, amount, includeInactive(req));
+    if (result.isLeft()) {
+      return this.fail(req, next, result.value);
+    }
+    return res.status(200).json(result.value);
+  };
+
   update = async (req: Request, res: Response, next: NextFunction) => {
     // the URL decides which product is updated, not the body
     const result = await this.productService.updateProduct({ ...req.body, id: req.params.id }, req.user!.id, includeInactive(req));

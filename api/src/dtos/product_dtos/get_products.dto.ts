@@ -7,6 +7,12 @@ type ResponseGetProductDto = BaseMessageGetOne<ProductResponseDto>;
 
 type ResponseGetProductsDto = BaseMessageGet<ProductResponseDto>;
 
+// where a scroll stopped: the last row's position in the name, id order
+type ProductCursor = { name: string; id: string };
+
+// no totalItems: counting the table costs more than reading the page
+type ResponseScrollProductsDto = { data: ProductResponseDto[]; pageSize: number; nextCursor: string | null };
+
 // parsed /products/filter and /products/download query params
 type ProductFilterDto = z.infer<typeof FilterProdutoSchema>;
 
@@ -20,6 +26,8 @@ interface ResponseFindProductsToDownloadDto
 
 export {
    ResponseGetProductsDto,
+   ResponseScrollProductsDto,
+   ProductCursor,
    ResponseGetProductDto,
    ProductFilterDto,
    ResponseFindFilteredProductsDto,

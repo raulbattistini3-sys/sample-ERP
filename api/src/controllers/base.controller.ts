@@ -10,6 +10,11 @@ abstract class BaseController {
    constructor(protected readonly logger: LoggerInterface) {}
 
    // logs an error returned by the service/repository layers, then hands it to BaseErrorMiddleware for the response
+   // who the per-session caches belong to; a new session version starts empty
+   protected session(req: Request) {
+      return `${req.user?.id}:${req.sessaoVersao}`;
+   }
+
    protected fail(req: Request, next: NextFunction, error: BaseAppError) {
       const statusCode = toHttpStatus(error.statusCode);
       const level =

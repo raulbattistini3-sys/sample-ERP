@@ -1,13 +1,13 @@
-import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { LIST_PAGE_SIZE } from "../../../lib/pagination";
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { LAZY_PAGE_SIZE, nextLazyPage } from "../../../lib/pagination";
 import { getAuditorias, getAuditoriaById, createAuditoriaManual, archiveAuditoria, deleteAuditoria } from "../api/auditoria.api";
 
-// keeps the current page on screen while the next one loads
-export const useAuditorias = (page = 1, amount = LIST_PAGE_SIZE) =>
-  useQuery({
-    queryKey: ["auditorias", "list", page, amount],
-    queryFn: () => getAuditorias(page, amount),
-    placeholderData: keepPreviousData,
+export const useAuditorias = () =>
+  useInfiniteQuery({
+    queryKey: ["auditorias", "list"],
+    queryFn: ({ pageParam }) => getAuditorias(pageParam, LAZY_PAGE_SIZE),
+    initialPageParam: 1,
+    getNextPageParam: nextLazyPage,
   });
 
 export const useAuditoria = (id: string) =>

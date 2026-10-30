@@ -44,7 +44,7 @@ class AuditoriaController extends BaseController {
   getAll = async (req: Request, res: Response, next: NextFunction) => {
     const page = Number(req.query.page ?? 1);
     const amount = Number(req.query.amount ?? 20);
-    const result = await this.auditoriaService.getAuditorias(page, amount);
+    const result = await this.auditoriaService.getAuditorias(this.session(req), page, amount);
     if (result.isLeft()) {
       return this.fail(req, next, result.value);
     }

@@ -3,6 +3,7 @@ import { BaseAppError } from "../../errors/global_error.error";
 import { Either } from "../../globals/errors/left_right_either.error";
 import { RepositoryError } from "../../globals/errors/global_repository_error.error";
 import { ProductImportWrites } from "../../dtos/product_dtos/import_products.dto";
+import { ProductCursor } from "../../dtos/product_dtos/get_products.dto";
 import { DrizzleDB } from "../../db/client";
 
 interface IProductRepository {
@@ -10,6 +11,10 @@ interface IProductRepository {
    getProductById(id: string, includeInactive?: boolean): Promise<Either<BaseAppError, ProductWithCategoria>>;
    // products with their category, for the list, filter and download endpoints
    getProductsWithCategoria(includeInactive?: boolean): Promise<Either<RepositoryError, ProductWithCategoria[]>>;
+   getProductsPage(limit: number, offset: number, includeInactive?: boolean): Promise<Either<RepositoryError, ProductWithCategoria[]>>;
+   countProducts(includeInactive?: boolean): Promise<Either<RepositoryError, number>>;
+   // the rows after cursor in name order, from the start when it's null
+   getProductsAfter(cursor: ProductCursor | null, limit: number, includeInactive?: boolean): Promise<Either<RepositoryError, ProductWithCategoria[]>>;
    // categoria is resolved to categoriaId by the service before inserting; 409 when the SKU is taken
    createProduct(
       payload: NewProductEntity,
