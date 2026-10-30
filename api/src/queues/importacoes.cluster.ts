@@ -2,6 +2,7 @@ import cluster, { Worker } from "node:cluster";
 import { extname, join } from "node:path";
 import LoggerInterface from "../interfaces/logger_interfaces/logger_interface.interface";
 import ErrorLevelsEnum from "../enums/errors_enums/errors_levels.enum";
+import { avisarProdutosAlterados, IMPORTACAO_CONCLUIDA } from "../utils/cache/produtos_alterados";
 
 // Each process splits an import across one thread per CPU, so more than one process only pays off for
 // several imports at once, and past the CPUs' capacity they compete with each other and with the API.
@@ -54,6 +55,9 @@ class ImportacaoCluster {
   private iniciarProcesso() {
     const processo = cluster.fork();
     this.processos.push(processo);
+    processo.on("message", (mensagem) => {
+      if (mensagem === IMPORTACAO_CONCLUIDA) avisarProdutosAlterados();
+    });
     processo.once("exit", (code, signal) => {
       this.processos = this.processos.filter((p) => p !== processo);
       if (this.stopped) return;

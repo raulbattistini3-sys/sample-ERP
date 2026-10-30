@@ -15,6 +15,7 @@ import IDetalhamentoAuditoriaRepository from "../interfaces/detalhamento_auditor
 import IAuditoryRepository from "../interfaces/auditory_interfaces/auditoria_repository.interface";
 import { IAuditoriaValidator } from "../interfaces/auditory_interfaces/auditoria_validator.interface";
 import FirstPageCache, { FIRST_PAGE_SIZE } from "../utils/cache/first_page.cache";
+import { aoAlterarProdutos } from "../utils/cache/produtos_alterados";
 
 const PRIMEIRA_PAGINA_BYTES = 64 * 1024;
 
@@ -25,7 +26,10 @@ class AuditoriaService implements IAuditoriaService {
       private detalhamentoAuditoriaRepository: IDetalhamentoAuditoriaRepository,
       private auditoriaRepository: IAuditoryRepository,
       private auditoriaValidator: IAuditoriaValidator,
-   ) {}
+   ) {
+      // an import that updates products audits them, from another process (ImportacaoCluster)
+      aoAlterarProdutos(() => this.primeiraPagina.clear());
+   }
    getAuditorias(
       sessao: string,
       page: number,

@@ -24,6 +24,7 @@ import ProdutoValidator from "../validators/produto.validator";
 import CategoriaValidator from "../validators/categoria.validator";
 import paginate from "../utils/helpers/paginate_data.helper";
 import FirstPageCache, { FIRST_PAGE_SIZE } from "../utils/cache/first_page.cache";
+import { aoAlterarProdutos } from "../utils/cache/produtos_alterados";
 import {
    toNewProductEntity,
    toProductResponse,
@@ -67,7 +68,10 @@ class ProductService implements IProductService {
       private categoriaRepository: ICategoriaRepository,
       private productValidator: IProductValidator,
       private categoriaValidator: ICategoriaValidator,
-   ) {}
+   ) {
+      // imports run in another process (ImportacaoCluster), whose clear() never reaches this cache
+      aoAlterarProdutos(() => this.primeiraPagina.clear());
+   }
 
    async createProduct(
       productPayload: CreateProductDto,

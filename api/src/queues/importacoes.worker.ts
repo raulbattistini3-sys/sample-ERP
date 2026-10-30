@@ -38,6 +38,8 @@ class ImportacaoWorker {
     private readonly importacoes: ImportacaoRepository,
     private readonly products: IProductService,
     private readonly logger: LoggerInterface,
+    // called once an import's products are committed
+    private readonly aoConcluir: () => void = () => {},
   ) {}
 
   start() {
@@ -145,6 +147,7 @@ class ImportacaoWorker {
       );
       return this.importacoes.finalizar(job, { status: "rejeitada", totalLinhas, erros });
     }
+    this.aoConcluir();
   }
 
   private log(level: ErrorLevel, message: string, extra: object) {
