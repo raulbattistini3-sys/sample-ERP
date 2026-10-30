@@ -5,7 +5,7 @@ import { BaseAppError } from "../errors/global_error.error";
 import { ValidationError } from "../errors/client_errors/four_xx.error";
 import { Either, left } from "../globals/errors/left_right_either.error";
 
-// Spreadsheet imports through the Go importer (ADM/SU). The file goes as it was uploaded; reading,
+// Spreadsheet imports through the importer (ADM/SU). The file goes as it was uploaded; reading,
 // validating and saving it all happen in the importer, with the same rules as POST /products/import.
 export class ImportacaoService implements IImportacaoService {
    constructor(private readonly importador: IImportadorClient) {}

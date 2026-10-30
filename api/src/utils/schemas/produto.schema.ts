@@ -39,7 +39,7 @@ export const CreateProdutoSchema = z.object({
 
 // POST /products/import: the envelope; each row is then checked on its own against
 // CreateProdutoSchema, so every row's problems can be reported at once
-export const MAX_IMPORT_ROWS = 5000;
+export const MAX_IMPORT_ROWS = 500000;
 export const ImportProdutosSchema = z.object({
     rows: z
         .array(z.object({ linha: z.number().int().positive() }).passthrough(), {

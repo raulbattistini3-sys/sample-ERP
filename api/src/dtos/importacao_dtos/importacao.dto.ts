@@ -1,9 +1,11 @@
-// A spreadsheet import run by the Go importer (importer/, proto/importador/v1), as the API returns it.
+// A spreadsheet import run by the Go importer (importer/, proto/importador/v1) or the API's own
+// (queues/importacoes.worker.ts), as the API returns it.
 // pendente/processando are still running; the other three are final.
 type StatusImportacaoDto = "pendente" | "processando" | "concluida" | "rejeitada" | "falhou";
 
 // one problem in one spreadsheet line (the line number the user sees in Excel); campo is the column
-// (sku, name, categoria, valor_de_custo, ...) or empty when the problem is the whole line
+// (sku, name, categoria, valor_de_custo, ...) or empty when the problem is the whole line, and always
+// empty from the API's own importer
 type ErroLinhaImportacaoDto = { linha: number; campo: string; mensagem: string };
 
 type ImportacaoDto = {

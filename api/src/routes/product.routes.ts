@@ -11,6 +11,10 @@ import { authMiddleware } from "./auth_middleware.instance";
 import ImportacaoController from "../controllers/importacao.controller";
 import { ImportacaoService } from "../services/importacao.service";
 import GrpcImportadorClient from "../integrations/importador/importador.client";
+import LocalImportadorClient from "../integrations/importador/local_importador.client";
+import IImportadorClient from "../interfaces/importacao_interfaces/importador_client.interface";
+import ImportacaoRepository from "../repositories/importacao.repository";
+import ImportacaoCluster from "../queues/importacoes.cluster";
 import { uploadPlanilha } from "../middlewares/upload.middleware";
 
 
@@ -31,17 +35,22 @@ const productService = new ProductService(
 
 const productController = new ProductController(productService, logger);
 
-// closed on shutdown by index.ts
-export const importadorClient = new GrpcImportadorClient();
+// With IMPORTER_GRPC_URL the Go importer does the work; without it, this API does. Both are closed on
+// shutdown by index.ts
+const grpcUrl = process.env.IMPORTER_GRPC_URL;
+export const importacaoCluster = grpcUrl ? null : new ImportacaoCluster(logger);
+export const importadorClient: IImportadorClient = importacaoCluster
+  ? new LocalImportadorClient(new ImportacaoRepository(db), () => importacaoCluster.acordar())
+  : new GrpcImportadorClient(grpcUrl as string);
 const importacaoController = new ImportacaoController(new ImportacaoService(importadorClient), logger);
 
 const productRoutes = Router();
 
 productRoutes.get("/filter", productController.getByFilter);
 productRoutes.get("/download", productController.getToDownload);
-// bulk create/update from a spreadsheet: ADM and SU only. /imports hands the file to the Go importer
+// bulk create/update from a spreadsheet: ADM and SU only. /imports queues the file for the importer
 // (202, then poll /imports/:id); /import takes the rows the web already read and answers at once,
-// and is what the web falls back to when /imports answers 503 (no importer configured or reachable)
+// and is what the web falls back to when /imports answers 503 (the Go importer isn't reachable)
 productRoutes.post("/imports", authMiddleware.requireAdminRole, uploadPlanilha, importacaoController.start);
 productRoutes.get("/imports/:id", authMiddleware.requireAdminRole, importacaoController.getById);
 productRoutes.post("/import", authMiddleware.requireAdminRole, productController.importSpreadsheet);
