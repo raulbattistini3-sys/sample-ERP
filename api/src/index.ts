@@ -4,6 +4,7 @@ import Config from "./configs/app_config";
 import BaseErrorMiddleware from "./middlewares/global_middleware.middleware";
 import AppLogger from "./utils/logger/pino_logger.util";
 import { integracaoEnvioWorker } from "./routes/integracao.routes";
+import { importadorClient } from "./routes/product.routes";
 
 const config = Config.getInstance();
 
@@ -29,6 +30,7 @@ app.listen(port, host, async (error?: Error) => {
 // let running jobs finish (up to 20s) and close pg-boss's connections, then exit
 const shutdown = async () => {
    await integracaoEnvioWorker.stop();
+   importadorClient.close();
    process.exit(0);
 };
 process.once("SIGINT", shutdown);
