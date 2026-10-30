@@ -489,36 +489,5 @@ ALTER TABLE public."importacoes" ADD COLUMN IF NOT EXISTS "linhas_atualizadas" i
 CREATE INDEX IF NOT EXISTS "auditorias_lote_idx" ON public."auditorias" ("lote_id") WHERE "lote_id" IS NOT NULL;
 CREATE INDEX IF NOT EXISTS "auditoria_integracao_envios_lote_idx" ON public."auditoria_integracao_envios" ("lote_id") WHERE "lote_id" IS NOT NULL;
 
--- api/drizzle/0016_clientes.sql
-CREATE TABLE IF NOT EXISTS public."clientes" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"hubspot_id" text NOT NULL UNIQUE,
-	"nome" text NOT NULL,
-	"email" text,
-	"telefone" text,
-	"empresa" text,
-	"estagio" text,
-	"url" text,
-	"criado_no_hubspot_em" timestamp with time zone,
-	"atualizado_no_hubspot_em" timestamp with time zone,
-	"sincronizado_em" timestamp with time zone DEFAULT now() NOT NULL
-);
-CREATE INDEX IF NOT EXISTS "clientes_nome_idx" ON public."clientes" (lower("nome"));
-
-
--- api/drizzle/0017_empresas.sql
-CREATE TABLE IF NOT EXISTS public."empresas" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"hubspot_id" text NOT NULL UNIQUE,
-	"nome" text NOT NULL,
-	"dominio" text,
-	"setor" text,
-	"url" text,
-	"sincronizado_em" timestamp with time zone DEFAULT now() NOT NULL
-);
-CREATE INDEX IF NOT EXISTS "empresas_nome_idx" ON public."empresas" (lower("nome"));
-ALTER TABLE public."clientes" ADD COLUMN IF NOT EXISTS "cargo" text;
-ALTER TABLE public."clientes" ADD COLUMN IF NOT EXISTS "senioridade" text;
-ALTER TABLE public."clientes" ADD COLUMN IF NOT EXISTS "papeis" text[] DEFAULT '{}' NOT NULL;
-ALTER TABLE public."clientes" ADD COLUMN IF NOT EXISTS "empresas_hubspot_ids" text[] DEFAULT '{}' NOT NULL;
-CREATE INDEX IF NOT EXISTS "clientes_empresas_idx" ON public."clientes" USING gin ("empresas_hubspot_ids");
+-- api/drizzle/0019_produtos_name_id_idx.sql
+CREATE INDEX IF NOT EXISTS "produtos_name_id_idx" ON public."produtos" ("name", "id");

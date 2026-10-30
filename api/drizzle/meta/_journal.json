@@ -127,6 +127,20 @@
       "when": 1792610822121,
       "tag": "0017_empresas",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792620822121,
+      "tag": "0018_drop_clientes",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792630822121,
+      "tag": "0019_produtos_name_id_idx",
+      "breakpoints": true
     }
   ]
 }
