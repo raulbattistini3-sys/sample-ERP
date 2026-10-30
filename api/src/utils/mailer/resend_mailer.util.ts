@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { Resend } from "resend";
-import MailerInterface, { MailMessage } from "../../interfaces/mailer_interfaces/mailer.interface";
+import MailerInterface, { MailMessage, MailOptions } from "../../interfaces/mailer_interfaces/mailer.interface";
 import { BaseAppError } from "../../errors/global_error.error";
 import { ServerError } from "../../errors/server_errors/five_xx.error";
 import { Either, left, right } from "../../globals/errors/left_right_either.error";
@@ -21,12 +21,12 @@ class ResendMailer implements MailerInterface {
       this.client = apiKey ? new Resend(apiKey) : null;
    }
 
-   async send(message: MailMessage): Promise<Either<BaseAppError, null>> {
+   async send(message: MailMessage, options?: MailOptions): Promise<Either<BaseAppError, null>> {
       if (!this.client) {
          return left(new ServerError("500", true, "RESEND_API_KEY não está configurada"));
       }
       try {
-         const { error } = await this.client.emails.send({ from: this.from, ...message });
+         const { error } = await this.client.emails.send({ from: this.from, ...message }, options);
          if (error) {
             return left(new ServerError("500", true, `Resend recusou o e-mail: ${error.message}`, error));
          }

@@ -8,8 +8,11 @@ export type MailMessage = {
    text: string;
 };
 
+// the same key is only sent once, so a retried delivery can't repeat an e-mail
+export type MailOptions = { idempotencyKey?: string };
+
 interface MailerInterface {
-   send(message: MailMessage): Promise<Either<BaseAppError, null>>;
+   send(message: MailMessage, options?: MailOptions): Promise<Either<BaseAppError, null>>;
 }
 
 export default MailerInterface;

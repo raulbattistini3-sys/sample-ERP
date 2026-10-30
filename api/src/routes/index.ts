@@ -7,12 +7,15 @@ import { categoriaRoutes } from "./categoria.routes";
 import { authMiddleware } from "./auth_middleware.instance";
 import { integracaoRoutes, publicIntegracaoRoutes } from "./integracao.routes";
 import { clienteRoutes } from "./cliente.routes";
+import { billingRoutes } from "./billing.routes";
 const router = Router();
 
 // POST /user/register and /user/login
 router.use("/user", publicUsuarioRoutes);
 // OAuth callbacks: the provider redirects the browser here without our token
 router.use("/integracoes", publicIntegracaoRoutes);
+// the billing service, with its own internal token
+router.use("/internal/billing", billingRoutes);
 
 // everything below requires a valid token from an active usuario
 router.use(authMiddleware.authenticate);
