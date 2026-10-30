@@ -1,0 +1,9 @@
+# For importer/Dockerfile only (its context is the repo root): send go.mod, go.sum, gen/ and importer/,
+# not the API, the web app, their node_modules or .git.
+*
+!go.mod
+!go.sum
+!gen/
+!importer/
+importer/.env
+importer/**/*_test.go

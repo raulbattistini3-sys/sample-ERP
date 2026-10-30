@@ -1,4 +1,5 @@
-# Local stack: raw Postgres + API + web.
+# Local stack: raw Postgres + API + web + the Go spreadsheet importer. Pending api/drizzle migrations
+# are applied by the one-shot "migrate" service before the API and the importer start.
 #   docker compose up --build        web on http://localhost:8080, API on http://localhost:3333
 #   docker compose down -v           also wipes the database volume (the init scripts run again next up)
 # Optional secrets (Resend, Jira/monday OAuth, ...) come from api/.env when it exists; the database,
@@ -23,6 +24,19 @@ services:
       timeout: 5s
       retries: 10
 
+  # Applies the migrations the database hasn't seen, then exits. A fresh volume already has them all
+  # (the init scripts record them), so this matters for a db-data volume created by an older checkout.
+  migrate:
+    build:
+      context: ./api
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/sample_erp?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
   api:
     build: ./api
     env_file:
@@ -37,11 +51,36 @@ services:
       WEB_URL: http://localhost:8080
       API_PUBLIC_URL: http://localhost:3333
       JWT_SECRET: ${JWT_SECRET:-local-docker-only-change-me}
+      # POST /products/imports hands uploaded spreadsheets to the importer over the compose network
+      IMPORTER_GRPC_URL: importer:50051
     ports:
       - "3333:3333"
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      # started, not healthy: while the importer is down the API answers 503 and the web imports
+      # through POST /products/import instead, so the API never waits on it
+      importer:
+        condition: service_started
+    restart: unless-stopped
+
+  # Reads, validates and saves product spreadsheets in the background (importer/, proto/importador/v1),
+  # taking jobs from the importacoes table in the same database.
+  importer:
+    build:
+      context: .
+      dockerfile: importer/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/sample_erp?sslmode=disable
+      GRPC_PORT: 50051
+      IMPORT_WORKERS: ${IMPORT_WORKERS:-2}
+    # published for local tools (grpcurl -plaintext localhost:50051 list, or an API run with bun run dev);
+    # it has no auth of its own and trusts its caller, so never expose it beyond your machine
+    ports:
+      - "${IMPORTER_PORT:-50051}:50051"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   web:
