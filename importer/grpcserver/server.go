@@ -1,8 +1,3 @@
-// Package grpcserver implements importador.v1.ImportadorService on top of the importacoes queue. It only
-// receives files and reports on them; importacao.Worker does the processing in the background.
-//
-// The caller is trusted: the API authenticates the user, checks they may import (ADM/SU) and passes
-// their id, so the importer stays on a private network and is never exposed to browsers.
 package grpcserver
 
 import (
@@ -88,15 +83,17 @@ func toProto(imp postgres.Importacao) *importadorv1.Importacao {
 		erros[i] = &importadorv1.ErroLinha{Linha: e.Linha, Campo: e.Campo, Mensagem: e.Mensagem}
 	}
 	return &importadorv1.Importacao{
-		Id:               imp.ID,
-		Status:           statusProto[imp.Status],
-		NomeArquivo:      imp.NomeArquivo,
-		TotalLinhas:      imp.TotalLinhas,
-		LinhasImportadas: imp.LinhasImportadas,
-		Erros:            erros,
-		Mensagem:         imp.Mensagem,
-		CriadaEm:         timestamppb.New(imp.CriadaEm),
-		FinalizadaEm:     timestampOuNil(imp.FinalizadaEm),
+		Id:                imp.ID,
+		Status:            statusProto[imp.Status],
+		NomeArquivo:       imp.NomeArquivo,
+		TotalLinhas:       imp.TotalLinhas,
+		LinhasImportadas:  imp.LinhasImportadas,
+		LinhasCriadas:     imp.LinhasCriadas,
+		LinhasAtualizadas: imp.LinhasAtualizadas,
+		Erros:             erros,
+		Mensagem:          imp.Mensagem,
+		CriadaEm:          timestamppb.New(imp.CriadaEm),
+		FinalizadaEm:      timestampOuNil(imp.FinalizadaEm),
 	}
 }
 

@@ -12,6 +12,7 @@
 //     `go get github.com/aws/aws-sdk-go-v2/service/s3 github.com/aws/aws-sdk-go-v2/config`
 //   - supabase.go: Supabase's own Storage API, for keeping everything (Postgres, storage, auth) in one
 //     Supabase project. `go get github.com/supabase-community/storage-go`
+//
 // Either way: uncomment one, upload in IniciarImportacao before Criar, and download in the worker after Reivindicar.
 package storage
 

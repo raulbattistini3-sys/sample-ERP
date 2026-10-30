@@ -21,7 +21,7 @@ func TestNumeroValor(t *testing.T) {
 		{Celula{Texto: "4,090.50"}, 4090.5, true},
 		{Celula{Texto: "R$ 4.090,50"}, 4090.5, true},
 		{Celula{Texto: "17,5%"}, 17.5, true},
-		{Celula{Texto: "4.090"}, 4090, true},       // text: pt-BR thousands
+		{Celula{Texto: "4.090"}, 4090, true},        // text: pt-BR thousands
 		{Celula{Texto: "1.234.567"}, 1234567, true}, // text: pt-BR thousands
 		{Celula{Texto: "45.9"}, 45.9, true},         // not 3 digits after the dot: decimal
 		{Celula{Texto: "-3"}, -3, true},

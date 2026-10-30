@@ -56,18 +56,20 @@ type ErroLinha struct {
 }
 
 type Importacao struct {
-	ID               string
-	UsuarioID        string
-	NomeArquivo      string
-	Status           Status
-	TotalLinhas      int32
-	LinhasImportadas int32
-	Erros            []ErroLinha
-	Mensagem         string
-	Tentativas       int32
-	CriadaEm         time.Time
-	IniciadaEm       *time.Time
-	FinalizadaEm     *time.Time
+	ID                string
+	UsuarioID         string
+	NomeArquivo       string
+	Status            Status
+	TotalLinhas       int32
+	LinhasImportadas  int32
+	LinhasCriadas     int32
+	LinhasAtualizadas int32
+	Erros             []ErroLinha
+	Mensagem          string
+	Tentativas        int32
+	CriadaEm          time.Time
+	IniciadaEm        *time.Time
+	FinalizadaEm      *time.Time
 }
 
 // Job is a claimed importacao plus the spreadsheet to process.
@@ -78,11 +80,12 @@ type Job struct {
 
 // Resultado is what a worker reports when it is done with a Job.
 type Resultado struct {
-	Status           Status // concluida, rejeitada or falhou
-	TotalLinhas      int32
-	LinhasImportadas int32
-	Erros            []ErroLinha
-	Mensagem         string
+	Status            Status // concluida, rejeitada or falhou
+	TotalLinhas       int32
+	LinhasCriadas     int32
+	LinhasAtualizadas int32
+	Erros             []ErroLinha
+	Mensagem          string
 }
 
 // DBTX is satisfied by *pgxpool.Pool, *pgx.Conn and pgx.Tx.
@@ -101,14 +104,14 @@ func NewImportacoes(pool *pgxpool.Pool) *Importacoes {
 }
 
 // planilha is left out on purpose: only Reivindicar needs the bytes
-const colunas = `id, usuario_id, nome_arquivo, status, total_linhas, linhas_importadas, erros,
-	coalesce(mensagem, ''), tentativas, criada_em, iniciada_em, finalizada_em`
+const colunas = `id, usuario_id, nome_arquivo, status, total_linhas, linhas_importadas, linhas_criadas,
+	linhas_atualizadas, erros, coalesce(mensagem, ''), tentativas, criada_em, iniciada_em, finalizada_em`
 
 func scanImportacao(row pgx.Row, extra ...any) (Importacao, error) {
 	var i Importacao
 	dest := append([]any{
-		&i.ID, &i.UsuarioID, &i.NomeArquivo, &i.Status, &i.TotalLinhas, &i.LinhasImportadas, &i.Erros,
-		&i.Mensagem, &i.Tentativas, &i.CriadaEm, &i.IniciadaEm, &i.FinalizadaEm,
+		&i.ID, &i.UsuarioID, &i.NomeArquivo, &i.Status, &i.TotalLinhas, &i.LinhasImportadas, &i.LinhasCriadas,
+		&i.LinhasAtualizadas, &i.Erros, &i.Mensagem, &i.Tentativas, &i.CriadaEm, &i.IniciadaEm, &i.FinalizadaEm,
 	}, extra...)
 	err := row.Scan(dest...)
 	return i, err
@@ -197,10 +200,10 @@ func (r *Importacoes) Finalizar(ctx context.Context, db DBTX, job *Job, res Resu
 
 	tag, err := db.Exec(ctx, `
 		UPDATE importacoes
-		SET status = $3, total_linhas = $4, linhas_importadas = $5, erros = $6, mensagem = nullif($7, ''),
-			finalizada_em = now(), planilha = NULL
+		SET status = $3, total_linhas = $4, linhas_criadas = $5, linhas_atualizadas = $6,
+			linhas_importadas = $5::int + $6::int, erros = $7, mensagem = nullif($8, ''), finalizada_em = now(), planilha = NULL
 		WHERE id = $1 AND status = 'processando' AND tentativas = $2`,
-		job.ID, job.Tentativas, string(res.Status), res.TotalLinhas, res.LinhasImportadas, erros, res.Mensagem)
+		job.ID, job.Tentativas, string(res.Status), res.TotalLinhas, res.LinhasCriadas, res.LinhasAtualizadas, erros, res.Mensagem)
 	if err != nil {
 		return fmt.Errorf("postgres: finishing importacao %s: %w", job.ID, err)
 	}

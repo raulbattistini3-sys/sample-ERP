@@ -123,7 +123,9 @@ func TestProcessarCriaEAtualiza(t *testing.T) {
 		t.Fatal(err)
 	}
 	if tag.RowsAffected() == 1 {
-		t.Cleanup(func() { a.pool.Exec(context.Background(), `DELETE FROM integracoes WHERE provider = 'jira' AND access_token_cifrado = 'x'`) })
+		t.Cleanup(func() {
+			a.pool.Exec(context.Background(), `DELETE FROM integracoes WHERE provider = 'jira' AND access_token_cifrado = 'x'`)
+		})
 	}
 
 	alterado := a.produto(t, "ALTERADO", "INFORMATICA", 89.90, false) // inactive: the import reactivates it
@@ -156,7 +158,9 @@ func TestProcessarCriaEAtualiza(t *testing.T) {
 		[]any{p + "MANUAL", "Antigo", "INFORMATICA", 45.9, 18, 12, 25},
 		[]any{p + "NOVO", "Mouse sem fio", "INFORMATICA", "45,90", "", "", 10},
 	))
-	if imp.Status != postgres.StatusConcluida || imp.TotalLinhas != 4 || imp.LinhasImportadas != 4 || len(imp.Erros) != 0 {
+	// IGUAL counts as updated although nothing changed, like the API's
+	if imp.Status != postgres.StatusConcluida || imp.TotalLinhas != 4 || imp.LinhasImportadas != 4 ||
+		imp.LinhasCriadas != 1 || imp.LinhasAtualizadas != 3 || len(imp.Erros) != 0 {
 		t.Fatalf("importacao = %+v", imp)
 	}
 

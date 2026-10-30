@@ -74,11 +74,12 @@ func (p *Processador) Processar(ctx context.Context, job *postgres.Job) error {
 	}
 
 	err = pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
-		if err := p.gravar(ctx, tx, job.UsuarioID, resultados, lista); err != nil {
+		criadas, atualizadas, err := p.gravar(ctx, tx, job.UsuarioID, resultados, lista)
+		if err != nil {
 			return err
 		}
 		return p.repo.Finalizar(ctx, tx, job, postgres.Resultado{
-			Status: postgres.StatusConcluida, TotalLinhas: total, LinhasImportadas: total,
+			Status: postgres.StatusConcluida, TotalLinhas: total, LinhasCriadas: criadas, LinhasAtualizadas: atualizadas,
 		})
 	})
 	if pgCode(err) == pgUniqueViolation {
@@ -98,14 +99,15 @@ func (p *Processador) finalizar(ctx context.Context, job *postgres.Job, res post
 
 // gravar splits the rows by SKU: an existing product is updated (and reactivated) with an auditoria when
 // something changed, a new SKU is created. The existing ones stay locked until the transaction ends.
-func (p *Processador) gravar(ctx context.Context, tx pgx.Tx, usuarioID string, resultados []resultadoLinha, categorias []postgres.Categoria) error {
+// Like the API, every row matching an existing SKU counts as updated, changed or not.
+func (p *Processador) gravar(ctx context.Context, tx pgx.Tx, usuarioID string, resultados []resultadoLinha, categorias []postgres.Categoria) (criadas, atualizadas int32, err error) {
 	skus := make([]string, len(resultados))
 	for i, r := range resultados {
 		skus[i] = r.produto.sku
 	}
 	existentes, err := postgres.TravarPorSKU(ctx, tx, skus)
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	categoriaNome := make(map[string]string, len(categorias))
 	for _, c := range categorias {
@@ -146,15 +148,15 @@ func (p *Processador) gravar(ctx context.Context, tx pgx.Tx, usuarioID string, r
 
 	if len(novos) > 0 {
 		if _, err := postgres.InserirProdutos(ctx, tx, novos, p.agora()); err != nil {
-			return err
+			return 0, 0, err
 		}
 	}
 	if len(alteracoes) > 0 {
 		if err := postgres.AtualizarAuditados(ctx, tx, usuarioID, alteracoes); err != nil {
-			return err
+			return 0, 0, err
 		}
 	}
-	return nil
+	return int32(len(novos)), int32(len(resultados) - len(novos)), nil
 }
 
 func pgCode(err error) string {
