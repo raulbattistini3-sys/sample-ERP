@@ -96,8 +96,6 @@ class ProductController extends BaseController {
     }
     return res.status(200).json(result.value);
   };
-
-   archiveCategory: (id: string) => Promise<Either<BaseAppError, null>>;
 }
 
 export default ProductController;

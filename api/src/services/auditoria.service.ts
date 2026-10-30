@@ -4,7 +4,6 @@ import {
    ResponseFindAuditoriaById,
    ResponseGetAuditorias,
 } from "../dtos/auditoria_dtos/get_auditoria.dto";
-import { PayloadUpdateAuditoria } from "../dtos/auditoria_dtos/update_auditoria.dto";
 import { Either, right, left } from "../globals/errors/left_right_either.error";
 import { BaseAppError } from "../errors/global_error.error";
 import { ServerError } from "../errors/server_errors/five_xx.error";
@@ -12,7 +11,6 @@ import { ValidationError } from "../errors/client_errors/four_xx.error";
 import paginate from "../utils/helpers/paginate_data.helper";
 import { AuditoriaEntity } from "../entities/auditoria.entity";
 import { toAuditoriaResponse, toNewAuditoriaManual, toNewAuditoriaWithItens } from "../mappers/auditoria.mapper";
-import acaoEfetuadaEnum from "../enums/acao_efetuada.enum";
 import IDetalhamentoAuditoriaRepository from "../interfaces/detalhamento_auditoria_interfaces/detalhamento_auditoria_repository.interface";
 import IAuditoryRepository from "../interfaces/auditory_interfaces/auditoria_repository.interface";
 import { IAuditoriaValidator } from "../interfaces/auditory_interfaces/auditoria_validator.interface";
@@ -135,31 +133,23 @@ class AuditoriaService implements IAuditoriaService {
          return left(new ServerError("500", true, "internal server error", error));
       }
    }
-   async updateAuditoria(
-      payload: PayloadUpdateAuditoria,
-   ): Promise<Either<BaseAppError, null>> {
+   async updateAuditoria(payload: unknown): Promise<Either<BaseAppError, null>> {
       try {
-         const validation = this.auditoriaValidator.validatePayload(payload);
-         if (validation.isLeft()) {
-            return left(validation.value);
+         const parsed = this.auditoriaValidator.parseUpdatePayload(payload);
+         if (parsed.isLeft()) {
+            return left(parsed.value);
          }
+         const values = parsed.value;
 
-         const detalhamentoAuditoria =
-            await this.auditoriaRepository.getRespectivoDetalhamentosAuditoriaById(
-               payload.id,
-            );
-         if (detalhamentoAuditoria.isLeft()) {
-            return left(detalhamentoAuditoria.value);
+         // 404 when it doesn't exist; the auditor and detalhamento stay as they were
+         const existing = await this.auditoriaRepository.getAuditoriaById(values.id);
+         if (existing.isLeft()) {
+            return left(existing.value);
          }
          const updatePayload: AuditoriaEntity = {
-            id: payload.id,
-            itens: payload.itens,
-            acao_efetuada:
-               payload.acao_efetuada || acaoEfetuadaEnum.Values.Alteracao,
-            detalhamento_auditoria:
-               detalhamentoAuditoria.value.detalhamento_auditoria,
-            data_de_audicao: payload.data_de_audicao,
-            nome_do_auditor: payload.nome_do_auditor,
+            ...existing.value,
+            acaoEfetuada: values.acao_efetuada,
+            dataDeAudicao: values.data_de_audicao,
          };
 
          const auditoria =

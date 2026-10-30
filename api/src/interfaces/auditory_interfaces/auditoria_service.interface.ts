@@ -3,7 +3,6 @@ import {
    ResponseFindAuditoriaById,
    ResponseGetAuditorias,
 } from "../../dtos/auditoria_dtos/get_auditoria.dto";
-import { PayloadUpdateAuditoria } from "../../dtos/auditoria_dtos/update_auditoria.dto";
 import { BaseAppError } from "../../errors/global_error.error";
 import { Either } from "../../globals/errors/left_right_either.error";
 
@@ -25,8 +24,9 @@ interface IAuditoriaService {
       payload: unknown,
       includeInactive: boolean,
    ) => Promise<Either<BaseAppError, ResponseCreateAuditoria>>;
+   // payload is the raw request body (id from the URL); the service validates and coerces it
    updateAuditoria: (
-      payload: PayloadUpdateAuditoria,
+      payload: unknown,
    ) => Promise<Either<BaseAppError, null>>;
    deleteAuditoria: (id: string) => Promise<Either<BaseAppError, null>>;
    archiveAuditoria: (id: string) => Promise<Either<BaseAppError, null>>;

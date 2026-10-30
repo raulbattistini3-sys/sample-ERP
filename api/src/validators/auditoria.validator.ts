@@ -1,4 +1,4 @@
-import { ZodError, ZodTypeAny } from "zod";
+import { ZodError } from "zod";
 import { IAuditoriaValidator } from "../interfaces/auditory_interfaces/auditoria_validator.interface";
 import {
    CreateAuditoriaManualSchema,
@@ -6,6 +6,7 @@ import {
    UpdateAuditoriaSchema,
 } from "../utils/schemas/auditoria.schema";
 import { CreateAuditoriaDto, CreateAuditoriaManualDto } from "../dtos/auditoria_dtos/create_auditoria.dto";
+import { PayloadUpdateAuditoria } from "../dtos/auditoria_dtos/update_auditoria.dto";
 import { Either, left, right } from "../globals/errors/left_right_either.error";
 import { BaseAppError } from "../errors/global_error.error";
 import { ValidationError } from "../errors/client_errors/four_xx.error";
@@ -32,16 +33,12 @@ class AuditoriaValidator extends BaseValidator implements IAuditoriaValidator {
       return right(result.data);
    }
 
-   validatePayload(payload: unknown): Either<BaseAppError, void> {
-      return this.validateWith(UpdateAuditoriaSchema, payload);
-   }
-
-   private validateWith(schema: ZodTypeAny, payload: unknown): Either<BaseAppError, void> {
-      const result = schema.safeParse(payload);
+   parseUpdatePayload(payload: unknown): Either<BaseAppError, PayloadUpdateAuditoria> {
+      const result = UpdateAuditoriaSchema.safeParse(payload);
       if (!result.success) {
          return left(this.toValidationError(result.error));
       }
-      return right(undefined);
+      return right(result.data);
    }
 
    private toValidationError(error: ZodError) {
