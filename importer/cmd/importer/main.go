@@ -15,6 +15,9 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
+	importadorv1 "github.com/raulbattistini3-sys/sample-ERP/gen/go/importador/v1"
+	"github.com/raulbattistini3-sys/sample-ERP/importer/grpcserver"
+	"github.com/raulbattistini3-sys/sample-ERP/importer/importacao"
 	"github.com/raulbattistini3-sys/sample-ERP/importer/internal/config"
 	"github.com/raulbattistini3-sys/sample-ERP/importer/postgres"
 )
@@ -51,13 +54,33 @@ func run() error {
 		return err
 	}
 
-	srv := grpc.NewServer()
-	// importadorv1.RegisterImportadorServiceServer(srv, grpcserver.New(ctx, ...))
+	repo := postgres.NewImportacoes(pool)
+	worker := importacao.NewWorker(pool, repo, importacao.NewProcessador(pool, repo, cfg.Importer.MaxRows), importacao.WorkerConfig{
+		Concorrencia:  cfg.Importer.Workers,
+		Prazo:         cfg.Importer.Lease,
+		MaxTentativas: int32(cfg.Importer.MaxAttempts),
+		Intervalo:     cfg.Importer.PollInterval,
+	})
+	// the worker runs off the root ctx, never a request's: an import outlives the RPC that queued it.
+	// Deferred after pool.Close, so it runs first: in-flight imports hand their jobs back before the pool goes.
+	workerCtx, stopWorker := context.WithCancel(ctx)
+	workerDone := make(chan struct{})
+	go func() {
+		defer close(workerDone)
+		worker.Run(workerCtx)
+	}()
+	defer func() {
+		stopWorker()
+		<-workerDone
+	}()
 
-	// grpc.health.v1: the empty service name reports the server as a whole; once ImportadorService is
-	// registered, also SetServingStatus(importadorv1.ImportadorService_ServiceDesc.ServiceName, SERVING)
+	srv := grpc.NewServer()
+	importadorv1.RegisterImportadorServiceServer(srv, grpcserver.New(repo))
+
+	// grpc.health.v1: the empty name is the server as a whole, the service name is ImportadorService itself
 	healthSrv := health.NewServer()
 	healthpb.RegisterHealthServer(srv, healthSrv)
+	healthSrv.SetServingStatus(importadorv1.ImportadorService_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
 
 	// lets grpcurl / Postman list and call the services without the .proto files
 	reflection.Register(srv)

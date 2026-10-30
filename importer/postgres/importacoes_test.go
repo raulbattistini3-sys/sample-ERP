@@ -15,9 +15,11 @@ import (
 )
 
 // Integration tests: they need a throwaway database with the api/drizzle migrations applied (the docker
-// init scripts do that) and they DELETE every row of importacoes, so never point them at a real one:
+// init scripts do that) and they DELETE every row of importacoes, so never point them at a real one.
+// -p 1 because importer/importacao's tests share that queue: packages running in parallel would claim
+// and sweep each other's jobs.
 //
-//	IMPORTER_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/importer_test?sslmode=disable go test ./importer/postgres/
+//	IMPORTER_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/importer_test?sslmode=disable go test -p 1 ./importer/...
 func setup(t *testing.T) (*Importacoes, *pgxpool.Pool, string) {
 	t.Helper()
 	url := os.Getenv("IMPORTER_TEST_DATABASE_URL")

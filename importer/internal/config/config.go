@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -33,9 +34,17 @@ type DBConfig struct {
 }
 
 type ImporterConfig struct {
-	StorageDir string
 	// same cap as the API's MAX_IMPORT_ROWS (api/src/utils/schemas/produto.schema.ts)
 	MaxRows int
+	// imports processed at the same time by this instance
+	Workers int
+	// how long a claimed import may stay processando before DevolverTravadas hands it back; also the
+	// timeout of one import, so a worker never outlives its claim
+	Lease time.Duration
+	// claims before a crashing import is failed instead of requeued
+	MaxAttempts int
+	// how often idle workers check the queue and stuck imports are swept, in case a NOTIFY was missed
+	PollInterval time.Duration
 }
 
 // Load reads .env (if any) and the environment. It fails on missing required variables or
@@ -56,9 +65,15 @@ func Load() (*Config, error) {
 			URL: getRequired("DATABASE_URL", &errs),
 		},
 		Importer: ImporterConfig{
-			StorageDir: getString("STORAGE_DIR", "./tmp/planilhas"),
-			MaxRows:    getInt("MAX_IMPORT_ROWS", 5000, &errs),
+			MaxRows:      getInt("MAX_IMPORT_ROWS", 5000, &errs),
+			Workers:      getInt("IMPORT_WORKERS", 2, &errs),
+			Lease:        getDuration("IMPORT_LEASE", 5*time.Minute, &errs),
+			MaxAttempts:  getInt("IMPORT_MAX_ATTEMPTS", 3, &errs),
+			PollInterval: getDuration("IMPORT_POLL_INTERVAL", 30*time.Second, &errs),
 		},
+	}
+	if cfg.Importer.Workers < 1 {
+		errs = append(errs, fmt.Errorf("config: IMPORT_WORKERS must be at least 1"))
 	}
 
 	if err := errors.Join(errs...); err != nil {
@@ -93,4 +108,18 @@ func getInt(key string, fallback int, errs *[]error) int {
 		return fallback
 	}
 	return n
+}
+
+// getDuration takes Go durations: 30s, 5m, 1h30m.
+func getDuration(key string, fallback time.Duration, errs *[]error) time.Duration {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		*errs = append(*errs, fmt.Errorf("config: %s must be a positive duration like 30s or 5m, got %q", key, v))
+		return fallback
+	}
+	return d
 }

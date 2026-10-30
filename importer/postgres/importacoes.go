@@ -88,6 +88,7 @@ type Resultado struct {
 // DBTX is satisfied by *pgxpool.Pool, *pgx.Conn and pgx.Tx.
 type DBTX interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
@@ -205,6 +206,24 @@ func (r *Importacoes) Finalizar(ctx context.Context, db DBTX, job *Job, res Resu
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrReivindicacaoPerdida
+	}
+	return nil
+}
+
+// Devolver puts a job this worker still holds back in the queue right away, without spending one of
+// its tentativas: for a worker that is shutting down mid-import, so another instance can take it now
+// instead of after the lease runs out. A job that was already handed back is left alone.
+func (r *Importacoes) Devolver(ctx context.Context, job *Job) error {
+	_, err := r.pool.Exec(ctx, `
+		WITH devolvida AS (
+			UPDATE importacoes
+			SET status = 'pendente', iniciada_em = NULL, tentativas = tentativas - 1
+			WHERE id = $1 AND status = 'processando' AND tentativas = $2
+			RETURNING id
+		)
+		SELECT pg_notify($3, id::text) FROM devolvida`, job.ID, job.Tentativas, CanalImportacoes)
+	if err != nil {
+		return fmt.Errorf("postgres: requeueing importacao %s: %w", job.ID, err)
 	}
 	return nil
 }
