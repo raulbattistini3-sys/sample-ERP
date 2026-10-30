@@ -14,7 +14,12 @@ const pinoLogger = AppLogger.getInstance();
 const baseErrorMiddleware = new BaseErrorMiddleware(pinoLogger);
 app.use(baseErrorMiddleware.handle);
 
-app.listen(port, host, async () => {
+// Express 5 hands bind errors (EADDRINUSE, EACCES) to this callback instead of throwing
+app.listen(port, host, async (error?: Error) => {
+   if (error) {
+      console.error(`Could not listen on host: ${host} and port: ${port}`, error);
+      process.exit(1);
+   }
    pinoLogger.handle({ applicationValues: config }, "DEBUG");
    console.log(`Server listening on host: ${host} and port: ${port}`);
    // pg-boss worker that creates the Jira issues / monday items of new auditorias

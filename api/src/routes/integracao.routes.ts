@@ -21,7 +21,7 @@ const integracaoService = new IntegracaoService(integracaoRepository, providers,
   webUrl: (process.env.WEB_URL || "http://localhost:5173").replace(/\/$/, ""),
   // this API as the provider's servers/browser reach it; must match the callback URL registered in each
   // provider's developer console: <API_PUBLIC_URL>/integracoes/<jira|monday>/callback
-  callbackBaseUrl: (process.env.API_PUBLIC_URL || `http://localhost:${process.env.APP_PORT || 3333}`).replace(/\/$/, ""),
+  callbackBaseUrl: (process.env.API_PUBLIC_URL || `http://localhost:${Config.getInstance().getApiConfig().port}`).replace(/\/$/, ""),
   atlassianApiUrl: "https://api.atlassian.com",
   mondayApiUrl: MONDAY_API_URL,
   fetch: globalThis.fetch,
