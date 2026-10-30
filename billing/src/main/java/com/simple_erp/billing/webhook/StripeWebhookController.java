@@ -22,8 +22,8 @@ class StripeWebhookController {
 		this.handler = stripe
 				.notificationHandler(properties.webhookSecret(), (event, client, details) -> log.warn(
 						"Unhandled Stripe event {}: {}", event.getId(), event.getType()))
-				.onV1InvoicePaid(recorder::record)
-				.onV1InvoicePaymentFailed(recorder::record);
+				.onV1InvoicePaid(recorder::paid)
+				.onV1InvoicePaymentFailed(recorder::paymentFailed);
 	}
 
 	// bytes, not a parsed body: the signature covers exactly what Stripe sent

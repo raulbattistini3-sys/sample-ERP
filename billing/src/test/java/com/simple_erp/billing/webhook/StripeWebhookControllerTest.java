@@ -1,19 +1,19 @@
 package com.simple_erp.billing.webhook;
 
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.simple_erp.billing.config.SecurityConfig;
 import com.simple_erp.billing.config.StripeConfig;
+import com.stripe.events.V1InvoicePaidEventNotification;
 import com.stripe.net.Webhook;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -23,7 +23,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(StripeWebhookController.class)
-@Import({ SecurityConfig.class, StripeConfig.class, StripeEventRecorder.class })
+@Import({ SecurityConfig.class, StripeConfig.class })
 @TestPropertySource(properties = { "stripe.api-key=rk_test_unit", "stripe.webhook-secret=" + StripeWebhookControllerTest.SECRET })
 class StripeWebhookControllerTest {
 
@@ -38,32 +38,22 @@ class StripeWebhookControllerTest {
 	private MockMvc mvc;
 
 	@MockitoBean
-	private StripeEventRepository events;
-
-	@BeforeEach
-	void newEvent() {
-		when(this.events.insertIfNew(anyString(), anyString())).thenReturn(1);
-	}
+	private StripeEventRecorder recorder;
 
 	@Test
 	void recordsASignedEvent() throws Exception {
 		send(INVOICE_PAID, signature(INVOICE_PAID, SECRET)).andExpect(status().isOk());
 
-		verify(this.events).insertIfNew(eq("evt_test_1"), eq("v1.invoice.paid"));
-	}
-
-	@Test
-	void answersOkForARetriedEvent() throws Exception {
-		when(this.events.insertIfNew(anyString(), anyString())).thenReturn(0);
-
-		send(INVOICE_PAID, signature(INVOICE_PAID, SECRET)).andExpect(status().isOk());
+		ArgumentCaptor<V1InvoicePaidEventNotification> event = ArgumentCaptor.forClass(V1InvoicePaidEventNotification.class);
+		verify(this.recorder).paid(event.capture(), any());
+		assertThat(event.getValue().getId()).isEqualTo("evt_test_1");
 	}
 
 	@Test
 	void rejectsAnotherEndpointsSecret() throws Exception {
 		send(INVOICE_PAID, signature(INVOICE_PAID, "whsec_other")).andExpect(status().isBadRequest());
 
-		verify(this.events, never()).insertIfNew(anyString(), anyString());
+		verifyNoInteractions(this.recorder);
 	}
 
 	@Test
@@ -72,7 +62,7 @@ class StripeWebhookControllerTest {
 
 		send(changed, signature(INVOICE_PAID, SECRET)).andExpect(status().isBadRequest());
 
-		verify(this.events, never()).insertIfNew(anyString(), anyString());
+		verifyNoInteractions(this.recorder);
 	}
 
 	@Test
