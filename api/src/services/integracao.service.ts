@@ -25,6 +25,7 @@ export type IntegracaoOptions = {
   callbackBaseUrl: string; // this API's public address; the provider redirects to <it>/integracoes/<provider>/callback
   atlassianApiUrl: string; // https://api.atlassian.com
   fetch: typeof fetch;
+  hubspotServiceKey?: string; // set: HubSpot is reached with this key, with no OAuth connection
 };
 
 export type IntegracaoStatus = {
@@ -32,6 +33,7 @@ export type IntegracaoStatus = {
   nome: string;
   configurado: boolean; // client id/secret and the encryption key are set on the server
   conectado: boolean;
+  chaveDeServico: boolean; // HubSpot only: the server uses a service key instead of the OAuth connection
   conta?: Record<string, unknown>;
   config?: Record<string, unknown>;
   conectadoPor?: string | null;
@@ -91,6 +93,7 @@ class IntegracaoService {
         nome,
         configurado: this.isConfigured(provider as Provider),
         conectado: !!row,
+        chaveDeServico: provider === "hubspot" && !!this.options.hubspotServiceKey,
         ...(row && {
           conta: row.contaExterna,
           config: row.config,

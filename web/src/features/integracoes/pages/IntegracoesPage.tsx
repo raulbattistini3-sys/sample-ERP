@@ -263,7 +263,11 @@ function IntegracaoCard({ integracao }: { integracao: Integracao }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-base font-semibold text-ink">{integracao.nome}</h3>
-          {!integracao.configurado ? (
+          {integracao.chaveDeServico ? (
+            <p className="mt-1 text-sm text-muted">
+              Usando a chave de serviço definida em api/.env: clientes e empresas vêm direto do HubSpot. O envio de tickets ainda exige a conexão OAuth.
+            </p>
+          ) : !integracao.configurado ? (
             <p className="mt-1 text-sm text-muted">
               Não configurada no servidor: defina {envKeys[integracao.provider]} e INTEGRATIONS_ENCRYPTION_KEY em api/.env.
             </p>
@@ -292,14 +296,16 @@ function IntegracaoCard({ integracao }: { integracao: Integracao }) {
               Desconectar
             </Button>
           )}
-          <Button
-            variant={integracao.conectado ? "ghost" : "primary"}
-            onClick={() => connectMutation.mutate(integracao.provider)}
-            disabled={!integracao.configurado || connectMutation.isPending}
-          >
-            {connectMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Link2 className="h-4 w-4" aria-hidden="true" />}
-            {integracao.conectado ? "Reconectar" : "Conectar"}
-          </Button>
+          {!integracao.chaveDeServico && (
+            <Button
+              variant={integracao.conectado ? "ghost" : "primary"}
+              onClick={() => connectMutation.mutate(integracao.provider)}
+              disabled={!integracao.configurado || connectMutation.isPending}
+            >
+              {connectMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Link2 className="h-4 w-4" aria-hidden="true" />}
+              {integracao.conectado ? "Reconectar" : "Conectar"}
+            </Button>
+          )}
         </div>
       </div>
       {connectMutation.isError && <ErrorAlert className="mt-3" message={getApiErrorMessage(connectMutation.error, "Não foi possível iniciar a conexão.")} />}

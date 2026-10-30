@@ -15,25 +15,34 @@ const TICKETS = `/crm/objects/${API_VERSION}/tickets`;
 const PIPELINES = `/crm/pipelines/${API_VERSION}/tickets`;
 const CONTACTS = `/crm/objects/${API_VERSION}/contacts`;
 const COMPANIES = `/crm/objects/${API_VERSION}/companies`;
-const CONTACT_PROPERTIES =
-  "firstname,lastname,email,phone,company,lifecyclestage,createdate,lastmodifieddate,jobtitle,hs_seniority,hs_buying_role";
-const COMPANY_PROPERTIES = "name,domain,industry";
-const PER_PAGE = 100;
+const ASSOCIATIONS = `/crm/associations/${API_VERSION}`;
+const CONTACT_PROPERTIES = [
+  "firstname", "lastname", "email", "phone", "company", "lifecyclestage", "jobtitle", "hs_seniority", "hs_buying_role",
+];
+const COMPANY_PROPERTIES = ["name", "domain", "industry"];
+const DECISOR = "DECISION_MAKER";
+const SEARCH_PAGE = 200; // the most a search returns at once
+const BATCH_SIZE = 100;
+// HubSpot's search can't page past this many results
+export const SEARCH_LIMIT = 10_000;
 // tickets are the CRM object type 0-5
 const ticketUrl = (hubId: unknown, id: string) => `https://app.hubspot.com/contacts/${hubId}/record/0-5/${id}`;
 
 export type HubspotConfig = { pipelineId: string; pipelineName: string; stageId: string; stageName: string };
 type HubspotRecord = { id: string; url?: string; properties: Record<string, string | null | undefined> };
 export type HubspotCompany = HubspotRecord;
-// a contact linked to a company comes with one entry per association type, so an id can repeat
-export type HubspotContact = HubspotRecord & { associations?: { companies?: { results?: { id: string }[] } } };
-type HubspotPage<T> = { results?: T[]; paging?: { next?: { after?: string } } };
+export type HubspotContact = HubspotRecord;
+type HubspotSearch<T> = { total?: number; results?: T[]; paging?: { next?: { after?: string } } };
+type SearchBody = { query?: string; limit: number; after?: string; properties?: string[]; sorts?: object[]; filterGroups?: object[] };
 type Pipeline = { id: string; label: string; stages: { id: string; label: string }[] };
 
 const ConfigSchema = z.object({
   pipelineId: z.string({ required_error: "Escolha um pipeline." }).trim().min(1, "Escolha um pipeline."),
   stageId: z.string({ required_error: "Escolha um status." }).trim().min(1, "Escolha um status."),
 });
+
+const chunks = (ids: string[]) =>
+  Array.from({ length: Math.ceil(ids.length / BATCH_SIZE) }, (_, index) => ids.slice(index * BATCH_SIZE, (index + 1) * BATCH_SIZE));
 
 const notConnected = () => new ValidationError("409", "O HubSpot não está conectado. Conecte em Integrações.");
 const notConfigured = () => new ValidationError("409", "Escolha o pipeline e o status do HubSpot em Integrações.");
@@ -46,7 +55,7 @@ class HubspotService {
   constructor(
     private readonly repository: IntegracaoRepository,
     private readonly integracoes: IntegracaoService,
-    private readonly options: { apiUrl: string },
+    private readonly options: { apiUrl: string; serviceKey?: string },
   ) {}
 
   async listPipelines(): Promise<Either<BaseAppError, Pipeline[]>> {
@@ -91,21 +100,89 @@ class HubspotService {
     return this.createTicket(summary, paragraphs);
   }
 
-  listContacts(after?: string) {
-    return this.page<HubspotContact>(CONTACTS, { properties: CONTACT_PROPERTIES, associations: "companies" }, after);
+  searchContacts(page: number, amount: number, busca: string) {
+    return this.searchPage<HubspotContact>(CONTACTS, page, amount, busca, CONTACT_PROPERTIES, "firstname");
   }
 
-  listCompanies(after?: string) {
-    return this.page<HubspotCompany>(COMPANIES, { properties: COMPANY_PROPERTIES }, after);
+  searchCompanies(page: number, amount: number, busca: string) {
+    return this.searchPage<HubspotCompany>(COMPANIES, page, amount, busca, COMPANY_PROPERTIES, "name");
   }
 
-  // one page of records; after is the cursor of the next one, undefined on the last
-  private async page<T>(path: string, params: Record<string, string>, after?: string): Promise<Either<BaseAppError, { results: T[]; after?: string }>> {
-    const query = new URLSearchParams({ limit: String(PER_PAGE), ...params, ...(after && { after }) });
-    const response = await this.request(`${path}?${query}`);
-    if (response.isLeft()) return left(response.value);
-    const body = response.value as HubspotPage<T>;
-    return right({ results: body.results ?? [], after: body.paging?.next?.after });
+  async countContactsWithoutCompany(): Promise<Either<BaseAppError, number>> {
+    const response = await this.search<HubspotContact>(CONTACTS, {
+      limit: 1,
+      filterGroups: [{ filters: [{ propertyName: "associatedcompanyid", operator: "NOT_HAS_PROPERTY" }] }],
+    });
+    return response.isLeft() ? left(response.value) : right(response.value.total ?? 0);
+  }
+
+  // search has no join, so finding the companies of the decision makers starts from the contacts
+  async decisionMakerIds(): Promise<Either<BaseAppError, string[]>> {
+    const ids: string[] = [];
+    let after: string | undefined;
+    do {
+      const response = await this.search<HubspotContact>(CONTACTS, {
+        limit: SEARCH_PAGE,
+        after,
+        filterGroups: [{ filters: [{ propertyName: "hs_buying_role", operator: "CONTAINS_TOKEN", value: DECISOR }] }],
+      });
+      if (response.isLeft()) return left(response.value);
+      ids.push(...(response.value.results ?? []).map(({ id }) => id));
+      after = response.value.paging?.next?.after;
+    } while (after && ids.length < SEARCH_LIMIT);
+    return right(ids);
+  }
+
+  readContacts(ids: string[]) {
+    return this.read<HubspotContact>(CONTACTS, ids, CONTACT_PROPERTIES);
+  }
+
+  readCompanies(ids: string[]) {
+    return this.read<HubspotCompany>(COMPANIES, ids, COMPANY_PROPERTIES);
+  }
+
+  // the ids linked to each record; one with no links is left out of the map
+  async associated(from: "companies" | "contacts", to: "companies" | "contacts", ids: string[]): Promise<Either<BaseAppError, Map<string, string[]>>> {
+    const found = new Map<string, string[]>();
+    for (const inputs of chunks(ids)) {
+      const response = await this.request(`${ASSOCIATIONS}/${from}/${to}/batch/read`, {
+        method: "POST",
+        body: JSON.stringify({ inputs: inputs.map((id) => ({ id })) }),
+      });
+      if (response.isLeft()) return left(response.value);
+      const { results = [] } = response.value as { results?: { from: { id: string }; to?: { toObjectId: number }[] }[] };
+      // one entry per association type, so an id can repeat
+      for (const { from: { id }, to: links = [] } of results) found.set(id, [...new Set(links.map((link) => String(link.toObjectId)))]);
+    }
+    return right(found);
+  }
+
+  private searchPage<T>(path: string, page: number, amount: number, busca: string, properties: string[], sortBy: string) {
+    return this.search<T>(path, {
+      query: busca || undefined,
+      limit: amount,
+      after: page > 1 ? String((page - 1) * amount) : undefined,
+      properties,
+      sorts: [{ propertyName: sortBy, direction: "ASCENDING" }],
+    });
+  }
+
+  private async search<T>(path: string, body: SearchBody): Promise<Either<BaseAppError, HubspotSearch<T>>> {
+    const response = await this.request(`${path}/search`, { method: "POST", body: JSON.stringify(body) });
+    return response.isLeft() ? left(response.value) : right(response.value as HubspotSearch<T>);
+  }
+
+  private async read<T>(path: string, ids: string[], properties: string[]): Promise<Either<BaseAppError, T[]>> {
+    const records: T[] = [];
+    for (const inputs of chunks(ids)) {
+      const response = await this.request(`${path}/batch/read`, {
+        method: "POST",
+        body: JSON.stringify({ properties, inputs: inputs.map((id) => ({ id })) }),
+      });
+      if (response.isLeft()) return left(response.value);
+      records.push(...((response.value as { results?: T[] }).results ?? []));
+    }
+    return right(records);
   }
 
   private async createTicket(subject: string, paragraphs: string[]): Promise<Either<BaseAppError, { key: string; url: string }>> {
@@ -129,13 +206,31 @@ class HubspotService {
     return right({ key: id, url: ticketUrl(row.contaExterna.hubId, id) });
   }
 
+  // a service key is a fixed token: no connection row, nothing to refresh
+  private withServiceKey(key: string, url: string, init: RequestInit) {
+    return fetch(url, {
+      ...init,
+      headers: {
+        Accept: "application/json",
+        ...(init.body ? { "Content-Type": "application/json" } : {}),
+        Authorization: `Bearer ${key}`,
+      },
+    });
+  }
+
   private async request(path: string, init: RequestInit = {}): Promise<Either<BaseAppError, unknown>> {
-    const row: IntegracaoRow | null = await this.repository.find("hubspot");
-    if (!row) return left(notConnected());
+    const { apiUrl, serviceKey } = this.options;
+    const row: IntegracaoRow | null = serviceKey ? null : await this.repository.find("hubspot");
+    if (!serviceKey && !row) return left(notConnected());
     try {
-      const response = await this.integracoes.authorizedFetch(row, `${this.options.apiUrl}${path}`, init);
+      const response = serviceKey
+        ? await this.withServiceKey(serviceKey, `${apiUrl}${path}`, init)
+        : await this.integracoes.authorizedFetch(row!, `${apiUrl}${path}`, init);
       if (!response) return left(reconnect());
       const body = await response.json().catch(() => ({}));
+      if (serviceKey && (response.status === 401 || response.status === 403)) {
+        return left(new ValidationError("409", "A chave de serviço do HubSpot é inválida ou não tem os escopos necessários."));
+      }
       if (response.status === 403) {
         return left(new ValidationError("409", "O app do HubSpot não tem os escopos necessários. Conecte novamente em Integrações."));
       }

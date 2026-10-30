@@ -2,7 +2,6 @@ import { apiClient, ListResponse } from "../../../lib/api-client";
 
 export type Cliente = {
   id: string;
-  hubspot_id: string;
   nome: string;
   email: string | null;
   telefone: string | null;
@@ -31,14 +30,8 @@ export type Empresa = {
 
 export type EmpresasResponse = ListResponse<Empresa> & { sem_empresa: number };
 
-export type ClientesResponse = ListResponse<Cliente> & { sincronizado_em: string | null };
-
 export const getClientes = (page: number, amount: number, busca: string) =>
-  apiClient.get<ClientesResponse>("/clientes", { params: { page, amount, busca } }).then((r) => r.data);
+  apiClient.get<ListResponse<Cliente>>("/clientes", { params: { page, amount, busca } }).then((r) => r.data);
 
 export const getEmpresas = (page: number, amount: number, busca: string, decisores: boolean) =>
   apiClient.get<EmpresasResponse>("/clientes/empresas", { params: { page, amount, busca, decisores } }).then((r) => r.data);
-
-// reads every company and contact from HubSpot, so it can take a while on a big account
-export const sincronizarClientes = () =>
-  apiClient.post<{ sincronizados: number; empresas: number; removidos: number }>("/clientes/sincronizar", null, { timeout: 0 }).then((r) => r.data);
