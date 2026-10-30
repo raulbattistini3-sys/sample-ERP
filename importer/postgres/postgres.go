@@ -35,3 +35,22 @@ func NewPool(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	}
 	return pool, nil
 }
+
+// VerificarSchema fails when the database lacks what this service queries: the importacoes table and
+// its newest columns (api/drizzle 0011-0013). Checked at startup, so a database the API's migrations
+// haven't reached stops the importer with what to do, instead of every claim and sweep failing.
+func VerificarSchema(ctx context.Context, pool *pgxpool.Pool) error {
+	var colunas int
+	err := pool.QueryRow(ctx, `
+		SELECT count(*) FROM information_schema.columns
+		WHERE table_schema = current_schema() AND table_name = 'importacoes'
+			AND column_name IN ('planilha', 'linhas_criadas', 'linhas_atualizadas')`).Scan(&colunas)
+	if err != nil {
+		return fmt.Errorf("postgres: checking the schema: %w", err)
+	}
+	if colunas < 3 {
+		return fmt.Errorf("postgres: the database is missing the importacoes table or its latest columns; " +
+			"apply the API's migrations first (cd api && bun run db:migrate, with DATABASE_URL pointing at this database)")
+	}
+	return nil
+}

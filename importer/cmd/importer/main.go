@@ -48,6 +48,9 @@ func run() error {
 	}
 	// deferred before the server starts, so it runs after GracefulStop: in-flight RPCs keep their connections
 	defer pool.Close()
+	if err := postgres.VerificarSchema(ctx, pool); err != nil {
+		return err
+	}
 
 	lis, err := net.Listen("tcp", cfg.GRPC.Addr())
 	if err != nil {
