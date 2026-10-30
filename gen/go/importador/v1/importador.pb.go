@@ -286,11 +286,14 @@ type Importacao struct {
 	LinhasImportadas int32                  `protobuf:"varint,5,opt,name=linhas_importadas,json=linhasImportadas,proto3" json:"linhas_importadas,omitempty"`
 	Erros            []*ErroLinha           `protobuf:"bytes,6,rep,name=erros,proto3" json:"erros,omitempty"`
 	// set when status is FALHOU
-	Mensagem      string                 `protobuf:"bytes,7,opt,name=mensagem,proto3" json:"mensagem,omitempty"`
-	CriadaEm      *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=criada_em,json=criadaEm,proto3" json:"criada_em,omitempty"`
-	FinalizadaEm  *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=finalizada_em,json=finalizadaEm,proto3" json:"finalizada_em,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Mensagem     string                 `protobuf:"bytes,7,opt,name=mensagem,proto3" json:"mensagem,omitempty"`
+	CriadaEm     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=criada_em,json=criadaEm,proto3" json:"criada_em,omitempty"`
+	FinalizadaEm *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=finalizada_em,json=finalizadaEm,proto3" json:"finalizada_em,omitempty"`
+	// of linhas_importadas, how many created products and how many updated existing ones
+	LinhasCriadas     int32 `protobuf:"varint,10,opt,name=linhas_criadas,json=linhasCriadas,proto3" json:"linhas_criadas,omitempty"`
+	LinhasAtualizadas int32 `protobuf:"varint,11,opt,name=linhas_atualizadas,json=linhasAtualizadas,proto3" json:"linhas_atualizadas,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Importacao) Reset() {
@@ -386,6 +389,20 @@ func (x *Importacao) GetFinalizadaEm() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Importacao) GetLinhasCriadas() int32 {
+	if x != nil {
+		return x.LinhasCriadas
+	}
+	return 0
+}
+
+func (x *Importacao) GetLinhasAtualizadas() int32 {
+	if x != nil {
+		return x.LinhasAtualizadas
+	}
+	return 0
+}
+
 // One problem with one row; a row can have several (one per field)
 type ErroLinha struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -468,7 +485,7 @@ const file_importador_v1_importador_proto_rawDesc = "" +
 	"\x17ObterImportacaoResponse\x129\n" +
 	"\n" +
 	"importacao\x18\x01 \x01(\v2\x19.importador.v1.ImportacaoR\n" +
-	"importacao\"\x8e\x03\n" +
+	"importacao\"\xe4\x03\n" +
 	"\n" +
 	"Importacao\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x127\n" +
@@ -479,7 +496,10 @@ const file_importador_v1_importador_proto_rawDesc = "" +
 	"\x05erros\x18\x06 \x03(\v2\x18.importador.v1.ErroLinhaR\x05erros\x12\x1a\n" +
 	"\bmensagem\x18\a \x01(\tR\bmensagem\x127\n" +
 	"\tcriada_em\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\bcriadaEm\x12?\n" +
-	"\rfinalizada_em\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\ffinalizadaEm\"S\n" +
+	"\rfinalizada_em\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\ffinalizadaEm\x12%\n" +
+	"\x0elinhas_criadas\x18\n" +
+	" \x01(\x05R\rlinhasCriadas\x12-\n" +
+	"\x12linhas_atualizadas\x18\v \x01(\x05R\x11linhasAtualizadas\"S\n" +
 	"\tErroLinha\x12\x14\n" +
 	"\x05linha\x18\x01 \x01(\x05R\x05linha\x12\x14\n" +
 	"\x05campo\x18\x02 \x01(\tR\x05campo\x12\x1a\n" +

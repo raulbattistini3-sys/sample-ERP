@@ -55,6 +55,9 @@ message Importacao {
   string mensagem = 7;
   google.protobuf.Timestamp criada_em = 8;
   google.protobuf.Timestamp finalizada_em = 9;
+  // of linhas_importadas, how many created products and how many updated existing ones
+  int32 linhas_criadas = 10;
+  int32 linhas_atualizadas = 11;
 }
 
 // One problem with one row; a row can have several (one per field)

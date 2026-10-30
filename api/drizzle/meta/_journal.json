@@ -92,6 +92,13 @@
       "when": 1792560822121,
       "tag": "0012_produtos_sku_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792570822121,
+      "tag": "0013_importacoes_contagens",
+      "breakpoints": true
     }
   ]
 }
