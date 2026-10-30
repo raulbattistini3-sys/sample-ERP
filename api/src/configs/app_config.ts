@@ -25,9 +25,11 @@ class Config {
   }
 
   private loadApiConfig(): ApiConfig {
+    // Render sets PORT and RENDER; it only routes to 0.0.0.0, so APP_HOST is ignored there
+    // (a copied APP_HOST=localhost would leave Render scanning for an open port until it gives up)
     return {
-      port: Number(process.env.PORT) || 10000,
-      host: process.env.APP_HOST || "0.0.0.0",
+      port: Number(process.env.PORT || process.env.APP_PORT) || 10000,
+      host: process.env.RENDER ? "0.0.0.0" : process.env.APP_HOST || "0.0.0.0",
     };
   }
 
