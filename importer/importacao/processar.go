@@ -17,6 +17,7 @@ import (
 
 const pgUniqueViolation = "23505"
 
+// Processador takes one claimed job through reading, validation and writing.
 type Processador struct {
 	pool      *pgxpool.Pool
 	repo      *postgres.Importacoes
@@ -28,6 +29,7 @@ type Processador struct {
 	agora       func() time.Time
 }
 
+// NewProcessador returns a Processador that refuses spreadsheets with more than maxLinhas rows.
 func NewProcessador(pool *pgxpool.Pool, repo *postgres.Importacoes, maxLinhas int) *Processador {
 	return &Processador{
 		pool:        pool,

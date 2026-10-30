@@ -1,3 +1,8 @@
+// Command importer imports product spreadsheets in the background. It serves the gRPC API the ERP API
+// queues imports through, and runs the workers that process them.
+//
+// With the healthcheck argument it asks a running instance whether it's SERVING and exits, which is what
+// the container's HEALTHCHECK runs. See importer/README.md.
 package main
 
 import (

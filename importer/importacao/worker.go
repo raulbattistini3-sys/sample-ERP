@@ -15,6 +15,7 @@ import (
 // how long a cancelled import gets to hand its job back on shutdown
 const devolverTimeout = 5 * time.Second
 
+// WorkerConfig tunes a Worker. See the IMPORT_* variables in importer/README.md.
 type WorkerConfig struct {
 	Concorrencia  int           // imports processed at the same time
 	Prazo         time.Duration // lease: an import's timeout, and when DevolverTravadas takes it back
@@ -22,6 +23,7 @@ type WorkerConfig struct {
 	Intervalo     time.Duration // fallback queue check and stuck-import sweep
 }
 
+// Worker claims queued imports and processes them. Several can run against the same queue.
 type Worker struct {
 	pool *pgxpool.Pool
 	repo *postgres.Importacoes
@@ -29,6 +31,7 @@ type Worker struct {
 	cfg  WorkerConfig
 }
 
+// NewWorker returns a Worker. Call Run to start it.
 func NewWorker(pool *pgxpool.Pool, repo *postgres.Importacoes, proc *Processador, cfg WorkerConfig) *Worker {
 	return &Worker{pool: pool, repo: repo, proc: proc, cfg: cfg}
 }

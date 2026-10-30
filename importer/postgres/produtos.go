@@ -14,12 +14,14 @@ import (
 // the same: creates are plain inserts, every update that changes something gets an "Alteracao"
 // auditoria (or claims a matching manual one) and the integration envios for it.
 
+// Categoria is what an import needs to resolve a spreadsheet's categoria name.
 type Categoria struct {
 	ID    string
 	Nome  string
 	Ativo bool
 }
 
+// Categorias returns every categoria, active or not.
 func Categorias(ctx context.Context, db DBTX) ([]Categoria, error) {
 	rows, err := db.Query(ctx, `SELECT id, nome::text, ativo FROM categorias`)
 	if err != nil {
@@ -92,6 +94,7 @@ func InserirProdutos(ctx context.Context, tx pgx.Tx, produtos []Produto, dataDeC
 	return n, nil
 }
 
+// CampoAlterado is one changed field of a product, as stored in an auditoria's detalhamento.
 type CampoAlterado struct {
 	Campo  string `json:"campo"`
 	Antes  string `json:"antes"`

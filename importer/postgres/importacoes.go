@@ -22,6 +22,7 @@ import (
 // claimed by someone else, can no longer Finalizar it. Call Finalizar inside the transaction that writes
 // the products, so a stale worker's ErrReivindicacaoPerdida also rolls its writes back.
 
+// Status is where an import is. concluida, rejeitada and falhou are final.
 type Status string
 
 // match importacoes_status_check
@@ -36,6 +37,7 @@ const (
 // CanalImportacoes is the LISTEN/NOTIFY channel; the payload is the importacao id.
 const CanalImportacoes = "importacoes"
 
+// Errors the repository returns for the caller to act on.
 var (
 	ErrNaoEncontrada        = errors.New("postgres: importacao not found")
 	ErrIDInvalido           = errors.New("postgres: id is not a valid uuid")
@@ -49,12 +51,14 @@ const (
 	pgInvalidTextRep      = "22P02"
 )
 
+// ErroLinha is one problem in one spreadsheet row.
 type ErroLinha struct {
 	Linha    int32  `json:"linha"`
 	Campo    string `json:"campo,omitempty"`
 	Mensagem string `json:"mensagem"`
 }
 
+// Importacao is one row of the importacoes table, without the file.
 type Importacao struct {
 	ID                string
 	UsuarioID         string
@@ -96,10 +100,12 @@ type DBTX interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
+// Importacoes is the job queue and the record of imports.
 type Importacoes struct {
 	pool *pgxpool.Pool
 }
 
+// NewImportacoes returns the repository on pool.
 func NewImportacoes(pool *pgxpool.Pool) *Importacoes {
 	return &Importacoes{pool: pool}
 }
@@ -147,6 +153,7 @@ func (r *Importacoes) Criar(ctx context.Context, usuarioID, nomeArquivo string, 
 	return imp, nil
 }
 
+// Obter returns an import, or ErrNaoEncontrada or ErrIDInvalido.
 func (r *Importacoes) Obter(ctx context.Context, id string) (Importacao, error) {
 	imp, err := scanImportacao(r.pool.QueryRow(ctx, `SELECT `+colunas+` FROM importacoes WHERE id = $1`, id))
 	switch {
@@ -160,6 +167,8 @@ func (r *Importacoes) Obter(ctx context.Context, id string) (Importacao, error) 
 	return imp, nil
 }
 
+// Reivindicar claims the oldest pendente import for this worker, or returns nil when the queue is empty.
+// SKIP LOCKED lets concurrent workers claim different jobs without waiting for each other.
 func (r *Importacoes) Reivindicar(ctx context.Context) (*Job, error) {
 	var planilha []byte
 	imp, err := scanImportacao(r.pool.QueryRow(ctx, `
@@ -182,6 +191,8 @@ func (r *Importacoes) Reivindicar(ctx context.Context) (*Job, error) {
 	return &Job{Importacao: imp, Planilha: planilha}, nil
 }
 
+// Finalizar records a final status on db, and returns ErrReivindicacaoPerdida when the job's claim is gone.
+// It also drops the stored file.
 func (r *Importacoes) Finalizar(ctx context.Context, db DBTX, job *Job, res Resultado) error {
 	switch res.Status {
 	case StatusConcluida, StatusRejeitada, StatusFalhou:
@@ -208,6 +219,8 @@ func (r *Importacoes) Finalizar(ctx context.Context, db DBTX, job *Job, res Resu
 	return nil
 }
 
+// Devolver puts a job back in the queue without using up one of its attempts, for a worker that is
+// shutting down. It does nothing when the claim is gone.
 func (r *Importacoes) Devolver(ctx context.Context, job *Job) error {
 	_, err := r.pool.Exec(ctx, `
 		WITH devolvida AS (

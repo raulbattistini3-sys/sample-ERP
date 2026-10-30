@@ -1,7 +1,9 @@
 import express from "express";
 import cors from "cors";
+import swaggerUi from "swagger-ui-express";
 import router from "./routes";
 import { corsOptions } from "./configs/cors.config";
+import { openApiDocument } from "./docs/openapi";
 
 const app = express();
 
@@ -14,6 +16,9 @@ const defaultJson = express.json();
 const importJson = express.json({ limit: "2mb" });
 app.use((req, res, next) => (req.path === IMPORT_PATH ? importJson : defaultJson)(req, res, next));
 app.use(cors(corsOptions));
+// before the router: everything past its public routes requires a token
+app.get("/openapi.json", (req, res) => res.json(openApiDocument));
+app.use("/docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
 app.use(router);
 
 export { app };

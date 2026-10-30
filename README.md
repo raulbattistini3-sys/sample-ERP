@@ -9,12 +9,13 @@ Inventory and audit ERP: products, categorias, usuarios and auditorias, with opt
 | `api/` | REST API: Express 5, TypeScript, PostgreSQL (`pg` + drizzle), pg-boss job queue |
 | `web/` | Web app: React 18, Vite, Tailwind, TanStack Query |
 | `importer/` | Spreadsheet importer: Go, gRPC. Reads `.xlsx`/`.csv` product spreadsheets and saves them in the background, with its job queue in Postgres |
+| `billing/` | Stripe service: Spring Boot, Java 21. Receives Stripe's webhooks and tells the API about paid and failed invoices |
 | `proto/` | gRPC contract between the API and the importer; `buf generate` writes the Go and TypeScript code from it |
 | `docker/postgres/init/` | SQL that creates the database from scratch: `01_schema.sql` (tables, types, indexes) and `02_seed.sql` (categorias + drizzle's migration log) |
 
 Choose how to run it:
 
-1. [Docker Compose](#1-docker-compose-raw-postgres): the fastest option. Starts Postgres, the API, the spreadsheet importer and the web app with one command.
+1. [Docker Compose](#1-docker-compose-raw-postgres): the fastest option. Starts Postgres, the API, the spreadsheet importer and the web app with one command, and the [billing service](#billing-service-stripe) when you ask for it.
 2. [Local with raw Postgres](#2-local-with-raw-postgres): the API and web app run on your machine; Postgres is any plain instance.
 3. [Local with Supabase](#3-local-with-supabase): the API and web app run on your machine; the database is a Supabase project.
 
@@ -41,6 +42,7 @@ docker compose up --build
 | API | http://localhost:3333 |
 | Postgres | `localhost:5432`, user `postgres`, password `postgres`, database `sample_erp` |
 | Importer (gRPC) | `localhost:50051`, for local tools only (the API reaches it at `importer:50051`) |
+| Billing (optional) | http://localhost:8081, with `--profile billing` |
 
 On its first start, Postgres runs the scripts in `docker/postgres/init/`, so the database comes up with every table and the categorias already created. Data is kept in the `db-data` volume.
 
@@ -49,6 +51,7 @@ On its first start, Postgres runs the scripts in `docker/postgres/init/`, so the
 - Start over with an empty database: `docker compose down -v`. The init scripts run again on the next `up`.
 - The init scripts only run on an empty volume, so on every `up` the one-shot `migrate` service applies any [migrations](#database-migrations) the database hasn't seen before the API and the importer start. A `db-data` volume from an older checkout catches up by itself; if a migration fails (for example 0012 finding repeated SKUs), its log says why and the API and importer wait for it.
 - Port 50051 already in use? Start it with `IMPORTER_PORT=50052 docker compose up --build`.
+- Port 8081 already in use? Start billing with `BILLING_HOST_PORT=8082 docker compose --profile billing up --build`.
 
 Then [create the first user](#create-the-first-user).
 
@@ -104,7 +107,7 @@ Open http://localhost:5173 and [create the first user](#create-the-first-user).
 
 ### 2.4 Spreadsheet importer (optional)
 
-Without it, the API runs product imports itself, in the background. With it, the API hands the uploaded file to the importer, which does that work in its own process. In another terminal:
+Without it, the API runs product imports itself, in the background. With it, the API hands the uploaded file to the importer, which does that work in its own process. [`importer/README.md`](importer/README.md) covers how it works, its gRPC API and its limits. In another terminal:
 
 ```bash
 cd importer
@@ -152,6 +155,89 @@ DATABASE_URL=postgresql://postgres.<project-ref>:<password>@aws-0-<region>.poole
 JWT_SECRET=<any long random string>
 ```
 
+## Billing service (Stripe)
+
+`billing/` receives Stripe's webhooks. For a paid or failed invoice it saves the event, and a background job then calls the API, which sends the email through Resend:
+
+```text
+Stripe -> billing (/webhooks/stripe) -> API (/internal/billing/events) -> Resend
+```
+
+The webhook never sends email itself. Its tables live in a `billing` schema of the same database as the API, and Flyway applies its migrations **every time the service starts**.
+
+Create `billing/.env` from `billing/.env.example`:
+
+| Variable | Purpose |
+| --- | --- |
+| `SANDBOX_STRIPE_API_KEY` | Sandbox key (`sk_test_...`) |
+| `STRIPE_WEBHOOK_SECRET` | `whsec_...`, printed by `stripe listen` |
+| `JDBC_DATABASE_URL` | The database, with credentials in the URL. On Supabase use the **session pooler (port 5432)**: the service refuses to start on the transaction pooler (6543) |
+| `ERP_API_URL` | The API, using an IP and not `localhost` |
+| `BILLING_INTERNAL_TOKEN` | The same value as in `api/.env`. Without it the API answers 401 |
+
+With Docker, `JDBC_DATABASE_URL`, `ERP_API_URL` and `BILLING_INTERNAL_TOKEN` come from `docker-compose.yml`, so only the Stripe values matter:
+
+```bash
+docker compose --profile billing up --build
+```
+
+Without Docker, set `BILLING_INTERNAL_TOKEN` in `api/.env` too, restart the API (`.env` changes don't trigger a reload), and start the service from its folder, because that's where it looks for `.env`:
+
+```bash
+cd billing
+./mvnw spring-boot:run
+```
+
+Then forward Stripe's events, on your machine in both cases:
+
+```bash
+npm install -g @stripe/cli
+stripe login
+stripe listen --thin-events "v1.invoice.paid,v1.invoice.payment_failed" \
+  --forward-thin-to localhost:8081/webhooks/stripe \
+  --forward-thin-connect-to localhost:8081/webhooks/stripe
+stripe trigger invoice.paid --override customer:email=delivered@resend.dev
+```
+
+Without a customer email the event is stored and no notification is created.
+
+### Dependency injection
+
+Spring creates the service's objects (beans) and passes each one what it needs through its constructor. Nothing calls `new` on a collaborator or uses `@Autowired` on a field, so the fields stay `final`.
+
+| Bean | Declared by | Receives |
+| --- | --- | --- |
+| `StripeWebhookController` | `@RestController` | `StripeClient`, `StripeProperties`, `StripeEventRecorder` |
+| `StripeEventRecorder` | `@Service` | `StripeEventRepository`, `NotificationRepository` |
+| `NotificationSender` | `@Component` | `NotificationRepository`, `RestClient` |
+| `StripeClient` | `@Bean` in `StripeConfig` | `StripeProperties` |
+| `RestClient` | `@Bean` in `NotificationConfig` | `ErpProperties` |
+| `StripeProperties`, `ErpProperties` | `@ConfigurationProperties` records | Values from `application` properties and the environment |
+| `StripeEventRepository`, `NotificationRepository` | Spring Data interfaces | Spring generates the implementations |
+
+- **Finding beans:** `@SpringBootApplication` scans `com.simple_erp.billing` and its subpackages. Classes are package-private where possible, because Spring doesn't need them to be public.
+- **Constructors:** `StripeEventRecorder` and `NotificationSender` get theirs from Lombok's `@RequiredArgsConstructor`, one parameter per `final` field. `StripeWebhookController` writes its own, because it builds the Stripe handler there.
+- **Third-party classes:** `StripeClient` and `RestClient` can't carry Spring annotations, so a `@Bean` method in a `@Configuration` class builds them. The method's parameters are injected the same way.
+- **Transactions:** Spring injects a proxy of `StripeEventRecorder`, and that proxy opens the transaction. `@Transactional` only applies to calls that come from another bean, so a call from inside the same class skips it.
+- **Tests:** `StripeEventRecorderTest` calls the constructor directly with mocks and needs no Spring. `StripeWebhookControllerTest` starts only the web layer and replaces `StripeEventRecorder` with `@MockitoBean`.
+
+To add a dependency, declare it as a `private final` field. To add a collaborator, annotate the class with `@Service` or `@Component` inside the base package.
+
+## Hosts and ports
+
+| From | To | Docker | On your machine |
+| --- | --- | --- | --- |
+| Browser | API | `http://localhost:3333` | `VITE_API_URL` |
+| API | Importer (gRPC) | `importer:50051` | `IMPORTER_GRPC_URL`, for example `127.0.0.1:50051` |
+| API, importer | Postgres | `db:5432` | `DATABASE_URL` |
+| Billing | API | `http://api:3333` | `ERP_API_URL`, for example `http://127.0.0.1:3333` |
+| Billing | Postgres | `db:5432` | `JDBC_DATABASE_URL` |
+| Stripe CLI | Billing | `localhost:8081` | `localhost:8081` |
+
+- Inside Docker, `localhost` is the container itself, so services use each other's names. Each service binds `0.0.0.0`.
+- On your machine, use IPs between services. `APP_HOST=localhost` can bind the API to IPv6 `::1` only, while Java resolves `localhost` to `127.0.0.1` and fails with a connection error. Keep `APP_HOST=127.0.0.1`, or set `ERP_API_URL=http://[::1]:<port>` if you keep `localhost`.
+- Browsers try both addresses, so `localhost` is fine in `VITE_API_URL`.
+
 ## Create the first user
 
 1. Open the web app and sign up at `/register`. New accounts get the `Estoque` role.
@@ -171,6 +257,16 @@ docker compose exec db psql -U postgres -d sample_erp \
 
 The API reads the role on every request. Log out and back in so the web app shows the new role too.
 
+## API documentation
+
+| Service | Interactive docs | Spec |
+| --- | --- | --- |
+| API | `/docs`, for example http://localhost:3333/docs | `/openapi.json` |
+| Billing | `/docs`, for example http://localhost:8081/docs | `/v3/api-docs` |
+| Importer (gRPC) | [`importer/README.md`](importer/README.md) | [`importador.proto`](proto/importador/v1/importador.proto) |
+
+In the API docs, call `POST /user/login`, then paste the token under **Authorize**. The API's spec is built by `api/src/docs/openapi.ts` from the same Zod schemas that validate requests. Add new routes there too. `/internal/billing` is left out because only the billing service calls it.
+
 ## Environment variables
 
 `api/.env.example` documents every variable. These are the ones that matter for running the project:
@@ -180,12 +276,13 @@ The API reads the role on every request. Log out and back in so the web app show
 | `DATABASE_URL` | yes | Postgres connection string (add `?sslmode=disable` for Postgres without TLS) |
 | `JWT_SECRET` | yes | Signs login tokens |
 | `PORT` | no | API port (default `10000`; `.env.example` uses `3333`) |
-| `APP_HOST` | no | Bind address (default `0.0.0.0`; ignored on Render) |
+| `APP_HOST` | no | Bind address (default `0.0.0.0`; ignored on Render). See [Hosts and ports](#hosts-and-ports) |
 | `CORS_ORIGINS` | no | Web origins allowed to call the API, comma-separated (default `http://localhost:5173`) |
 | `WEB_URL` | no | Web address used in password reset links |
 | `RESEND_API_KEY`, `EMAIL_FROM` | no | "Forgot password" emails through [Resend](https://resend.com) |
 | `INTEGRATIONS_ENCRYPTION_KEY`, `API_PUBLIC_URL`, `JIRA_*`, `HUBSPOT_*` | no | Jira / HubSpot integrations |
 | `IMPORTER_GRPC_URL` | no | Go spreadsheet importer address (`host:port`). Empty: the API runs product imports itself |
+| `BILLING_INTERNAL_TOKEN` | no | Lets the [billing service](#billing-service-stripe) call `/internal/billing`. Unset: every call gets 401 |
 | `VITE_API_URL` (`web/.env`) | yes | API address as the browser reaches it |
 
 ## Database migrations

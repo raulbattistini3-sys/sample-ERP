@@ -18,7 +18,7 @@ public class SecurityConfig {
 				.csrf(AbstractHttpConfigurer::disable)
 				.sessionManagement((session) -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests((requests) -> requests
-						.requestMatchers("/webhooks/stripe", "/actuator/health").permitAll()
+						.requestMatchers("/webhooks/stripe", "/actuator/health", "/docs", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
 						.anyRequest().denyAll())
 				.build();
 	}

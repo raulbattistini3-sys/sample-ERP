@@ -1,7 +1,9 @@
 # Local stack: raw Postgres + API + web + the Go spreadsheet importer. Pending api/drizzle migrations
 # are applied by the one-shot "migrate" service before the API and the importer start.
-#   docker compose up --build        web on http://localhost:8080, API on http://localhost:3333
-#   docker compose down -v           also wipes the database volume (the init scripts run again next up)
+#   docker compose up --build                     web on http://localhost:8080, API on http://localhost:3333
+#   docker compose --profile billing up --build   also the Stripe service on http://localhost:8081
+#   docker compose down -v                        also wipes the database volume (the init scripts run again next up)
+# Services reach each other by service name (api:3333, importer:50051, db:5432), never localhost.
 # Optional secrets (Resend, Jira/HubSpot OAuth, ...) come from api/.env when it exists; the database,
 # host/port and CORS settings below always win over it.
 
@@ -53,6 +55,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:-local-docker-only-change-me}
       # POST /products/imports hands uploaded spreadsheets to the importer over the compose network
       IMPORTER_GRPC_URL: importer:50051
+      # the billing service sends its notifications with this token
+      BILLING_INTERNAL_TOKEN: ${BILLING_INTERNAL_TOKEN:-local-docker-only-change-me}
     ports:
       - "3333:3333"
     depends_on:
@@ -72,6 +76,8 @@ services:
       dockerfile: importer/Dockerfile
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/sample_erp?sslmode=disable
+      # all IPv4 interfaces, so the API reaches it across the compose network
+      GRPC_HOST: 0.0.0.0
       GRPC_PORT: 50051
       IMPORT_WORKERS: ${IMPORT_WORKERS:-2}
     # published for local tools (grpcurl -plaintext localhost:50051 list, or an API run with bun run dev);
@@ -81,6 +87,31 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Receives Stripe's webhooks and tells the API about paid invoices. Behind a profile because it won't
+  # start without Stripe's keys, which a fresh clone doesn't have. Secrets come from billing/.env; everything
+  # below wins over that file, so a local stack can't migrate the Supabase database it points at.
+  billing:
+    build: ./billing
+    profiles: [billing]
+    env_file:
+      - path: ./billing/.env
+        required: false
+    environment:
+      JDBC_DATABASE_URL: jdbc:postgresql://db:5432/sample_erp?user=postgres&password=postgres
+      ERP_API_URL: http://api:3333
+      BILLING_INTERNAL_TOKEN: ${BILLING_INTERNAL_TOKEN:-local-docker-only-change-me}
+      # the port inside the container; BILLING_HOST_PORT moves the published one
+      BILLING_PORT: 8081
+    ports:
+      - "${BILLING_HOST_PORT:-8081}:8081"
+    depends_on:
+      db:
+        condition: service_healthy
+      # it applies its own Flyway migrations in the billing schema, but the API must be on its way up
+      api:
+        condition: service_started
     restart: unless-stopped
 
   web:
