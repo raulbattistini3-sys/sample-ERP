@@ -78,6 +78,20 @@
       "when": 1792540822121,
       "tag": "0010_detalhamentos_alteracoes",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792550822121,
+      "tag": "0011_importacoes",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792560822121,
+      "tag": "0012_produtos_sku_unique",
+      "breakpoints": true
     }
   ]
 }

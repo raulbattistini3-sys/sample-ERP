@@ -411,3 +411,63 @@ ALTER TABLE ONLY public.produtos_por_auditoria
 
 ALTER TABLE ONLY public.produtos_por_auditoria
     ADD CONSTRAINT produtos_por_auditoria_produto_id_fkey FOREIGN KEY (produto_id) REFERENCES public.produtos(id);
+
+--
+-- api/drizzle/0011_importacoes.sql
+--
+
+-- Spreadsheet imports run by the Go importer (importer/, proto/importador/v1). The table is also its job
+-- queue: a 'pendente' row is a queued job, claimed with FOR UPDATE SKIP LOCKED so two workers never take
+-- the same one; a 'processando' row whose iniciada_em is too old belongs to a crashed worker and goes
+-- back to 'pendente'. erros is [{ "linha": 3, "campo": "sku", "mensagem": "..." }].
+--
+-- The uploaded .xlsx lives in the row itself (planilha), so the database is both queue and storage and
+-- any importer instance can process any job with nothing but DATABASE_URL. It is cleared once the import
+-- finishes. In production the bytes belong in object storage (S3, or Supabase Storage, which speaks the
+-- S3 API) with only the object key here; see importer/storage/storage.go:
+--   "chave_arquivo" text NOT NULL,
+CREATE TABLE IF NOT EXISTS public."importacoes" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"usuario_id" uuid NOT NULL REFERENCES public."usuarios"("id"),
+	"nome_arquivo" text NOT NULL,
+	"planilha" bytea,
+	"status" text DEFAULT 'pendente' NOT NULL,
+	"total_linhas" integer DEFAULT 0 NOT NULL,
+	"linhas_importadas" integer DEFAULT 0 NOT NULL,
+	"erros" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"mensagem" text,
+	"tentativas" integer DEFAULT 0 NOT NULL,
+	"criada_em" timestamp with time zone DEFAULT now() NOT NULL,
+	"iniciada_em" timestamp with time zone,
+	"finalizada_em" timestamp with time zone,
+	CONSTRAINT "importacoes_status_check" CHECK ("status" IN ('pendente', 'processando', 'concluida', 'rejeitada', 'falhou'))
+);
+--> statement-breakpoint
+-- the claim query: oldest pending first
+CREATE INDEX IF NOT EXISTS "importacoes_pendentes_idx" ON public."importacoes" ("criada_em") WHERE "status" = 'pendente';
+--> statement-breakpoint
+-- the stuck-job sweep
+CREATE INDEX IF NOT EXISTS "importacoes_processando_idx" ON public."importacoes" ("iniciada_em") WHERE "status" = 'processando';
+
+--
+-- api/drizzle/0012_produtos_sku_unique.sql
+--
+
+-- A SKU identifies one product, active or not: imports already match rows to products by exact SKU and
+-- reactivate inactive ones, and two imports (API or importer/) running at once could otherwise both insert
+-- the same SKU. Existing duplicates stop the migration with the list, since picking which product survives
+-- (auditorias point at them) is a decision for a person, not a migration.
+DO $$
+DECLARE
+	duplicados text;
+BEGIN
+	SELECT string_agg(format('%s (%s produtos)', sku, total), ', ')
+	INTO duplicados
+	FROM (SELECT "sku", count(*) AS total FROM public."produtos" GROUP BY "sku" HAVING count(*) > 1) d;
+
+	IF duplicados IS NOT NULL THEN
+		RAISE EXCEPTION 'SKUs repetidos em produtos: %. Altere ou remova os repetidos e rode a migration de novo.', duplicados;
+	END IF;
+END $$;
+--> statement-breakpoint
+ALTER TABLE public."produtos" ADD CONSTRAINT "produtos_sku_key" UNIQUE ("sku");
