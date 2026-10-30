@@ -201,6 +201,28 @@ stripe trigger invoice.paid --override customer:email=delivered@resend.dev
 
 Sem e-mail do cliente, o evento é salvo e nenhuma notificação é criada.
 
+### Injeção de dependências
+
+O Spring cria os objetos do serviço (beans) e passa a cada um o que ele precisa pelo construtor. Nada chama `new` em um colaborador nem usa `@Autowired` em campo, então os campos continuam `final`.
+
+| Bean | Declarado por | Recebe |
+| --- | --- | --- |
+| `StripeWebhookController` | `@RestController` | `StripeClient`, `StripeProperties`, `StripeEventRecorder` |
+| `StripeEventRecorder` | `@Service` | `StripeEventRepository`, `NotificationRepository` |
+| `NotificationSender` | `@Component` | `NotificationRepository`, `RestClient` |
+| `StripeClient` | `@Bean` em `StripeConfig` | `StripeProperties` |
+| `RestClient` | `@Bean` em `NotificationConfig` | `ErpProperties` |
+| `StripeProperties`, `ErpProperties` | Records `@ConfigurationProperties` | Valores das propriedades `application` e do ambiente |
+| `StripeEventRepository`, `NotificationRepository` | Interfaces do Spring Data | O Spring gera as implementações |
+
+- **Como os beans são encontrados:** o `@SpringBootApplication` varre `com.simple_erp.billing` e os subpacotes. As classes são package-private sempre que possível, porque o Spring não precisa que sejam públicas.
+- **Construtores:** `StripeEventRecorder` e `NotificationSender` recebem o deles do `@RequiredArgsConstructor` do Lombok, com um parâmetro por campo `final`. O `StripeWebhookController` escreve o próprio, porque monta o handler da Stripe nele.
+- **Classes de terceiros:** `StripeClient` e `RestClient` não têm anotações do Spring, então um método `@Bean` numa classe `@Configuration` os constrói. Os parâmetros do método são injetados do mesmo jeito.
+- **Transações:** o Spring injeta um proxy do `StripeEventRecorder`, e é esse proxy que abre a transação. O `@Transactional` só vale para chamadas vindas de outro bean, então uma chamada de dentro da própria classe passa por fora dele.
+- **Testes:** o `StripeEventRecorderTest` chama o construtor direto com mocks e não precisa do Spring. O `StripeWebhookControllerTest` sobe só a camada web e troca o `StripeEventRecorder` por um `@MockitoBean`.
+
+Para adicionar uma dependência, declare um campo `private final`. Para adicionar um colaborador, anote a classe com `@Service` ou `@Component` dentro do pacote base.
+
 ## Hosts e portas
 
 | De | Para | Docker | Na sua máquina |
