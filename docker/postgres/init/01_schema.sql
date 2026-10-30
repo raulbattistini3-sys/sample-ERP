@@ -57,7 +57,7 @@ CREATE TYPE public.categorias_tipos AS ENUM (
 
 CREATE TYPE public.integracao_provider AS ENUM (
     'jira',
-    'monday'
+    'hubspot'
 );
 
 --
@@ -106,6 +106,8 @@ CREATE TABLE public.auditoria_integracao_envios (
     enviado_em timestamp with time zone,
     job_id uuid,
     provider public.integracao_provider NOT NULL,
+    lote_id uuid,
+    resumo jsonb,
     CONSTRAINT auditoria_integracao_envios_status_check CHECK ((status = ANY (ARRAY['pendente'::text, 'publicada'::text, 'enviando'::text, 'enviada'::text, 'erro'::text, 'cancelada'::text])))
 );
 
@@ -121,7 +123,8 @@ CREATE TABLE public.auditorias (
     detalhamento_auditoria_id uuid,
     deleted_at timestamp without time zone,
     criada_em timestamp with time zone DEFAULT now(),
-    vinculada_em timestamp with time zone
+    vinculada_em timestamp with time zone,
+    lote_id uuid
 );
 
 --
@@ -481,3 +484,23 @@ ALTER TABLE public."produtos" ADD CONSTRAINT "produtos_sku_key" UNIQUE ("sku");
 ALTER TABLE public."importacoes" ADD COLUMN IF NOT EXISTS "linhas_criadas" integer DEFAULT 0 NOT NULL;
 --> statement-breakpoint
 ALTER TABLE public."importacoes" ADD COLUMN IF NOT EXISTS "linhas_atualizadas" integer DEFAULT 0 NOT NULL;
+
+-- api/drizzle/0015_envios_por_lote.sql (columns above)
+CREATE INDEX IF NOT EXISTS "auditorias_lote_idx" ON public."auditorias" ("lote_id") WHERE "lote_id" IS NOT NULL;
+CREATE INDEX IF NOT EXISTS "auditoria_integracao_envios_lote_idx" ON public."auditoria_integracao_envios" ("lote_id") WHERE "lote_id" IS NOT NULL;
+
+-- api/drizzle/0016_clientes.sql
+CREATE TABLE IF NOT EXISTS public."clientes" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"hubspot_id" text NOT NULL UNIQUE,
+	"nome" text NOT NULL,
+	"email" text,
+	"telefone" text,
+	"empresa" text,
+	"estagio" text,
+	"url" text,
+	"criado_no_hubspot_em" timestamp with time zone,
+	"atualizado_no_hubspot_em" timestamp with time zone,
+	"sincronizado_em" timestamp with time zone DEFAULT now() NOT NULL
+);
+CREATE INDEX IF NOT EXISTS "clientes_nome_idx" ON public."clientes" (lower("nome"));

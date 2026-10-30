@@ -1,6 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { DrizzleDB } from "../db/client";
-import { enqueueForCategoria, enqueueForProducts } from "./integracao_envios.repository";
+import { enqueueForCategoria, enqueueForLote, enqueueForProducts } from "./integracao_envios.repository";
 
 // Automatic "Alteracao" auditorias for product and categoria changes. Every function runs on the
 // caller's transaction, so a change is never saved without its auditoria (or a claimed manual one).
@@ -137,6 +138,92 @@ export async function recordProductChange(
     tx, change.usuarioId, change.nomeProduto, antes, depois, change.changes, [change.produtoId], null,
   );
   return { auditoriaId, automatica: true };
+}
+
+// rows per statement of a bulk write: one array parameter per column, so only the statement's size is at stake
+const BULK_BATCH = 5000;
+
+export type ProductChange = {
+  produtoId: string;
+  nomeProduto: string;
+  vendaAntes: number;
+  vendaDepois: number;
+  changes: FieldChange[];
+};
+
+const emLotes = <T>(items: T[]) =>
+  Array.from({ length: Math.ceil(items.length / BULK_BATCH) }, (_, i) => items.slice(i * BULK_BATCH, (i + 1) * BULK_BATCH));
+
+const arrayParam = (values: unknown[]) => sql.param(values);
+
+// recordProductChange for many products, in a few statements however many there are: the same outcome,
+// but a round trip per product doesn't fit a big spreadsheet. A manual auditoria can be linked to several
+// products, so the candidates are read first and handed out in order, oldest first, each only once.
+// The new auditorias are one lote: the integrations get one issue/ticket per categoria summing it up.
+export async function recordProductChanges(tx: DrizzleDB, usuarioId: string, items: ProductChange[]): Promise<void> {
+  const changed = items
+    .filter(({ changes }) => changes.length > 0)
+    .map((item) => ({ ...item, antes: item.vendaAntes.toFixed(2), depois: item.vendaDepois.toFixed(2) }));
+  if (changed.length === 0) return;
+
+  const { rows: candidatas } = await tx.execute(sql`
+    select a.id, pa.produto_id, d.valor_anterior::text as antes, d.valor_atual::text as depois
+    from auditorias a
+    join produtos_por_auditoria pa on pa.auditoria_id = a.id
+    join detalhamentos_auditoria d on d.id = a.detalhamento_auditoria_id
+    where pa.produto_id = any(${arrayParam(changed.map((c) => c.produtoId))}::uuid[])
+      and a.acao_efetuada = 'Alteracao'
+      and a.deleted_at is null
+      and a.vinculada_em is null
+      and a.criada_em > now() - ${MATCH_WINDOW}
+    order by a.criada_em
+    for update of a skip locked`);
+  const porChave = new Map<string, string[]>();
+  for (const c of candidatas as { id: string; produto_id: string; antes: string; depois: string }[]) {
+    const chave = `${c.produto_id}|${c.antes}|${c.depois}`;
+    porChave.set(chave, [...(porChave.get(chave) ?? []), c.id]);
+  }
+
+  const reivindicadas = new Set<string>();
+  const novas: ((typeof changed)[number] & { auditoriaId: string; detalhamentoId: string })[] = [];
+  for (const item of changed) {
+    const opcoes = porChave.get(`${item.produtoId}|${item.antes}|${item.depois}`) ?? [];
+    const manual = opcoes.find((id) => !reivindicadas.has(id));
+    if (manual) reivindicadas.add(manual);
+    else novas.push({ ...item, auditoriaId: randomUUID(), detalhamentoId: randomUUID() });
+  }
+
+  if (reivindicadas.size > 0) {
+    await tx.execute(sql`update auditorias set vinculada_em = now() where id = any(${arrayParam([...reivindicadas])}::uuid[])`);
+  }
+  const loteId = randomUUID();
+  for (const lote of emLotes(novas)) {
+    await tx.execute(sql`
+      insert into detalhamentos_auditoria (id, nome_do_produto, valor_anterior, valor_atual, observacoes_adicionais, alteracoes)
+      select id, nome, antes, depois, obs, alteracoes::jsonb
+      from unnest(
+        ${arrayParam(lote.map((n) => n.detalhamentoId))}::uuid[],
+        ${arrayParam(lote.map((n) => n.nomeProduto))}::text[],
+        ${arrayParam(lote.map((n) => n.antes))}::numeric[],
+        ${arrayParam(lote.map((n) => n.depois))}::numeric[],
+        ${arrayParam(lote.map((n) => observacoes(n.changes)))}::text[],
+        ${arrayParam(lote.map((n) => JSON.stringify(n.changes)))}::text[]
+      ) as v(id, nome, antes, depois, obs, alteracoes)`);
+    await tx.execute(sql`
+      insert into auditorias (id, acao_efetuada, data_de_audicao, usuario_id, detalhamento_auditoria_id, vinculada_em, lote_id)
+      select id, 'Alteracao', now(), ${usuarioId}, detalhamento, now(), ${loteId}::uuid
+      from unnest(
+        ${arrayParam(lote.map((n) => n.auditoriaId))}::uuid[],
+        ${arrayParam(lote.map((n) => n.detalhamentoId))}::uuid[]
+      ) as v(id, detalhamento)`);
+    await tx.execute(sql`
+      insert into produtos_por_auditoria (auditoria_id, produto_id)
+      select * from unnest(
+        ${arrayParam(lote.map((n) => n.auditoriaId))}::uuid[],
+        ${arrayParam(lote.map((n) => n.produtoId))}::uuid[]
+      )`);
+  }
+  if (novas.length > 0) await enqueueForLote(tx, loteId);
 }
 
 export async function recordCategoriaChange(

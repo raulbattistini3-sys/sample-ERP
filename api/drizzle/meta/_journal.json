@@ -99,6 +99,27 @@
       "when": 1792570822121,
       "tag": "0013_importacoes_contagens",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792580822121,
+      "tag": "0014_hubspot",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1792590822121,
+      "tag": "0015_envios_por_lote",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1792600822121,
+      "tag": "0016_clientes",
+      "breakpoints": true
     }
   ]
 }

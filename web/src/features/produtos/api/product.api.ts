@@ -48,8 +48,6 @@ export const startProductImport = (file: File) => {
 };
 export const getProductImport = (id: string) =>
   apiClient.get<ItemResponse<ProductImport>>(`/products/imports/${id}`).then((r) => r.data.data);
-export const getProductsByFilter =(params: Record<string, string>) =>
-  apiClient.get<ListResponse<Product>>("/products/filter", { params }).then((r) => r.data.data);
 export const createProduct = (payload: CreateProductPayload) => apiClient.post("/products", payload);
 export const updateProduct = (payload: UpdateProductPayload) => apiClient.put(`/products/${payload.id}`, payload);
 export const deactivateProduct = (id: string) => apiClient.patch(`/products/${id}/deactivate`);

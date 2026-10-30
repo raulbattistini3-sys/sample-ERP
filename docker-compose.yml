@@ -2,7 +2,7 @@
 # are applied by the one-shot "migrate" service before the API and the importer start.
 #   docker compose up --build        web on http://localhost:8080, API on http://localhost:3333
 #   docker compose down -v           also wipes the database volume (the init scripts run again next up)
-# Optional secrets (Resend, Jira/monday OAuth, ...) come from api/.env when it exists; the database,
+# Optional secrets (Resend, Jira/HubSpot OAuth, ...) come from api/.env when it exists; the database,
 # host/port and CORS settings below always win over it.
 
 services:

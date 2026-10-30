@@ -40,6 +40,12 @@ const SECTION_ALIASES: Record<string, string> = {
   integrations: "integracoes",
   integration: "integracoes",
 
+  // clientes
+  clientes: "clientes",
+  cliente: "clientes",
+  customers: "clientes",
+  customer: "clientes",
+
   // public pages
   login: "login",
   entrar: "login",

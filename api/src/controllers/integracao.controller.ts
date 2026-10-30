@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import BaseController from "./base.controller";
 import LoggerInterface from "../interfaces/logger_interfaces/logger_interface.interface";
 import IntegracaoService from "../services/integracao.service";
-import MondayService from "../services/monday.service";
+import HubspotService from "../services/hubspot.service";
 import IntegracaoEnviosRepository from "../repositories/integracao_envios.repository";
 import IntegracaoEnvioWorker from "../queues/integracao_envios.worker";
 import { ENVIO_QUEUES, MAX_ATTEMPTS } from "../queues/integracao_envios.jobs";
@@ -14,7 +14,7 @@ const isProvider = (value: string): value is Provider => value in ENVIO_QUEUES;
 class IntegracaoController extends BaseController {
   constructor(
     private integracaoService: IntegracaoService,
-    private mondayService: MondayService,
+    private hubspotService: HubspotService,
     private envios: IntegracaoEnviosRepository,
     private envioWorker: IntegracaoEnvioWorker,
     logger: LoggerInterface,
@@ -64,30 +64,29 @@ class IntegracaoController extends BaseController {
     return res.status(201).json(result.value);
   };
 
-  // ---- monday.com ----
+  // ---- HubSpot ----
 
-  // the boards to pick from, plus the auditoria fields that can be mapped to their columns
-  mondayBoards = async (req: Request, res: Response, next: NextFunction) => {
-    const result = await this.mondayService.listBoards();
+  hubspotPipelines = async (req: Request, res: Response, next: NextFunction) => {
+    const result = await this.hubspotService.listPipelines();
     if (result.isLeft()) return this.fail(req, next, result.value);
     return res.status(200).json({ data: result.value });
   };
 
-  saveMondayConfig = async (req: Request, res: Response, next: NextFunction) => {
-    const result = await this.mondayService.saveConfig(req.body);
+  saveHubspotConfig = async (req: Request, res: Response, next: NextFunction) => {
+    const result = await this.hubspotService.saveConfig(req.body);
     if (result.isLeft()) return this.fail(req, next, result.value);
     return res.status(200).json({ data: result.value });
   };
 
-  mondayTestItem = async (req: Request, res: Response, next: NextFunction) => {
-    const result = await this.mondayService.createTestItem(req.user!.nome);
+  hubspotTestTicket = async (req: Request, res: Response, next: NextFunction) => {
+    const result = await this.hubspotService.createTestTicket(req.user!.nome);
     if (result.isLeft()) return this.fail(req, next, result.value);
     return res.status(201).json(result.value);
   };
 
-  // ---- issues/items of new auditorias ----
+  // ---- issues/tickets of new auditorias ----
 
-  // an auditoria's issues/items in every integration (one per categoria): any signed-in usuario
+  // an auditoria's issues/tickets in every integration (one per categoria): any signed-in usuario
   enviosForAuditoria = async (req: Request, res: Response) => {
     return res.status(200).json({ data: await this.envios.listForAuditoria(req.params.auditoriaId as string) });
   };

@@ -1,7 +1,7 @@
-import type { QueuedEnvio } from "../repositories/integracao_envios.repository";
+import type { QueuedEnvio, ResumoLote } from "../repositories/integracao_envios.repository";
 
-// the issue/item for one (auditoria, categoria) row: title, description paragraphs and labels.
-// Jira uses all three; monday uses the title as the item name and the paragraphs as its update.
+// the issue/ticket for one (auditoria, categoria) row: title, description paragraphs and labels.
+// Jira uses all three; HubSpot uses the title as the subject and the paragraphs as the description.
 
 const acaoLabels: Record<string, string> = { Criacao: "Criação", Alteracao: "Alteração", Delecao: "Deleção" };
 
@@ -16,10 +16,37 @@ export const categoriaLabel = (nome: string) =>
 
 const money = (value: string | null) => (value === null ? "—" : `R$ ${Number(value).toFixed(2).replace(".", ",")}`);
 
+const numero = (value: number) => value.toLocaleString("pt-BR");
+
+// a whole lote in one categoria: the counts only, so a big import doesn't flood the project
+function resumoParagraphs(resumo: ResumoLote) {
+  const linhas: [string, number][] = [
+    ["Aumentos de preço", resumo.aumentos],
+    ["Reduções de preço", resumo.reducoes],
+    ["Alterações de ICMS", resumo.icms],
+    ["Outras alterações", resumo.outras],
+  ];
+  return linhas.filter(([, quantidade]) => quantidade > 0).map(([rotulo, quantidade]) => `${rotulo}: ${numero(quantidade)}`);
+}
+
 export function buildAuditoriaIssue(item: QueuedEnvio) {
   const acao = acaoLabels[item.acao] ?? item.acao;
   const isCategoriaChange = item.nomeDoProduto?.startsWith("Categoria:") ?? false;
   const quando = new Date(item.dataDeAudicao).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  if (item.resumo) {
+    return {
+      summary: `[Auditoria] ${item.categoriaNome} — ${numero(item.resumo.total)} produtos alterados`,
+      paragraphs: [
+        `Data: ${quando}`,
+        `Auditor: ${item.auditor ?? "—"}`,
+        `Categoria: ${item.categoriaNome}`,
+        `Produtos alterados: ${numero(item.resumo.total)}`,
+        ...resumoParagraphs(item.resumo),
+        "Um produto pode aparecer em mais de uma linha. O detalhe de cada produto está nas auditorias do ERP.",
+      ],
+      labels: ["erp-auditoria", categoriaLabel(item.categoriaNome)],
+    };
+  }
   const summary = isCategoriaChange
     ? `[Auditoria] ${acao} da categoria ${item.categoriaNome}`
     : `[Auditoria] ${acao} — ${item.categoriaNome} — ${item.produtos || item.nomeDoProduto || "produto"}`;

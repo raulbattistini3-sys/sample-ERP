@@ -22,6 +22,7 @@ import { AuditoriaDetailPage } from "../features/auditoria/pages/AuditoriaDetail
 import { AuditoriaFormPage } from "../features/auditoria/pages/AuditoriaFormPage";
 
 import { IntegracoesPage } from "../features/integracoes/pages/IntegracoesPage";
+import { ClienteListPage } from "../features/clientes/pages/ClienteListPage";
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -55,6 +56,7 @@ export const router = createBrowserRouter([
           { path: "auditoria/:id", element: <AuditoriaDetailPage /> },
 
           { path: "integracoes", element: <IntegracoesPage /> },
+          { path: "clientes", element: <ClienteListPage /> },
         ],
       },
     ],

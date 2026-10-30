@@ -2,7 +2,7 @@
 
 **English** · [Português](README.pt-BR.md)
 
-Inventory and audit ERP: products, categorias, usuarios and auditorias, with optional Jira / monday.com integrations.
+Inventory and audit ERP: products, categorias, usuarios and auditorias, with optional Jira / HubSpot integrations.
 
 | Folder | What it is |
 | --- | --- |
@@ -45,7 +45,7 @@ docker compose up --build
 On its first start, Postgres runs the scripts in `docker/postgres/init/`, so the database comes up with every table and the categorias already created. Data is kept in the `db-data` volume.
 
 - Is port 5432 already in use? Start it with `DB_PORT=5433 docker compose up --build`.
-- Optional settings (Resend emails, Jira / monday.com OAuth) are read from `api/.env` when that file exists. See [Environment variables](#environment-variables).
+- Optional settings (Resend emails, Jira / HubSpot OAuth) are read from `api/.env` when that file exists. See [Environment variables](#environment-variables).
 - Start over with an empty database: `docker compose down -v`. The init scripts run again on the next `up`.
 - The init scripts only run on an empty volume, so on every `up` the one-shot `migrate` service applies any [migrations](#database-migrations) the database hasn't seen before the API and the importer start. A `db-data` volume from an older checkout catches up by itself; if a migration fails (for example 0012 finding repeated SKUs), its log says why and the API and importer wait for it.
 - Port 50051 already in use? Start it with `IMPORTER_PORT=50052 docker compose up --build`.
@@ -184,7 +184,7 @@ The API reads the role on every request. Log out and back in so the web app show
 | `CORS_ORIGINS` | no | Web origins allowed to call the API, comma-separated (default `http://localhost:5173`) |
 | `WEB_URL` | no | Web address used in password reset links |
 | `RESEND_API_KEY`, `EMAIL_FROM` | no | "Forgot password" emails through [Resend](https://resend.com) |
-| `INTEGRATIONS_ENCRYPTION_KEY`, `API_PUBLIC_URL`, `JIRA_*`, `MONDAY_*` | no | Jira / monday.com integrations |
+| `INTEGRATIONS_ENCRYPTION_KEY`, `API_PUBLIC_URL`, `JIRA_*`, `HUBSPOT_*` | no | Jira / HubSpot integrations |
 | `IMPORTER_GRPC_URL` | no | Spreadsheet importer address (`host:port`). Empty: product imports run inside the API |
 | `VITE_API_URL` (`web/.env`) | yes | API address as the browser reaches it |
 

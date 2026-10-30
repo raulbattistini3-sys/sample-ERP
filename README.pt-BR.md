@@ -2,7 +2,7 @@
 
 [English](README.md) · **Português**
 
-ERP de estoque e auditoria: produtos, categorias, usuários e auditorias, com integrações opcionais com Jira / monday.com.
+ERP de estoque e auditoria: produtos, categorias, usuários e auditorias, com integrações opcionais com Jira / HubSpot.
 
 | Pasta | O que é |
 | --- | --- |
@@ -45,7 +45,7 @@ docker compose up --build
 Na primeira vez que sobe, o Postgres executa os scripts de `docker/postgres/init/`, então o banco já vem com todas as tabelas e as categorias criadas. Os dados ficam no volume `db-data`.
 
 - A porta 5432 já está em uso? Suba com `DB_PORT=5433 docker compose up --build`.
-- Configurações opcionais (e-mails pelo Resend, OAuth do Jira / monday.com) são lidas de `api/.env` quando esse arquivo existe. Veja [Variáveis de ambiente](#variáveis-de-ambiente).
+- Configurações opcionais (e-mails pelo Resend, OAuth do Jira / HubSpot) são lidas de `api/.env` quando esse arquivo existe. Veja [Variáveis de ambiente](#variáveis-de-ambiente).
 - Recomeçar com o banco vazio: `docker compose down -v`. Os scripts de init rodam de novo no próximo `up`.
 - Os scripts de init só rodam num volume vazio, então a cada `up` o serviço `migrate` (que roda uma vez e termina) aplica as [migrations](#migrations-do-banco) que o banco ainda não tem antes de a API e o importador subirem. Um volume `db-data` de um checkout antigo se atualiza sozinho; se uma migration falhar (por exemplo a 0012 encontrando SKUs repetidos), o log dela diz o motivo e a API e o importador esperam por ela.
 - A porta 50051 já está em uso? Suba com `IMPORTER_PORT=50052 docker compose up --build`.
@@ -184,7 +184,7 @@ O `api/.env.example` documenta todas as variáveis. Estas são as que importam p
 | `CORS_ORIGINS` | não | Origens web que podem chamar a API, separadas por vírgula (padrão `http://localhost:5173`) |
 | `WEB_URL` | não | Endereço da web usado nos links de redefinição de senha |
 | `RESEND_API_KEY`, `EMAIL_FROM` | não | E-mails de "Esqueceu a senha?" pelo [Resend](https://resend.com) |
-| `INTEGRATIONS_ENCRYPTION_KEY`, `API_PUBLIC_URL`, `JIRA_*`, `MONDAY_*` | não | Integrações com Jira / monday.com |
+| `INTEGRATIONS_ENCRYPTION_KEY`, `API_PUBLIC_URL`, `JIRA_*`, `HUBSPOT_*` | não | Integrações com Jira / HubSpot |
 | `IMPORTER_GRPC_URL` | não | Endereço do importador de planilhas (`host:porta`). Vazio: a importação de produtos roda dentro da API |
 | `VITE_API_URL` (`web/.env`) | sim | Endereço da API como o navegador a acessa |
 

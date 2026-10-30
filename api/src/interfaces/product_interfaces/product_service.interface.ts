@@ -13,7 +13,11 @@ import {
 } from "../../dtos/product_dtos/get_products.dto";
 import { PayloadUpdateProductDto } from "../../dtos/product_dtos/update_product.dto";
 import { Either } from "../../globals/errors/left_right_either.error";
-import { ImportProductsResultDto } from "../../dtos/product_dtos/import_products.dto";
+import {
+   ImportProductsResultDto,
+   ImportRowsOptions,
+   ValidatedImportRow,
+} from "../../dtos/product_dtos/import_products.dto";
 import { BaseAppError } from "../../errors/global_error.error";
 
 interface IProductService {
@@ -51,6 +55,11 @@ interface IProductService {
    ) => Promise<Either<BaseAppError, null>>;
    // payload: { rows: [{ linha, sku, name, categoria: { nome }, ... }] }; errors non-empty = nothing saved
    importProducts: (payload: unknown, usuarioId: string) => Promise<Either<BaseAppError, ImportProductsResultDto>>;
+   importValidated: (
+      rows: ValidatedImportRow[],
+      usuarioId: string,
+      options?: ImportRowsOptions,
+   ) => Promise<Either<BaseAppError, ImportProductsResultDto>>;
    deleteProduct: (id: string) => Promise<Either<BaseAppError, null>>;
    deactivateProduct: (id: string, usuarioId: string) => Promise<Either<BaseAppError, null>>;
 }

@@ -31,7 +31,10 @@ import IProductRepository from "../interfaces/product_interfaces/product_reposit
 import {
    ImportProductsResultDto,
    ImportRowErrorDto,
+   ImportRowPayload,
+   ImportRowsOptions,
    ProductImportWrites,
+   ValidatedImportRow,
 } from "../dtos/product_dtos/import_products.dto";
 import ICategoriaRepository from "../interfaces/category_interfaces/categoria_repository.interface";
 import { IProductValidator } from "../interfaces/product_interfaces/produto_validator.interface";
@@ -278,41 +281,56 @@ class ProductService implements IProductService {
          return left(new ServerError("500", true, "internal server error", error));
       }
    }
-   // Spreadsheet import (ADM/SU). Rows were read in column order by the web; here every row is
-   // validated again, SKUs decide create vs update (an update also reactivates the product),
-   // and nothing is written unless every row is valid.
+   // Spreadsheet import (ADM/SU) of the rows the web already read in column order: every row is
+   // validated again.
    async importProducts(
       payload: unknown,
       usuarioId: string,
    ): Promise<Either<BaseAppError, ImportProductsResultDto>> {
-      try {
-         const envelope = this.productValidator.validateImportPayload(payload);
-         if (envelope.isLeft()) {
-            return left(envelope.value);
-         }
-         const rows = (payload as { rows: ({ linha: number } & Record<string, unknown>)[] }).rows;
+      const envelope = this.productValidator.validateImportPayload(payload);
+      if (envelope.isLeft()) {
+         return left(envelope.value);
+      }
+      const rows = (payload as { rows: ImportRowPayload[] }).rows;
 
-         const errors = new Map<number, string[]>();
+      const errors = new Map<number, string[]>();
+      const addError = (linha: number, message: string) =>
+         errors.set(linha, [...(errors.get(linha) ?? []), message]);
+
+      const parsed: ValidatedImportRow[] = [];
+      const firstLineBySku = new Map<string, number>();
+      for (const row of rows) {
+         const result = this.productValidator.parseImportRow(row);
+         if (result.isLeft()) {
+            result.value.forEach((message) => addError(row.linha, message));
+            continue;
+         }
+         const sku = result.value.sku;
+         const firstLine = firstLineBySku.get(sku);
+         if (firstLine !== undefined) {
+            addError(row.linha, `SKU ${sku} repetido (já está na linha ${firstLine})`);
+            continue;
+         }
+         firstLineBySku.set(sku, row.linha);
+         parsed.push({ linha: row.linha, dto: result.value });
+      }
+
+      return this.importValidated(parsed, usuarioId, {
+         rowErrors: [...errors].map(([linha, mensagens]) => ({ linha, mensagens })),
+      });
+   }
+
+   // Rows already validated on their own, with unique SKUs: SKUs decide create vs update (an update
+   // also reactivates the product), and nothing is written unless every row is fine, rowErrors included.
+   async importValidated(
+      parsed: ValidatedImportRow[],
+      usuarioId: string,
+      { rowErrors = [], onSaved }: ImportRowsOptions = {},
+   ): Promise<Either<BaseAppError, ImportProductsResultDto>> {
+      try {
+         const errors = new Map<number, string[]>(rowErrors.map(({ linha, mensagens }) => [linha, mensagens]));
          const addError = (linha: number, message: string) =>
             errors.set(linha, [...(errors.get(linha) ?? []), message]);
-
-         const parsed: { linha: number; dto: CreateProductDto }[] = [];
-         const firstLineBySku = new Map<string, number>();
-         for (const row of rows) {
-            const result = this.productValidator.parseImportRow(row);
-            if (result.isLeft()) {
-               result.value.forEach((message) => addError(row.linha, message));
-               continue;
-            }
-            const sku = result.value.sku;
-            const firstLine = firstLineBySku.get(sku);
-            if (firstLine !== undefined) {
-               addError(row.linha, `SKU ${sku} repetido (já está na linha ${firstLine})`);
-               continue;
-            }
-            firstLineBySku.set(sku, row.linha);
-            parsed.push({ linha: row.linha, dto: result.value });
-         }
 
          const categoriasData = await this.categoriaRepository.getCategorias();
          if (categoriasData.isLeft()) {
@@ -322,7 +340,7 @@ class ProductService implements IProductService {
             categoriasData.value.filter((c) => c.ativo).map((c) => [c.nome, c.id]),
          );
 
-         const existingData = await this.productRepository.getProductsBySkus([...firstLineBySku.keys()]);
+         const existingData = await this.productRepository.getProductsBySkus(parsed.map(({ dto }) => dto.sku));
          if (existingData.isLeft()) {
             return left(new ServerError("500", true, "internal server error", existingData.value));
          }
@@ -359,14 +377,15 @@ class ProductService implements IProductService {
             return right({ created: 0, updated: 0, errors: report });
          }
 
-         const saved = await this.productRepository.importProducts(writes, usuarioId);
+         const counts = { created: writes.creates.length, updated: writes.updates.length };
+         const saved = await this.productRepository.importProducts(writes, usuarioId, onSaved && ((tx) => onSaved(tx, counts)));
          if (saved.isLeft()) {
             if (saved.value instanceof ValidationError) {
                return left(saved.value);
             }
             return left(new ServerError("500", true, "internal server error", saved.value));
          }
-         return right({ created: writes.creates.length, updated: writes.updates.length, errors: [] });
+         return right({ ...counts, errors: [] });
       } catch (error) {
          if (error instanceof ValidationError) {
             return left(error);

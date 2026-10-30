@@ -10,8 +10,6 @@ import { ValidationError } from "../errors/client_errors/four_xx.error";
 import { ServerError } from "../errors/server_errors/five_xx.error";
 import { Either, left, right } from "../globals/errors/left_right_either.error";
 import { decryptSecret, encryptionConfigured, encryptSecret } from "../utils/helpers/crypto.util";
-import { mondayRequest } from "../integrations/monday/monday.client";
-import { MeQuery } from "../integrations/monday/monday.operations";
 
 export type ProviderConfig = {
   authorizeUrl: string;
@@ -26,7 +24,6 @@ export type IntegracaoOptions = {
   webUrl: string; // where the browser lands after the provider's consent screen
   callbackBaseUrl: string; // this API's public address; the provider redirects to <it>/integracoes/<provider>/callback
   atlassianApiUrl: string; // https://api.atlassian.com
-  mondayApiUrl: string; // https://api.monday.com/v2
   fetch: typeof fetch;
 };
 
@@ -41,8 +38,7 @@ export type IntegracaoStatus = {
   conectadoEm?: string;
 };
 
-// only providers with an adapter here can be connected; monday's OAuth config is ready for when it gets one
-const SUPPORTED: Record<string, string> = { jira: "Jira (Atlassian)", monday: "monday.com" };
+const SUPPORTED: Record<string, string> = { jira: "Jira (Atlassian)", hubspot: "HubSpot" };
 const STATE_TTL_MINUTES = 10;
 const REFRESH_MARGIN_SECONDS = 60;
 
@@ -253,32 +249,39 @@ class IntegracaoService {
     return right({ key, url: `${String(row.contaExterna.siteUrl ?? "").replace(/\/$/, "")}/browse/${key}` });
   }
 
-  // GET/POST to the connected Jira site with a valid access token: refreshed first when about to expire,
-  // and once more if Jira still answers 401 (e.g. revoked). A refused refresh means: connect again.
+  // A call with a valid access token: refreshed first when about to expire, and once more if the provider
+  // still answers 401 (e.g. revoked). null = the refresh was refused: connect again.
+  async authorizedFetch(connection: IntegracaoRow, url: string, init: RequestInit = {}): Promise<Response | null> {
+    let row: IntegracaoRow | null = connection;
+    if (row.expiraEm !== null && row.expiraEm <= Date.now() + REFRESH_MARGIN_SECONDS * 1000) {
+      row = await this.refreshTokens(row.provider);
+      if (!row) return null;
+    }
+    const call = (current: IntegracaoRow) =>
+      this.options.fetch(url, {
+        ...init,
+        headers: {
+          Accept: "application/json",
+          ...(init.body ? { "Content-Type": "application/json" } : {}),
+          Authorization: `Bearer ${decryptSecret(current.accessTokenCifrado)}`,
+        },
+      });
+    let response = await call(row);
+    if (response.status === 401) {
+      row = await this.refreshTokens(row.provider, true);
+      if (!row) return null;
+      response = await call(row);
+    }
+    return response.status === 401 ? null : response;
+  }
+
   private async jiraRequest(path: string, init: RequestInit = {}): Promise<Either<BaseAppError, unknown>> {
-    let row = await this.repository.find("jira");
+    const row = await this.repository.find("jira");
     if (!row) return left(notConnected());
     try {
-      if (row.expiraEm !== null && row.expiraEm <= Date.now() + REFRESH_MARGIN_SECONDS * 1000) {
-        row = await this.refreshTokens("jira");
-        if (!row) return left(reconnect());
-      }
-      const call = (current: IntegracaoRow) =>
-        this.options.fetch(`${this.options.atlassianApiUrl}/ex/jira/${current.contaExterna.cloudId}${path}`, {
-          ...init,
-          headers: {
-            Accept: "application/json",
-            ...(init.body ? { "Content-Type": "application/json" } : {}),
-            Authorization: `Bearer ${decryptSecret(current.accessTokenCifrado)}`,
-          },
-        });
-      let response = await call(row);
-      if (response.status === 401) {
-        row = await this.refreshTokens("jira", true);
-        if (!row) return left(reconnect());
-        response = await call(row);
-      }
-      if (response.status === 401) return left(reconnect());
+      const url = `${this.options.atlassianApiUrl}/ex/jira/${row.contaExterna.cloudId}${path}`;
+      const response = await this.authorizedFetch(row, url, init);
+      if (!response) return left(reconnect());
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
         // Jira's own messages are useful to an admin (e.g. a required field in their project)
@@ -304,18 +307,17 @@ class IntegracaoService {
     });
   }
 
-  // POST to the provider's token endpoint; null when it refuses (bad code, revoked refresh token...)
   // the account the token belongs to; `chave` identifies it, so reconnecting to the same account keeps the config
   private async connectedAccount(
     provider: Provider,
     accessToken: string,
   ): Promise<{ conta: Record<string, unknown>; chave: string } | { erro: string }> {
-    if (provider === "monday") {
-      const { me } = await mondayRequest({ apiUrl: this.options.mondayApiUrl, token: accessToken, fetch: this.options.fetch }, MeQuery, {});
-      if (!me) return { erro: "provedor" };
+    if (provider === "hubspot") {
+      const account = await this.hubspotAccount(accessToken);
+      if (!account) return { erro: "provedor" };
       return {
-        conta: { accountId: me.account.id, accountName: me.account.name, accountSlug: me.account.slug, userName: me.name, siteUrl: `https://${me.account.slug}.monday.com` },
-        chave: "accountId",
+        conta: { hubId: account.hub_id, siteName: account.hub_domain, siteUrl: `https://app.hubspot.com/contacts/${account.hub_id}` },
+        chave: "hubId",
       };
     }
     // Jira: which site(s) the user granted; the API calls go to api.atlassian.com/ex/jira/<cloudId>
@@ -326,28 +328,40 @@ class IntegracaoService {
     return { conta: { cloudId: site.id, siteName: site.name, siteUrl: site.url, sites: sites.length }, chave: "cloudId" };
   }
 
-  // Atlassian takes JSON with grant_type; monday takes a form post of client_id, client_secret, code and
-  // redirect_uri (its tokens don't expire, so there is no refresh grant)
+  // POST to the provider's token endpoint; null when it refuses (bad code, revoked refresh token...).
+  // Atlassian takes JSON; HubSpot takes a form post
   private async requestTokens(provider: Provider, params: Record<string, string>) {
     const config = this.providers[provider];
     const credentials = { client_id: config.clientId ?? "", client_secret: config.clientSecret ?? "" };
-    const { grant_type, ...withoutGrant } = params;
     const response = await this.options.fetch(config.tokenUrl, {
       method: "POST",
-      headers:
-        provider === "monday"
-          ? { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" }
-          : { "Content-Type": "application/json", Accept: "application/json" },
-      body:
-        provider === "monday"
-          ? new URLSearchParams({ ...withoutGrant, ...credentials }).toString()
-          : JSON.stringify({ grant_type, ...withoutGrant, ...credentials }),
+      headers: {
+        "Content-Type": provider === "hubspot" ? "application/x-www-form-urlencoded" : "application/json",
+        Accept: "application/json",
+      },
+      body: provider === "hubspot" ? new URLSearchParams({ ...params, ...credentials }).toString() : JSON.stringify({ ...params, ...credentials }),
     });
     if (!response.ok) {
       this.logError("token request refused", provider, { status: response.status, grantType: params.grant_type });
       return null;
     }
     return (await response.json()) as { access_token: string; refresh_token?: string; expires_in?: number; scope?: string };
+  }
+
+  private async hubspotAccount(accessToken: string) {
+    const config = this.providers.hubspot;
+    const response = await this.options.fetch(`${config.tokenUrl}/introspect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+      body: new URLSearchParams({
+        client_id: config.clientId ?? "",
+        client_secret: config.clientSecret ?? "",
+        token_type_hint: "access_token",
+        token: accessToken,
+      }).toString(),
+    });
+    if (!response.ok) return null;
+    return (await response.json()) as { hub_id: number; hub_domain?: string };
   }
 
   private async jiraAccessibleResources(accessToken: string) {

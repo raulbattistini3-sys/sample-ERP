@@ -1,9 +1,8 @@
 import { ExternalLink } from "lucide-react";
 import { FormCard } from "../../../components/ui/PageState";
-import { ProviderId } from "../api/integracoes.api";
 import { useAuditoriaEnvios } from "../hooks/useIntegracoes";
 
-const providerLabels: Record<ProviderId, string> = { jira: "Jira", monday: "monday.com" };
+const providerLabels: Record<string, string> = { jira: "Jira", hubspot: "HubSpot" };
 
 const statusText = {
   pendente: "Na fila",
@@ -12,7 +11,7 @@ const statusText = {
   cancelada: "Cancelada (auditoria removida)",
 } as const;
 
-// what the integrations created for one auditoria (a Jira issue / monday item per categoria); hidden
+// what the integrations created for one auditoria (a Jira issue / HubSpot ticket per categoria); hidden
 // when there's nothing
 export function AuditoriaIntegracoes({ auditoriaId }: { auditoriaId: string }) {
   const { data } = useAuditoriaEnvios(auditoriaId);
@@ -25,11 +24,11 @@ export function AuditoriaIntegracoes({ auditoriaId }: { auditoriaId: string }) {
         {data.map((envio) => (
           <li key={`${envio.provider}-${envio.categoriaNome}`} className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-muted">
-              {providerLabels[envio.provider]} · {envio.categoriaNome}
+              {providerLabels[envio.provider] ?? envio.provider} · {envio.categoriaNome}
             </span>
             {envio.status === "enviada" && envio.externalUrl ? (
               <a href={envio.externalUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">
-                {envio.provider === "jira" ? envio.externalId : "Abrir item"}
+                {envio.provider === "jira" ? envio.externalId : "Abrir"}
                 <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
               </a>
             ) : (
