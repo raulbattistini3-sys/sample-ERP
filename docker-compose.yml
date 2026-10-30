@@ -1,0 +1,59 @@
+# Local stack: raw Postgres + API + web.
+#   docker compose up --build        web on http://localhost:8080, API on http://localhost:3333
+#   docker compose down -v           also wipes the database volume (the init scripts run again next up)
+# Optional secrets (Resend, Jira/monday OAuth, ...) come from api/.env when it exists; the database,
+# host/port and CORS settings below always win over it.
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: sample_erp
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # run once, on an empty volume: schema, then categorias + drizzle's migration log
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sample_erp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./api
+    env_file:
+      - path: ./api/.env
+        required: false
+    environment:
+      # the app's pool asks for SSL; sslmode=disable in the URL overrides that (plain Postgres has no TLS)
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/sample_erp?sslmode=disable
+      APP_HOST: 0.0.0.0
+      PORT: 3333
+      CORS_ORIGINS: http://localhost:8080,http://localhost:5173
+      WEB_URL: http://localhost:8080
+      API_PUBLIC_URL: http://localhost:3333
+      JWT_SECRET: ${JWT_SECRET:-local-docker-only-change-me}
+    ports:
+      - "3333:3333"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      args:
+        # the browser calls the API, so this is the host-mapped address, not http://api:3333
+        VITE_API_URL: http://localhost:3333
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+volumes:
+  db-data:
