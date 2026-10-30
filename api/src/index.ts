@@ -4,7 +4,7 @@ import Config from "./configs/app_config";
 import BaseErrorMiddleware from "./middlewares/global_middleware.middleware";
 import AppLogger from "./utils/logger/pino_logger.util";
 import { integracaoEnvioWorker } from "./routes/integracao.routes";
-import { importadorClient } from "./routes/product.routes";
+import { importacaoCluster, importadorClient } from "./routes/product.routes";
 
 const config = Config.getInstance();
 
@@ -25,11 +25,13 @@ app.listen(port, host, async (error?: Error) => {
    console.log(`Server listening on host: ${host} and port: ${port}`);
    // pg-boss worker that creates the Jira issues / HubSpot tickets of new auditorias
    void integracaoEnvioWorker.start();
+   // the processes that run the imports queued in the importacoes table, when no Go importer is configured
+   importacaoCluster?.start();
 });
 
 // let running jobs finish (up to 20s) and close pg-boss's connections, then exit
 const shutdown = async () => {
-   await integracaoEnvioWorker.stop();
+   await Promise.all([integracaoEnvioWorker.stop(), importacaoCluster?.stop()]);
    importadorClient.close();
    process.exit(0);
 };

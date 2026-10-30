@@ -20,8 +20,8 @@ const PREVIEW_ROWS = 20;
 // past this, a queued import gets a hint that the importer may be busy or down
 const SLOW_IMPORT_MS = 30_000;
 
-// How an import ended, whichever way it ran: through the Go importer (the file is uploaded and the
-// result polled) or, when no importer answers (503), through POST /products/import with the rows read here.
+// How an import ended, whichever way it ran: through the importer (the file is uploaded and the result
+// polled) or, when the Go importer doesn't answer (503), through POST /products/import with the rows read here.
 type Outcome =
   | { kind: "concluida"; criados: number; atualizados: number }
   | { kind: "rejeitada"; erros: ImportRowError[]; mensagem?: string }

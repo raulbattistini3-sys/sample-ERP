@@ -8,12 +8,6 @@ import { ServerError } from "../../errors/server_errors/five_xx.error";
 import { Either, left, right } from "../../globals/errors/left_right_either.error";
 import { Importacao, ImportadorServiceClient, StatusImportacao } from "../../gen/importador/v1/importador";
 
-// Client for the Go importer over gRPC (stubs generated from proto/importador/v1 by `buf generate`).
-// The importer only listens on the private network and trusts its caller, so the connection is plaintext
-// and authorization (ADM/SU) happens here, before any call.
-//
-// IMPORTER_GRPC_URL is host:port (importer:50051 in docker compose). Without it every call answers 503,
-// which the web takes as "use the in-API import instead".
 
 // both calls are quick (queue a row, read a row); the import itself runs in the importer's workers
 const DEADLINE_MS = 10_000;
@@ -60,11 +54,11 @@ const toAppError = (error: ServiceError): BaseAppError => {
 const deadline = () => ({ deadline: new Date(Date.now() + DEADLINE_MS) });
 
 class GrpcImportadorClient implements IImportadorClient {
-   private readonly client: ImportadorServiceClient | null;
+   private readonly client: ImportadorServiceClient;
 
-   constructor(address = process.env.IMPORTER_GRPC_URL) {
+   constructor(address: string) {
       // grpc-js connects lazily, so a configured but stopped importer doesn't stop the API from starting
-      this.client = address ? new ImportadorServiceClient(address, credentials.createInsecure()) : null;
+      this.client = new ImportadorServiceClient(address, credentials.createInsecure());
    }
 
    iniciarImportacao({ planilha, nomeArquivo, usuarioId }: IniciarImportacaoDto): Promise<Either<BaseAppError, ImportacaoDto>> {
@@ -82,20 +76,14 @@ class GrpcImportadorClient implements IImportadorClient {
    }
 
    close() {
-      this.client?.close();
+      this.client.close();
    }
 
    private call(
       run: (client: ImportadorServiceClient, done: (error: ServiceError | null, importacao?: Importacao) => void) => void,
    ): Promise<Either<BaseAppError, ImportacaoDto>> {
-      const client = this.client;
-      if (!client) {
-         return Promise.resolve(
-            left(new ServerError("503", true, "O importador de planilhas não está configurado (IMPORTER_GRPC_URL).")),
-         );
-      }
       return new Promise((resolve) =>
-         run(client, (error, importacao) => {
+         run(this.client, (error, importacao) => {
             if (error) return resolve(left(toAppError(error)));
             if (!importacao) return resolve(left(new ServerError("500", true, "O importador respondeu sem a importação")));
             resolve(right(toDto(importacao)));

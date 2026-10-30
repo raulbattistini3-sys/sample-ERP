@@ -104,7 +104,7 @@ Open http://localhost:5173 and [create the first user](#create-the-first-user).
 
 ### 2.4 Spreadsheet importer (optional)
 
-Without it, product imports run inside the API (`POST /products/import`). With it, the API hands the uploaded file to the importer, which reads, checks and saves it in the background. In another terminal:
+Without it, the API runs product imports itself, in the background. With it, the API hands the uploaded file to the importer, which does that work in its own process. In another terminal:
 
 ```bash
 cd importer
@@ -185,7 +185,7 @@ The API reads the role on every request. Log out and back in so the web app show
 | `WEB_URL` | no | Web address used in password reset links |
 | `RESEND_API_KEY`, `EMAIL_FROM` | no | "Forgot password" emails through [Resend](https://resend.com) |
 | `INTEGRATIONS_ENCRYPTION_KEY`, `API_PUBLIC_URL`, `JIRA_*`, `HUBSPOT_*` | no | Jira / HubSpot integrations |
-| `IMPORTER_GRPC_URL` | no | Spreadsheet importer address (`host:port`). Empty: product imports run inside the API |
+| `IMPORTER_GRPC_URL` | no | Go spreadsheet importer address (`host:port`). Empty: the API runs product imports itself |
 | `VITE_API_URL` (`web/.env`) | yes | API address as the browser reaches it |
 
 ## Database migrations

@@ -104,7 +104,7 @@ Abra http://localhost:5173 e [crie o primeiro usuário](#criar-o-primeiro-usuár
 
 ### 2.4 Importador de planilhas (opcional)
 
-Sem ele, a importação de produtos roda dentro da API (`POST /products/import`). Com ele, a API entrega o arquivo enviado ao importador, que o lê, valida e salva em segundo plano. Em outro terminal:
+Sem ele, a própria API roda a importação de produtos em segundo plano. Com ele, a API entrega o arquivo enviado ao importador, que faz esse trabalho em um processo próprio. Em outro terminal:
 
 ```bash
 cd importer
@@ -185,7 +185,7 @@ O `api/.env.example` documenta todas as variáveis. Estas são as que importam p
 | `WEB_URL` | não | Endereço da web usado nos links de redefinição de senha |
 | `RESEND_API_KEY`, `EMAIL_FROM` | não | E-mails de "Esqueceu a senha?" pelo [Resend](https://resend.com) |
 | `INTEGRATIONS_ENCRYPTION_KEY`, `API_PUBLIC_URL`, `JIRA_*`, `HUBSPOT_*` | não | Integrações com Jira / HubSpot |
-| `IMPORTER_GRPC_URL` | não | Endereço do importador de planilhas (`host:porta`). Vazio: a importação de produtos roda dentro da API |
+| `IMPORTER_GRPC_URL` | não | Endereço do importador de planilhas em Go (`host:porta`). Vazio: a própria API roda a importação de produtos |
 | `VITE_API_URL` (`web/.env`) | sim | Endereço da API como o navegador a acessa |
 
 ## Migrations do banco

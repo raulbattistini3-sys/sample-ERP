@@ -16,9 +16,9 @@ export const importProducts = (rows: ImportRow[]) =>
   apiClient
     .post<ImportProductsResult>("/products/import", { rows }, { validateStatus: (status) => status === 200 || status === 422 })
     .then((r) => r.data);
-// Imports through the Go importer (ADM/SU): the file goes as chosen and is read, checked and saved there.
-// POST answers 202 right away; the import is then polled until it reaches a final status. A 503 means no
-// importer is configured or reachable: import the rows with importProducts instead.
+// Imports through the importer (ADM/SU): the file goes as chosen and is read, checked and saved on the server.
+// POST answers 202 right away; the import is then polled until it reaches a final status. A 503 means the
+// Go importer isn't reachable: import the rows with importProducts instead.
 export type ProductImportStatus = "pendente" | "processando" | "concluida" | "rejeitada" | "falhou";
 export type ProductImport = {
   id: string;
