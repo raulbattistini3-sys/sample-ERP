@@ -23,8 +23,12 @@ const integracaoService = new IntegracaoService(integracaoRepository, providers,
   callbackBaseUrl: (process.env.API_PUBLIC_URL || `http://localhost:${Config.getInstance().getApiConfig().port}`).replace(/\/$/, ""),
   atlassianApiUrl: "https://api.atlassian.com",
   fetch: globalThis.fetch,
+  hubspotServiceKey: process.env.HUBSPOT_SERVICE_KEY || undefined,
 });
-export const hubspotService = new HubspotService(integracaoRepository, integracaoService, { apiUrl: "https://api.hubapi.com" });
+export const hubspotService = new HubspotService(integracaoRepository, integracaoService, {
+  apiUrl: "https://api.hubapi.com",
+  serviceKey: process.env.HUBSPOT_SERVICE_KEY || undefined,
+});
 const envios = new IntegracaoEnviosRepository(db);
 // runs the pg-boss jobs that create the Jira issues / HubSpot tickets of new auditorias; started and
 // stopped by index.ts

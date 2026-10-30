@@ -1,4 +1,4 @@
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, count, eq, sql } from "drizzle-orm";
 import { applyChanges, diffProduct, recordProductChange, recordProductChanges } from "./audit_trail.repository";
 import { DrizzleDB } from "../db/client";
 import { produtos } from "../db/schema/product.schema";
@@ -10,6 +10,7 @@ import { RepositoryError } from "../globals/errors/global_repository_error.error
 import { BaseAppError } from "../errors/global_error.error";
 import { ValidationError } from "../errors/client_errors/four_xx.error";
 import { ProductImportWrites } from "../dtos/product_dtos/import_products.dto";
+import { ProductCursor } from "../dtos/product_dtos/get_products.dto";
 import { pgErrorCode } from "../utils/helpers/pg_error.util";
 
 // ids are generated, so the only unique constraint a write on produtos can break is produtos_sku_key
@@ -48,6 +49,57 @@ class ProductRepository implements IProductRepository {
         .innerJoin(categorias, eq(produtos.categoriaId, categorias.id))
         .where(includeInactive ? undefined : eq(produtos.ativo, true))
         .orderBy(asc(produtos.name));
+      return right(productData);
+    } catch (error) {
+      return left(new RepositoryError("Database error", error));
+    }
+  }
+
+  // one page by position, for what still jumps to a page; the scroll uses getProductsAfter
+  async getProductsPage(limit: number, offset: number, includeInactive = false): Promise<Either<RepositoryError, ProductWithCategoria[]>> {
+    try {
+      const productData = await this.db
+        .select({ produto: produtos, categoria: categorias })
+        .from(produtos)
+        .innerJoin(categorias, eq(produtos.categoriaId, categorias.id))
+        .where(includeInactive ? undefined : eq(produtos.ativo, true))
+        .orderBy(asc(produtos.name), asc(produtos.id))
+        .limit(limit)
+        .offset(offset);
+      return right(productData);
+    } catch (error) {
+      return left(new RepositoryError("Database error", error));
+    }
+  }
+
+  async countProducts(includeInactive = false): Promise<Either<RepositoryError, number>> {
+    try {
+      const [{ total }] = await this.db
+        .select({ total: count() })
+        .from(produtos)
+        .where(includeInactive ? undefined : eq(produtos.ativo, true));
+      return right(total);
+    } catch (error) {
+      return left(new RepositoryError("Database error", error));
+    }
+  }
+
+  // Keyset: continues right after the last row seen, so it costs the same however far down the list is.
+  // id breaks ties between equal names; produtos_name_id_idx serves this order.
+  async getProductsAfter(cursor: ProductCursor | null, limit: number, includeInactive = false): Promise<Either<RepositoryError, ProductWithCategoria[]>> {
+    try {
+      const productData = await this.db
+        .select({ produto: produtos, categoria: categorias })
+        .from(produtos)
+        .innerJoin(categorias, eq(produtos.categoriaId, categorias.id))
+        .where(
+          and(
+            includeInactive ? undefined : eq(produtos.ativo, true),
+            cursor ? sql`(${produtos.name}, ${produtos.id}) > (${cursor.name}, ${cursor.id})` : undefined,
+          ),
+        )
+        .orderBy(asc(produtos.name), asc(produtos.id))
+        .limit(limit);
       return right(productData);
     } catch (error) {
       return left(new RepositoryError("Database error", error));

@@ -1,4 +1,5 @@
 import { ProductWithCategoria } from "../entities/product.entity";
+import { z } from "zod";
 import CategoriaRepository from "../repositories/categoria.repository";
 import ProductRepository from "../repositories/product.repository";
 import IProductService from "../interfaces/product_interfaces/product_service.interface";
@@ -9,6 +10,8 @@ import {
 import {
    ResponseGetProductDto,
    ResponseGetProductsDto,
+   ResponseScrollProductsDto,
+   ProductCursor,
    ResponseFindFilteredProductsDto,
    ResponseFindProductsToDownloadDto,
 } from "../dtos/product_dtos/get_products.dto";
@@ -20,6 +23,7 @@ import { ValidationError } from "../errors/client_errors/four_xx.error";
 import ProdutoValidator from "../validators/produto.validator";
 import CategoriaValidator from "../validators/categoria.validator";
 import paginate from "../utils/helpers/paginate_data.helper";
+import FirstPageCache, { FIRST_PAGE_SIZE } from "../utils/cache/first_page.cache";
 import {
    toNewProductEntity,
    toProductResponse,
@@ -40,7 +44,24 @@ import ICategoriaRepository from "../interfaces/category_interfaces/categoria_re
 import { IProductValidator } from "../interfaces/product_interfaces/produto_validator.interface";
 import { ICategoriaValidator } from "../interfaces/category_interfaces/categoria_validatoria.validator";
 
+const PRIMEIRA_PAGINA_BYTES = 64 * 1024;
+
+const CursorSchema = z.tuple([z.string(), z.string().uuid()]);
+
+const encodeCursor = ({ name, id }: ProductCursor) => Buffer.from(JSON.stringify([name, id])).toString("base64url");
+
+const decodeCursor = (cursor: string): ProductCursor | null => {
+   try {
+      const [name, id] = CursorSchema.parse(JSON.parse(Buffer.from(cursor, "base64url").toString()));
+      return { name, id };
+   } catch {
+      return null;
+   }
+};
+
 class ProductService implements IProductService {
+   private readonly primeiraPagina = new FirstPageCache<ResponseScrollProductsDto>(PRIMEIRA_PAGINA_BYTES);
+
    constructor(
       private productRepository: IProductRepository,
       private categoriaRepository: ICategoriaRepository,
@@ -80,6 +101,7 @@ class ProductService implements IProductService {
             );
          }
 
+         this.primeiraPagina.clear();
          return right(toProductResponse(productData.value, categoria));
       } catch (error) {
          if (error instanceof ValidationError) {
@@ -102,21 +124,69 @@ class ProductService implements IProductService {
          if (validation.isLeft()) {
             return left(validation.value);
          }
-         const productData =
-            await this.productRepository.getProductsWithCategoria(includeInactive);
+         const productData = await this.productRepository.getProductsPage(amount, (page - 1) * amount, includeInactive);
          if (productData.isLeft()) {
             return left(
                new ServerError("500", true, "internal server error", productData.value),
             );
          }
-         const paginatedResult = paginate(productData.value, page, amount);
+         const total = await this.productRepository.countProducts(includeInactive);
+         if (total.isLeft()) {
+            return left(new ServerError("500", true, "internal server error", total.value));
+         }
          const response: ResponseGetProductsDto = {
-            data: paginatedResult.data.map(toProductResponseFromRow),
-            pageNumber: paginatedResult.currentPage,
-            pageSize: paginatedResult.perPage,
-            totalItems: productData.value.length,
+            data: productData.value.map(toProductResponseFromRow),
+            pageNumber: page,
+            pageSize: amount,
+            totalItems: total.value,
          };
          return right(response);
+      } catch (error) {
+         if (error instanceof ValidationError) {
+            return left(error);
+         }
+         return left(new ServerError("500", true, "internal server error", error));
+      }
+   }
+
+   // the first load is cached per session, the ones after it go to the database
+   getProductsScroll(
+      sessao: string,
+      cursor: string | undefined,
+      amount: number,
+      includeInactive = false,
+   ): Promise<Either<BaseAppError, ResponseScrollProductsDto>> {
+      return this.primeiraPagina.read(sessao, !cursor && amount === FIRST_PAGE_SIZE, () =>
+         this.carregarScroll(cursor, amount, includeInactive),
+      );
+   }
+
+   private async carregarScroll(
+      cursor: string | undefined,
+      amount: number,
+      includeInactive: boolean,
+   ): Promise<Either<BaseAppError, ResponseScrollProductsDto>> {
+      try {
+         const validation = this.productValidator.validatePageAndAmount(1, amount);
+         if (validation.isLeft()) {
+            return left(validation.value);
+         }
+         const after = cursor ? decodeCursor(cursor) : null;
+         if (cursor && !after) {
+            return left(new ValidationError("400", "Cursor inválido"));
+         }
+         // one extra row says whether there's anything after this page, without counting
+         const rows = await this.productRepository.getProductsAfter(after, amount + 1, includeInactive);
+         if (rows.isLeft()) {
+            return left(new ServerError("500", true, "internal server error", rows.value));
+         }
+         const pagina = rows.value.slice(0, amount);
+         const ultimo = pagina[pagina.length - 1];
+         return right({
+            data: pagina.map(toProductResponseFromRow),
+            pageSize: amount,
+            nextCursor: rows.value.length > amount ? encodeCursor(ultimo.produto) : null,
+         });
       } catch (error) {
          if (error instanceof ValidationError) {
             return left(error);
@@ -273,6 +343,7 @@ class ProductService implements IProductService {
                new ServerError("500", true, "internal server error", productData.value),
             );
          }
+         this.primeiraPagina.clear();
          return right(null);
       } catch (error) {
          if (error instanceof ValidationError) {
@@ -385,6 +456,7 @@ class ProductService implements IProductService {
             }
             return left(new ServerError("500", true, "internal server error", saved.value));
          }
+         this.primeiraPagina.clear();
          return right({ ...counts, errors: [] });
       } catch (error) {
          if (error instanceof ValidationError) {
@@ -403,6 +475,7 @@ class ProductService implements IProductService {
             }
             return left(new ServerError("500", true, "internal server error"));
          }
+         this.primeiraPagina.clear();
          return right(null);
       } catch (error) {
          if (error instanceof ValidationError) {
@@ -420,6 +493,7 @@ class ProductService implements IProductService {
             }
             return left(new ServerError("500", true, "internal server error"));
          }
+         this.primeiraPagina.clear();
          return right(null);
       } catch (error) {
          if (error instanceof ValidationError) {

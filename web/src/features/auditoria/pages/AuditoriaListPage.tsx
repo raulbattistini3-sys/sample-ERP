@@ -2,24 +2,22 @@ import { useMemo } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { DataTable } from "../../../components/ui/DataTable";
-import { Pagination } from "../../../components/ui/Pagination";
+import { LoadMore } from "../../../components/ui/LoadMore";
 import { ErrorAlert, LoadingState, PageHeader } from "../../../components/ui/PageState";
-import { useClampPage, useListPage } from "../../../hooks/useListPage";
+import { useListPage } from "../../../hooks/useListPage";
 import { getApiErrorMessage } from "../../../lib/api-client";
-import { LIST_PAGE_SIZE } from "../../../lib/pagination";
 import { AuditoriaRow, auditoriaColumns } from "../components/columns";
 import { useAuditorias } from "../hooks/useAuditoria";
 import { useAuditorNames } from "../hooks/useAuditorNames";
 
 export const AuditoriaListPage = () => {
-  const { page, setPage, openItem } = useListPage();
-  const { data, isLoading, error, isPlaceholderData } = useAuditorias(page);
-  useClampPage(page, setPage, data, isPlaceholderData);
+  const { openItem } = useListPage();
+  const { data, isLoading, error, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = useAuditorias();
   const auditorNames = useAuditorNames();
 
-  // the API already returns newest first across pages; the table's own sorting still works within a page
+  // the API already returns newest first across pages; the table's own sorting covers the rows loaded so far
   const rows = useMemo<AuditoriaRow[]>(
-    () => (data?.data ?? []).map((a) => ({ ...a, auditor: auditorNames.get(a.usuario_id) ?? a.usuario_id })),
+    () => (data?.pages.flatMap((pagina) => pagina.data) ?? []).map((a) => ({ ...a, auditor: auditorNames.get(a.usuario_id) ?? a.usuario_id })),
     [data, auditorNames],
   );
 
@@ -46,14 +44,12 @@ export const AuditoriaListPage = () => {
             onRowClick={(a) => openItem(`/auditoria/${a.id}`)}
             emptyMessage="Nenhuma auditoria registrada."
           />
-          {data && (
-            <Pagination
-              page={page}
-              pageSize={LIST_PAGE_SIZE}
-              totalItems={data.totalItems}
-              onPageChange={(next) => setPage(next)}
-            />
-          )}
+          <LoadMore
+            hasNextPage={hasNextPage}
+            isFetchingNextPage={isFetchingNextPage}
+            isFetchNextPageError={isFetchNextPageError}
+            fetchNextPage={fetchNextPage}
+          />
         </>
       )}
     </div>

@@ -1,28 +1,24 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LIST_PAGE_SIZE } from "../../../lib/pagination";
-import { getClientes, getEmpresas, sincronizarClientes } from "../api/clientes.api";
+import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
+import { LAZY_PAGE_SIZE, nextLazyPage } from "../../../lib/pagination";
+import { getClientes, getEmpresas } from "../api/clientes.api";
 
-// keeps the current page on screen while the next one loads
-export const useClientes = (page: number, busca: string, enabled: boolean) =>
-  useQuery({
-    queryKey: ["clientes", "lista", page, busca],
-    queryFn: () => getClientes(page, LIST_PAGE_SIZE, busca),
+// keeps the current rows on screen while the next search loads
+export const useClientes = (busca: string, enabled: boolean) =>
+  useInfiniteQuery({
+    queryKey: ["clientes", "lista", busca],
+    queryFn: ({ pageParam }) => getClientes(pageParam, LAZY_PAGE_SIZE, busca),
+    initialPageParam: 1,
+    getNextPageParam: nextLazyPage,
     placeholderData: keepPreviousData,
     enabled,
   });
 
-export const useEmpresas = (page: number, busca: string, decisores: boolean, enabled: boolean) =>
-  useQuery({
-    queryKey: ["clientes", "empresas", page, busca, decisores],
-    queryFn: () => getEmpresas(page, LIST_PAGE_SIZE, busca, decisores),
+export const useEmpresas = (busca: string, decisores: boolean, enabled: boolean) =>
+  useInfiniteQuery({
+    queryKey: ["clientes", "empresas", busca, decisores],
+    queryFn: ({ pageParam }) => getEmpresas(pageParam, LAZY_PAGE_SIZE, busca, decisores),
+    initialPageParam: 1,
+    getNextPageParam: nextLazyPage,
     placeholderData: keepPreviousData,
     enabled,
   });
-
-export const useSincronizarClientes = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: sincronizarClientes,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["clientes"] }),
-  });
-};

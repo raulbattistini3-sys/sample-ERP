@@ -46,6 +46,7 @@ const importacaoController = new ImportacaoController(new ImportacaoService(impo
 
 const productRoutes = Router();
 
+productRoutes.get("/scroll", productController.getScroll);
 productRoutes.get("/filter", productController.getByFilter);
 productRoutes.get("/download", productController.getToDownload);
 // bulk create/update from a spreadsheet: ADM and SU only. /imports queues the file for the importer

@@ -7,6 +7,7 @@ export type Integracao = {
   nome: string;
   configurado: boolean; // client id/secret and encryption key set on the server
   conectado: boolean;
+  chaveDeServico: boolean; // HubSpot only: the server uses a service key instead of the OAuth connection
   // Jira: cloudId/siteName/siteUrl/sites; HubSpot: hubId/siteName/siteUrl
   conta?: { siteName?: string; siteUrl?: string; sites?: number };
   // Jira: projectKey/projectName/issueTypeId/issueTypeName; HubSpot: pipelineId/pipelineName/stageId/stageName

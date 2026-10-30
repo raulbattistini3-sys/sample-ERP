@@ -14,14 +14,26 @@ import { toAuditoriaResponse, toNewAuditoriaManual, toNewAuditoriaWithItens } fr
 import IDetalhamentoAuditoriaRepository from "../interfaces/detalhamento_auditoria_interfaces/detalhamento_auditoria_repository.interface";
 import IAuditoryRepository from "../interfaces/auditory_interfaces/auditoria_repository.interface";
 import { IAuditoriaValidator } from "../interfaces/auditory_interfaces/auditoria_validator.interface";
+import FirstPageCache, { FIRST_PAGE_SIZE } from "../utils/cache/first_page.cache";
+
+const PRIMEIRA_PAGINA_BYTES = 64 * 1024;
 
 class AuditoriaService implements IAuditoriaService {
+   private readonly primeiraPagina = new FirstPageCache<ResponseGetAuditorias>(PRIMEIRA_PAGINA_BYTES);
+
    constructor(
       private detalhamentoAuditoriaRepository: IDetalhamentoAuditoriaRepository,
       private auditoriaRepository: IAuditoryRepository,
       private auditoriaValidator: IAuditoriaValidator,
    ) {}
-   async getAuditorias(
+   getAuditorias(
+      sessao: string,
+      page: number,
+      amount: number,
+   ): Promise<Either<BaseAppError, ResponseGetAuditorias>> {
+      return this.primeiraPagina.read(sessao, page === 1 && amount === FIRST_PAGE_SIZE, () => this.carregarAuditorias(page, amount));
+   }
+   private async carregarAuditorias(
       page: number,
       amount: number,
    ): Promise<Either<BaseAppError, ResponseGetAuditorias>> {
@@ -96,6 +108,7 @@ class AuditoriaService implements IAuditoriaService {
                new ServerError("500", true, "internal server error", auditoria.value),
             );
          }
+         this.primeiraPagina.clear();
          const response: ResponseCreateAuditoria = toAuditoriaResponse(auditoria.value);
          return right(response);
       } catch (error) {
@@ -125,6 +138,7 @@ class AuditoriaService implements IAuditoriaService {
                new ServerError("500", true, "internal server error", auditoria.value),
             );
          }
+         this.primeiraPagina.clear();
          return right(toAuditoriaResponse(auditoria.value));
       } catch (error) {
          if (error instanceof ValidationError) {
@@ -157,6 +171,7 @@ class AuditoriaService implements IAuditoriaService {
          if (auditoria.isLeft()) {
             return left(auditoria.value);
          }
+         this.primeiraPagina.clear();
          return right(null);
       } catch (error) {
          if (error instanceof ValidationError) {
@@ -178,6 +193,7 @@ class AuditoriaService implements IAuditoriaService {
             }
             return left(new ServerError("500", true, "internal server error"));
          }
+         this.primeiraPagina.clear();
          return right(null);
       } catch (error) {
          if (error instanceof ValidationError) {
@@ -200,6 +216,7 @@ class AuditoriaService implements IAuditoriaService {
             }
             return left(new ServerError("500", true, "internal server error"));
          }
+         this.primeiraPagina.clear();
          return right(null);
       } catch (error) {
          if (error instanceof ValidationError) {

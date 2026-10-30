@@ -8,6 +8,7 @@ import { Either } from "../../globals/errors/left_right_either.error";
 
 interface IAuditoriaService {
    getAuditorias: (
+      sessao: string,
       page: number,
       amount: number,
    ) => Promise<Either<BaseAppError, ResponseGetAuditorias>>;
