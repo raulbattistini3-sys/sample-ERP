@@ -10,7 +10,12 @@ import {
   deactivateProduct,
   deleteProduct,
   importProducts,
+  startProductImport,
+  getProductImport,
+  isProductImportFinished,
 } from "../api/product.api";
+
+const IMPORT_POLL_MS = 1000;
 
 // keeps the current page on screen while the next one loads
 export const useProducts = (page = 1, amount = LIST_PAGE_SIZE) =>
@@ -70,6 +75,29 @@ export const useImportProducts = () => {
     mutationFn: importProducts,
     onSuccess: (result) => {
       if (result.errors.length === 0) queryClient.invalidateQueries({ queryKey: ["products"] });
+    },
+  });
+};
+
+// hands the chosen file to the importer; the result comes from useProductImport
+export const useStartProductImport = () => useMutation({ mutationFn: startProductImport });
+
+// polls an import every second until it is concluida, rejeitada or falhou; a concluded one refreshes
+// the product lists
+export const useProductImport = (id: string | undefined) => {
+  const queryClient = useQueryClient();
+  return useQuery({
+    // outside ["products"]: invalidating the lists must not refetch this query (and invalidate them again)
+    queryKey: ["product-imports", id],
+    queryFn: async () => {
+      const importacao = await getProductImport(id!);
+      if (importacao.status === "concluida") queryClient.invalidateQueries({ queryKey: ["products"] });
+      return importacao;
+    },
+    enabled: !!id,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status && isProductImportFinished(status) ? false : IMPORT_POLL_MS;
     },
   });
 };

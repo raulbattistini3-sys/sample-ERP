@@ -9,6 +9,13 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN bun run build
 
+# one-shot: applies the api/drizzle migrations the database hasn't seen (compose's "migrate" service);
+# deps has drizzle-kit, which the production image leaves out
+FROM deps AS migrate
+COPY drizzle.config.ts ./
+COPY drizzle ./drizzle
+CMD ["bun", "run", "db:migrate"]
+
 FROM oven/bun:1 AS prod-deps
 WORKDIR /app
 COPY package.json bun.lock ./

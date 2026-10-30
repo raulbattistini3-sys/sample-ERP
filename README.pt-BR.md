@@ -8,11 +8,13 @@ ERP de estoque e auditoria: produtos, categorias, usuários e auditorias, com in
 | --- | --- |
 | `api/` | API REST: Express 5, TypeScript, PostgreSQL (`pg` + drizzle), fila de jobs pg-boss |
 | `web/` | Aplicação web: React 18, Vite, Tailwind, TanStack Query |
+| `importer/` | Importador de planilhas: Go, gRPC. Lê planilhas de produtos `.xlsx`/`.csv` e as salva em segundo plano, com a fila de jobs no Postgres |
+| `proto/` | Contrato gRPC entre a API e o importador; o `buf generate` gera o código Go e TypeScript a partir dele |
 | `docker/postgres/init/` | SQL que cria o banco do zero: `01_schema.sql` (tabelas, tipos, índices) e `02_seed.sql` (categorias + log de migrations do drizzle) |
 
 Escolha como rodar:
 
-1. [Docker Compose](#1-docker-compose-postgres-puro): o caminho mais rápido. Sobe Postgres, API e web com um comando.
+1. [Docker Compose](#1-docker-compose-postgres-puro): o caminho mais rápido. Sobe Postgres, API, importador de planilhas e web com um comando.
 2. [Local com Postgres puro](#2-local-com-postgres-puro): API e web rodam na sua máquina; o Postgres é qualquer instância comum.
 3. [Local com Supabase](#3-local-com-supabase): API e web rodam na sua máquina; o banco é um projeto no Supabase.
 
@@ -20,7 +22,7 @@ Escolha como rodar:
 
 - [Git](https://git-scm.com/)
 - Opção 1: [Docker](https://docs.docker.com/get-docker/) com Compose v2.24+
-- Opções 2 e 3: [Bun](https://bun.sh/) 1.x, [Node.js](https://nodejs.org/) 22+ e `psql` (vem com o [cliente do PostgreSQL](https://www.postgresql.org/download/))
+- Opções 2 e 3: [Bun](https://bun.sh/) 1.x, [Node.js](https://nodejs.org/) 22+ e `psql` (vem com o [cliente do PostgreSQL](https://www.postgresql.org/download/)); [Go](https://go.dev/dl/) 1.26+ só para o importador de planilhas, que é opcional
 
 ```bash
 git clone https://github.com/raulbattistini3-sys/sample-ERP.git
@@ -38,12 +40,15 @@ docker compose up --build
 | Web | http://localhost:8080 |
 | API | http://localhost:3333 |
 | Postgres | `localhost:5432`, usuário `postgres`, senha `postgres`, banco `sample_erp` |
+| Importador (gRPC) | `localhost:50051`, só para ferramentas locais (a API o acessa em `importer:50051`) |
 
 Na primeira vez que sobe, o Postgres executa os scripts de `docker/postgres/init/`, então o banco já vem com todas as tabelas e as categorias criadas. Os dados ficam no volume `db-data`.
 
 - A porta 5432 já está em uso? Suba com `DB_PORT=5433 docker compose up --build`.
 - Configurações opcionais (e-mails pelo Resend, OAuth do Jira / monday.com) são lidas de `api/.env` quando esse arquivo existe. Veja [Variáveis de ambiente](#variáveis-de-ambiente).
 - Recomeçar com o banco vazio: `docker compose down -v`. Os scripts de init rodam de novo no próximo `up`.
+- Os scripts de init só rodam num volume vazio, então a cada `up` o serviço `migrate` (que roda uma vez e termina) aplica as [migrations](#migrations-do-banco) que o banco ainda não tem antes de a API e o importador subirem. Um volume `db-data` de um checkout antigo se atualiza sozinho; se uma migration falhar (por exemplo a 0012 encontrando SKUs repetidos), o log dela diz o motivo e a API e o importador esperam por ela.
+- A porta 50051 já está em uso? Suba com `IMPORTER_PORT=50052 docker compose up --build`.
 
 Depois, [crie o primeiro usuário](#criar-o-primeiro-usuário).
 
@@ -96,6 +101,22 @@ bun run dev
 ```
 
 Abra http://localhost:5173 e [crie o primeiro usuário](#criar-o-primeiro-usuário).
+
+### 2.4 Importador de planilhas (opcional)
+
+Sem ele, a importação de produtos roda dentro da API (`POST /products/import`). Com ele, a API entrega o arquivo enviado ao importador, que o lê, valida e salva em segundo plano. Em outro terminal:
+
+```bash
+cd importer
+cp .env.example .env    # DATABASE_URL: o mesmo do api/.env
+go run ./cmd/importer
+```
+
+Depois, adicione isto ao `api/.env` e reinicie a API:
+
+```dotenv
+IMPORTER_GRPC_URL=localhost:50051
+```
 
 ## 3. Local com Supabase
 
@@ -164,15 +185,23 @@ O `api/.env.example` documenta todas as variáveis. Estas são as que importam p
 | `WEB_URL` | não | Endereço da web usado nos links de redefinição de senha |
 | `RESEND_API_KEY`, `EMAIL_FROM` | não | E-mails de "Esqueceu a senha?" pelo [Resend](https://resend.com) |
 | `INTEGRATIONS_ENCRYPTION_KEY`, `API_PUBLIC_URL`, `JIRA_*`, `MONDAY_*` | não | Integrações com Jira / monday.com |
+| `IMPORTER_GRPC_URL` | não | Endereço do importador de planilhas (`host:porta`). Vazio: a importação de produtos roda dentro da API |
 | `VITE_API_URL` (`web/.env`) | sim | Endereço da API como o navegador a acessa |
 
 ## Migrations do banco
 
-O `01_schema.sql` já inclui todas as migrations de `api/drizzle/` (0000-0010), e o `02_seed.sql` as registra no log de migrations do drizzle. Para aplicar migrations adicionadas depois:
+O `01_schema.sql` já inclui todas as migrations de `api/drizzle/` (0000-0013), e o `02_seed.sql` as registra no log de migrations do drizzle. Para aplicar migrations adicionadas depois:
 
 ```bash
 cd api
 bun run db:migrate
+```
+
+Para o banco do Docker Compose, rode da sua máquina contra a porta publicada:
+
+```bash
+cd api
+DATABASE_URL='postgresql://postgres:postgres@localhost:5432/sample_erp?sslmode=disable' bun run db:migrate
 ```
 
 ## Scripts úteis
@@ -185,3 +214,6 @@ bun run db:migrate
 | `api/` | `bun run admin:promote <email> [--role SU\|ADM]` | Promove um usuário |
 | `web/` | `bun run dev` | Servidor de dev do Vite na :5173 |
 | `web/` | `bun run build` | Build de produção (`dist/`) |
+| `importer/` | `go run ./cmd/importer` | Importador de planilhas (lê o `importer/.env`) |
+| raiz | `go test -p 1 ./importer/...` | Testes do importador; defina `IMPORTER_TEST_DATABASE_URL` com um banco descartável para rodar também os que usam banco |
+| raiz | `buf generate` | Gera de novo o código gRPC Go e TypeScript depois de mudar o `proto/` |

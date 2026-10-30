@@ -1,0 +1,26 @@
+# buf generate   (buf: go install github.com/bufbuild/buf/cmd/buf@v1.75.0; run `bun install` in api/ first)
+# Every plugin is pinned by its project: the Go ones in go.mod's tool block, ts-proto in api/package.json,
+# so no protoc or global plugins are needed.
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/raulbattistini3-sys/sample-ERP/gen/go
+plugins:
+  - local: ["go", "tool", "protoc-gen-go"]
+    out: gen/go
+    opt: paths=source_relative
+  - local: ["go", "tool", "protoc-gen-go-grpc"]
+    out: gen/go
+    opt: paths=source_relative
+  # the API's typed client for the importer, inside api/src so its Dockerfile builds it with the rest
+  - local: ["node", "api/node_modules/ts-proto/protoc-gen-ts_proto"]
+    out: api/src/gen
+    opt:
+      - outputServices=grpc-js
+      - env=node
+      - esModuleInterop=true
+      - useDate=true
+      - forceLong=number
+clean: true

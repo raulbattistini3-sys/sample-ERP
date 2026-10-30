@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package importador.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Imports products from a spreadsheet (the Sample_Spreadsheet_AddProducts.xlsx layout).
+// The API uploads the file and gets an importacao back right away; the rows are parsed,
+// validated and written in the background, and the caller polls ObterImportacao for the outcome.
+service ImportadorService {
+  rpc IniciarImportacao(IniciarImportacaoRequest) returns (IniciarImportacaoResponse);
+  rpc ObterImportacao(ObterImportacaoRequest) returns (ObterImportacaoResponse);
+}
+
+enum StatusImportacao {
+  STATUS_IMPORTACAO_UNSPECIFIED = 0;
+  STATUS_IMPORTACAO_PENDENTE = 1;
+  STATUS_IMPORTACAO_PROCESSANDO = 2;
+  // every row was imported
+  STATUS_IMPORTACAO_CONCLUIDA = 3;
+  // at least one row was rejected; nothing is written when any row fails, as in POST /products/import
+  STATUS_IMPORTACAO_REJEITADA = 4;
+  // the file itself could not be read (not an xlsx, missing header, too many rows, ...)
+  STATUS_IMPORTACAO_FALHOU = 5;
+}
+
+message IniciarImportacaoRequest {
+  // the .xlsx contents; MAX_IMPORT_ROWS rows fit well under gRPC's 4 MB default message size
+  bytes planilha = 1;
+  string nome_arquivo = 2;
+  // who uploaded it, for the auditoria
+  string usuario_id = 3;
+}
+
+message IniciarImportacaoResponse {
+  Importacao importacao = 1;
+}
+
+message ObterImportacaoRequest {
+  string id = 1;
+}
+
+message ObterImportacaoResponse {
+  Importacao importacao = 1;
+}
+
+message Importacao {
+  string id = 1;
+  StatusImportacao status = 2;
+  string nome_arquivo = 3;
+  int32 total_linhas = 4;
+  int32 linhas_importadas = 5;
+  repeated ErroLinha erros = 6;
+  // set when status is FALHOU
+  string mensagem = 7;
+  google.protobuf.Timestamp criada_em = 8;
+  google.protobuf.Timestamp finalizada_em = 9;
+  // of linhas_importadas, how many created products and how many updated existing ones
+  int32 linhas_criadas = 10;
+  int32 linhas_atualizadas = 11;
+}
+
+// One problem with one row; a row can have several (one per field)
+message ErroLinha {
+  // spreadsheet row number, header included, so it matches what the user sees in Excel
+  int32 linha = 1;
+  // column name (name, sku, categoria, valor_de_custo, ...); empty when the problem is the whole row
+  string campo = 2;
+  string mensagem = 3;
+}

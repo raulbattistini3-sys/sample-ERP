@@ -10,6 +10,13 @@ import { RepositoryError } from "../globals/errors/global_repository_error.error
 import { BaseAppError } from "../errors/global_error.error";
 import { ValidationError } from "../errors/client_errors/four_xx.error";
 import { ProductImportWrites } from "../dtos/product_dtos/import_products.dto";
+import { pgErrorCode } from "../utils/helpers/pg_error.util";
+
+// ids are generated, so the only unique constraint a write on produtos can break is produtos_sku_key
+const UNIQUE_VIOLATION = "23505";
+
+const skuTaken = (error: unknown, message: string): ValidationError | null =>
+  pgErrorCode(error) === UNIQUE_VIOLATION ? new ValidationError("409", message, error) : null;
 
 class ProductRepository implements IProductRepository {
   constructor(private readonly db: DrizzleDB) {}
@@ -60,7 +67,7 @@ class ProductRepository implements IProductRepository {
   }
 
   // all writes of one import in a single transaction: every row is saved, or none
-  async importProducts({ creates, updates }: ProductImportWrites, usuarioId: string): Promise<Either<RepositoryError, null>> {
+  async importProducts({ creates, updates }: ProductImportWrites, usuarioId: string): Promise<Either<BaseAppError, null>> {
     try {
       await this.db.transaction(async (tx: DrizzleDB) => {
         if (creates.length > 0) {
@@ -73,11 +80,13 @@ class ProductRepository implements IProductRepository {
       });
       return right(null);
     } catch (error) {
-      return left(new RepositoryError("Database error", error));
+      // another import or a create took one of these SKUs after the service checked them
+      const conflict = skuTaken(error, "Um dos SKUs da planilha foi cadastrado enquanto ela era importada; importe de novo");
+      return left(conflict ?? new RepositoryError("Database error", error));
     }
   }
 
-  async createProduct(payload: NewProductEntity): Promise<Either<RepositoryError, ProductEntity>> {
+  async createProduct(payload: NewProductEntity): Promise<Either<BaseAppError, ProductEntity>> {
     try {
       const [productData] = await this.db.insert(produtos).values(payload).returning();
       if (!productData) {
@@ -85,7 +94,7 @@ class ProductRepository implements IProductRepository {
       }
       return right(productData);
     } catch (error) {
-      return left(new RepositoryError("500", error));
+      return left(skuTaken(error, `Já existe um produto com o SKU ${payload.sku}`) ?? new RepositoryError("500", error));
     }
   }
 
@@ -101,7 +110,7 @@ class ProductRepository implements IProductRepository {
       );
       return found ? right(null) : left(new ValidationError("404", "Produto não encontrado"));
     } catch (error) {
-      return left(new RepositoryError("500", error));
+      return left(skuTaken(error, `Já existe um produto com o SKU ${values.sku}`) ?? new RepositoryError("500", error));
     }
   }
 

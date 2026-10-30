@@ -68,6 +68,10 @@ class ProductService implements IProductService {
             toNewProductEntity(productPayload, categoria.id, new Date()),
          );
          if (productData.isLeft()) {
+            // 409: SKU already taken
+            if (productData.value instanceof ValidationError) {
+               return left(productData.value);
+            }
             return left(
                new ServerError("500", true, "internal server error", productData.value),
             );
@@ -357,6 +361,9 @@ class ProductService implements IProductService {
 
          const saved = await this.productRepository.importProducts(writes, usuarioId);
          if (saved.isLeft()) {
+            if (saved.value instanceof ValidationError) {
+               return left(saved.value);
+            }
             return left(new ServerError("500", true, "internal server error", saved.value));
          }
          return right({ created: writes.creates.length, updated: writes.updates.length, errors: [] });

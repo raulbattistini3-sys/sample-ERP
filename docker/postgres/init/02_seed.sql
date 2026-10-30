@@ -14,7 +14,7 @@ INSERT INTO public.categorias (nome, tipo, ativo) VALUES
   ('MERCADO', 'Normal', true),
   ('MODA', 'Especial', true);
 
--- drizzle-kit's migration log: 01_schema.sql already contains api/drizzle 0000-0010, so
+-- drizzle-kit's migration log: 01_schema.sql already contains api/drizzle 0000-0013, so
 -- `bun run db:migrate` against this database only applies migrations added after them
 CREATE SCHEMA drizzle;
 CREATE TABLE drizzle.__drizzle_migrations (
@@ -33,4 +33,7 @@ INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES
   ('49033ed6339c84a3b6a8e43449fbde92eebdbcda65e3890700fd08f5f931d4b8', 1792523944972),
   ('5400121cd312347580a266f7535e99e285a1b021aa0d97bd9893089423eb02dd', 1792524965529),
   ('821b7f84459477b3a9babec4fce76b89851c01a266d2f87ced102451463344b5', 1792530822121),
-  ('70828f51f8ee6022ef602fe8d22b04f76f9e86bf727edb5a91b2604aebc9c3ff', 1792540822121);
+  ('70828f51f8ee6022ef602fe8d22b04f76f9e86bf727edb5a91b2604aebc9c3ff', 1792540822121),
+  ('b287a2241b3f809d7a4363294b94dd2a12403eee153519840b1c7196c5f6b3a3', 1792550822121),
+  ('220512e86388932a664e23b5b1793809142fe251b80ec9499c6a7d2873cb0e9f', 1792560822121),
+  ('e71e0dd2e784a318016e749bd703d654c4efb6af5e4797a3d40d619600b9e3e3', 1792570822121);

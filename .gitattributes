@@ -1,0 +1,3 @@
+# drizzle-kit identifies an applied migration by the SHA-256 of its file (and docker/postgres/init/02_seed.sql
+# hardcodes those hashes), so a CRLF checkout would make every migration look new
+api/drizzle/*.sql text eol=lf
