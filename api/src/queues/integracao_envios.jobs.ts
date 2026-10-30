@@ -5,10 +5,10 @@ import { Provider } from "../configs/oauth.providers";
 import { queueClient } from "./queue.client";
 
 // One pg-boss queue per provider, so one provider's rate limits or outage never delays the other.
-// A job = "create the issue/item of this auditoria_integracao_envios row".
+// A job = "create the issue/ticket of this auditoria_integracao_envios row".
 export const ENVIO_QUEUES: Record<Provider, { queue: string; dlq: string }> = {
   jira: { queue: "jira-issues", dlq: "jira-issues-dlq" },
-  monday: { queue: "monday-items", dlq: "monday-items-dlq" },
+  hubspot: { queue: "hubspot-tickets", dlq: "hubspot-tickets-dlq" },
 };
 
 export const MAX_ATTEMPTS = 8; // then the dead-letter queue, and "Reenviar" on the Integrações page

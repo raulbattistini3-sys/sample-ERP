@@ -6,6 +6,7 @@ import { publicUsuarioRoutes, usuarioRoutes } from "./usuario.routes";
 import { categoriaRoutes } from "./categoria.routes";
 import { authMiddleware } from "./auth_middleware.instance";
 import { integracaoRoutes, publicIntegracaoRoutes } from "./integracao.routes";
+import { clienteRoutes } from "./cliente.routes";
 const router = Router();
 
 // POST /user/register and /user/login
@@ -22,5 +23,6 @@ router.use("/products", productRoutes);
 router.use("/categorias", categoriaRoutes);
 router.use("/detalhamento-auditoria", detalhamentoAuditoriaRoutes);
 router.use("/integracoes", integracaoRoutes);
+router.use("/clientes", clienteRoutes);
 
 export default router;

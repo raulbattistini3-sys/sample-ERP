@@ -112,6 +112,10 @@ type Alteracao struct {
 // the transaction, so each sees the previous ones (a manual auditoria claimed for one product can't be
 // claimed again for the next).
 func AtualizarAuditados(ctx context.Context, tx pgx.Tx, usuarioID string, alteracoes []Alteracao) error {
+	var lote string
+	if err := tx.QueryRow(ctx, `SELECT gen_random_uuid()::text`).Scan(&lote); err != nil {
+		return fmt.Errorf("postgres: starting lote: %w", err)
+	}
 	batch := &pgx.Batch{}
 	for _, a := range alteracoes {
 		campos, err := json.Marshal(a.Campos)
@@ -125,7 +129,7 @@ func AtualizarAuditados(ctx context.Context, tx pgx.Tx, usuarioID string, altera
 				quantidade_em_estoque = $8, ativo = $9
 			WHERE id = $1`,
 			p.ID, p.Nome, p.SKU, p.CategoriaID, p.ValorDeCusto, p.ICMS, p.ValorDeVenda, p.QuantidadeEmEstoque, p.Ativo)
-		batch.Queue(registrarAlteracao, p.ID, a.VendaAntes, a.VendaDepois, p.Nome, a.Observacoes, campos, usuarioID)
+		batch.Queue(registrarAlteracao, p.ID, a.VendaAntes, a.VendaDepois, p.Nome, a.Observacoes, campos, usuarioID, lote)
 	}
 
 	results := tx.SendBatch(ctx, batch)
@@ -135,14 +139,19 @@ func AtualizarAuditados(ctx context.Context, tx pgx.Tx, usuarioID string, altera
 			return fmt.Errorf("postgres: updating produto %s: %w", alteracoes[i/2].Depois.SKU, err)
 		}
 	}
-	return results.Close()
+	if err := results.Close(); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, resumirLote, lote); err != nil {
+		return fmt.Errorf("postgres: summing up lote: %w", err)
+	}
+	return nil
 }
 
 // recordProductChange (audit_trail.repository.ts) as one statement: claim the oldest unused manual
 // "Alteracao" auditoria from the last 24 hours for this product with the same valor de venda
-// before/after; when there is none, create an automatic one, already vinculada, with its detalhamento,
-// product link and one envio per connected integration (job_id stays NULL: the API's
-// IntegracaoEnvioWorker sweep gives it its pg-boss job).
+// before/after; when there is none, create an automatic one in this lote, already vinculada, with its
+// detalhamento and product link.
 const registrarAlteracao = `
 WITH reivindicada AS (
 	UPDATE auditorias SET vinculada_em = now()
@@ -171,18 +180,38 @@ detalhamento AS (
 	RETURNING id
 ),
 auditoria AS (
-	INSERT INTO auditorias (acao_efetuada, data_de_audicao, usuario_id, detalhamento_auditoria_id, vinculada_em)
-	SELECT 'Alteracao', now(), $7::uuid, id, now() FROM detalhamento
+	INSERT INTO auditorias (acao_efetuada, data_de_audicao, usuario_id, detalhamento_auditoria_id, vinculada_em, lote_id)
+	SELECT 'Alteracao', now(), $7::uuid, id, now(), $8::uuid FROM detalhamento
 	RETURNING id
-),
-vinculo AS (
-	INSERT INTO produtos_por_auditoria (auditoria_id, produto_id)
-	SELECT id, $1::uuid FROM auditoria
 )
-INSERT INTO auditoria_integracao_envios (auditoria_id, categoria_id, categoria_nome, provider)
-SELECT DISTINCT a.id, c.id, c.nome::text, i.provider
-FROM auditoria a, produtos p JOIN categorias c ON c.id = p.categoria_id, integracoes i
-WHERE p.id = $1::uuid
-	AND ((i.provider = 'jira' AND i.config ->> 'projectKey' IS NOT NULL AND i.config ->> 'issueTypeId' IS NOT NULL)
-		OR (i.provider = 'monday' AND i.config ->> 'boardId' IS NOT NULL))
+INSERT INTO produtos_por_auditoria (auditoria_id, produto_id)
+SELECT id, $1::uuid FROM auditoria`
+
+// enqueueForLote (integracao_envios.repository.ts): one envio per categoria and connected integration
+// summing the lote up, with no resumo for a single change (job_id stays NULL: the API's
+// IntegracaoEnvioWorker sweep gives it its pg-boss job).
+const resumirLote = `
+WITH alteracoes AS (
+	SELECT a.id AS auditoria_id, c.id AS categoria_id, c.nome::text AS categoria_nome,
+		d.valor_atual > d.valor_anterior AS aumento, d.valor_atual < d.valor_anterior AS reducao,
+		d.alteracoes @> '[{"campo": "ICMS"}]'::jsonb AS icms
+	FROM auditorias a
+	JOIN detalhamentos_auditoria d ON d.id = a.detalhamento_auditoria_id
+	JOIN produtos_por_auditoria pa ON pa.auditoria_id = a.id
+	JOIN produtos p ON p.id = pa.produto_id
+	JOIN categorias c ON c.id = p.categoria_id
+	WHERE a.lote_id = $1::uuid
+),
+por_categoria AS (
+	SELECT categoria_id, categoria_nome, (array_agg(auditoria_id))[1] AS auditoria_id, count(*) AS total,
+		count(*) FILTER (WHERE aumento) AS aumentos, count(*) FILTER (WHERE reducao) AS reducoes,
+		count(*) FILTER (WHERE icms) AS icms, count(*) FILTER (WHERE NOT aumento AND NOT reducao AND NOT icms) AS outras
+	FROM alteracoes GROUP BY categoria_id, categoria_nome
+)
+INSERT INTO auditoria_integracao_envios (auditoria_id, categoria_id, categoria_nome, provider, lote_id, resumo)
+SELECT l.auditoria_id, l.categoria_id, l.categoria_nome, i.provider, $1::uuid,
+	CASE WHEN l.total > 1 THEN jsonb_build_object('total', l.total, 'aumentos', l.aumentos, 'reducoes', l.reducoes, 'icms', l.icms, 'outras', l.outras) END
+FROM por_categoria l CROSS JOIN integracoes i
+WHERE (i.provider = 'jira' AND i.config ->> 'projectKey' IS NOT NULL AND i.config ->> 'issueTypeId' IS NOT NULL)
+	OR (i.provider = 'hubspot' AND i.config ->> 'pipelineId' IS NOT NULL AND i.config ->> 'stageId' IS NOT NULL)
 ON CONFLICT (auditoria_id, categoria_id, provider) DO NOTHING`

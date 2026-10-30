@@ -1,18 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ProviderId,
+  createHubspotTestTicket,
   createJiraTestIssue,
-  createMondayTestItem,
   disconnectIntegracao,
   getAuditoriaEnvios,
   getAuthorizeUrl,
   getQueueSummary,
+  listHubspotPipelines,
   listIntegracoes,
   listJiraProjects,
-  listMondayBoards,
   retryQueue,
+  saveHubspotConfig,
   saveJiraConfig,
-  saveMondayConfig,
 } from "../api/integracoes.api";
 
 export const useIntegracoes = () => useQuery({ queryKey: ["integracoes"], queryFn: listIntegracoes });
@@ -45,18 +45,18 @@ export const useSaveJiraConfig = () => {
 
 export const useJiraTestIssue = () => useMutation({ mutationFn: createJiraTestIssue });
 
-export const useMondayBoards = (enabled: boolean) =>
-  useQuery({ queryKey: ["integracoes", "monday", "boards"], queryFn: listMondayBoards, enabled, staleTime: 60_000 });
+export const useHubspotPipelines = (enabled: boolean) =>
+  useQuery({ queryKey: ["integracoes", "hubspot", "pipelines"], queryFn: listHubspotPipelines, enabled, staleTime: 60_000 });
 
-export const useSaveMondayConfig = () => {
+export const useSaveHubspotConfig = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: saveMondayConfig,
+    mutationFn: saveHubspotConfig,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integracoes"] }),
   });
 };
 
-export const useMondayTestItem = () => useMutation({ mutationFn: createMondayTestItem });
+export const useHubspotTestTicket = () => useMutation({ mutationFn: createHubspotTestTicket });
 
 // refreshes while something is still on its way to a provider
 export const useAuditoriaEnvios = (auditoriaId: string) =>

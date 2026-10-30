@@ -1,5 +1,5 @@
-import { asc, eq, inArray } from "drizzle-orm";
-import { applyChanges, diffProduct, recordProductChange } from "./audit_trail.repository";
+import { asc, eq, sql } from "drizzle-orm";
+import { applyChanges, diffProduct, recordProductChange, recordProductChanges } from "./audit_trail.repository";
 import { DrizzleDB } from "../db/client";
 import { produtos } from "../db/schema/product.schema";
 import { categorias } from "../db/schema/categoria.schema";
@@ -14,6 +14,8 @@ import { pgErrorCode } from "../utils/helpers/pg_error.util";
 
 // ids are generated, so the only unique constraint a write on produtos can break is produtos_sku_key
 const UNIQUE_VIOLATION = "23505";
+// rows per statement: an INSERT takes at most 65535 parameters, and a product is 10 columns
+const INSERT_BATCH = 5000;
 
 const skuTaken = (error: unknown, message: string): ValidationError | null =>
   pgErrorCode(error) === UNIQUE_VIOLATION ? new ValidationError("409", message, error) : null;
@@ -56,10 +58,11 @@ class ProductRepository implements IProductRepository {
   async getProductsBySkus(skus: string[]): Promise<Either<RepositoryError, { id: string; sku: string }[]>> {
     try {
       if (skus.length === 0) return right([]);
+      // one array parameter: a statement takes at most 65535, far fewer than a big spreadsheet's SKUs
       const rows = await this.db
         .select({ id: produtos.id, sku: produtos.sku })
         .from(produtos)
-        .where(inArray(produtos.sku, skus));
+        .where(sql`${produtos.sku} = any(${sql.param(skus)}::text[])`);
       return right(rows);
     } catch (error) {
       return left(new RepositoryError("Database error", error));
@@ -67,16 +70,18 @@ class ProductRepository implements IProductRepository {
   }
 
   // all writes of one import in a single transaction: every row is saved, or none
-  async importProducts({ creates, updates }: ProductImportWrites, usuarioId: string): Promise<Either<BaseAppError, null>> {
+  async importProducts(
+    { creates, updates }: ProductImportWrites,
+    usuarioId: string,
+    afterWrites?: (tx: DrizzleDB) => Promise<void>,
+  ): Promise<Either<BaseAppError, null>> {
     try {
       await this.db.transaction(async (tx: DrizzleDB) => {
-        if (creates.length > 0) {
-          await tx.insert(produtos).values(creates);
+        for (let i = 0; i < creates.length; i += INSERT_BATCH) {
+          await tx.insert(produtos).values(creates.slice(i, i + INSERT_BATCH));
         }
-        const categoriaNomes = await this.categoriaNomes(tx);
-        for (const { id, values } of updates) {
-          await this.updateAudited(tx, id, values, usuarioId, categoriaNomes);
-        }
+        await this.updateAuditedBulk(tx, updates, usuarioId);
+        await afterWrites?.(tx);
       });
       return right(null);
     } catch (error) {
@@ -154,6 +159,56 @@ class ProductRepository implements IProductRepository {
       changes: diffProduct(snapshot(before), snapshot(after)),
     });
     return true;
+  }
+
+  // updateAudited for many products, in a few statements however many there are. Rows are locked in
+  // sku order, so two imports sharing SKUs wait for each other instead of deadlocking. Products with no
+  // actual change aren't written: they would record nothing anyway.
+  private async updateAuditedBulk(tx: DrizzleDB, updates: ProductImportWrites["updates"], usuarioId: string) {
+    if (updates.length === 0) return;
+    const valuesById = new Map(updates.map(({ id, values }) => [id, values]));
+    const antes: ProductEntity[] = await tx
+      .select()
+      .from(produtos)
+      .where(sql`${produtos.id} = any(${sql.param([...valuesById.keys()])}::uuid[])`)
+      .orderBy(asc(produtos.sku))
+      .for("update");
+
+    const nomes = await this.categoriaNomes(tx);
+    const snapshot = (p: ProductEntity) => ({ ...p, categoriaNome: nomes.get(p.categoriaId) ?? p.categoriaId });
+    const alterados = antes.flatMap((before) => {
+      const after = applyChanges(before, valuesById.get(before.id) as Partial<ProductEntity>);
+      const changes = diffProduct(snapshot(before), snapshot(after));
+      return changes.length > 0 ? [{ before, after, changes }] : [];
+    });
+
+    for (let i = 0; i < alterados.length; i += INSERT_BATCH) {
+      const lote = alterados.slice(i, i + INSERT_BATCH).map(({ after }) => after);
+      const coluna = <T>(valor: (p: ProductEntity) => T) => sql.param(lote.map(valor));
+      await tx.execute(sql`
+        update produtos p
+        set name = v.name, categoria_id = v.categoria_id, valor_de_custo = v.custo, icms = v.icms,
+          valor_de_venda = v.venda, quantidade_em_estoque = v.estoque, ativo = v.ativo
+        from unnest(
+          ${coluna((a) => a.id)}::uuid[], ${coluna((a) => a.name)}::text[], ${coluna((a) => a.categoriaId)}::uuid[],
+          ${coluna((a) => a.valorDeCusto)}::numeric[], ${coluna((a) => a.icms)}::float8[],
+          ${coluna((a) => a.valorDeVenda)}::numeric[], ${coluna((a) => a.quantidadeEmEstoque)}::float8[],
+          ${coluna((a) => a.ativo)}::boolean[]
+        ) as v(id, name, categoria_id, custo, icms, venda, estoque, ativo)
+        where p.id = v.id`);
+    }
+
+    await recordProductChanges(
+      tx,
+      usuarioId,
+      alterados.map(({ before, after, changes }) => ({
+        produtoId: before.id,
+        nomeProduto: after.name,
+        vendaAntes: Number(before.valorDeVenda),
+        vendaDepois: Number(after.valorDeVenda),
+        changes,
+      })),
+    );
   }
 
   private async categoriaNomes(tx: DrizzleDB): Promise<Map<string, string>> {

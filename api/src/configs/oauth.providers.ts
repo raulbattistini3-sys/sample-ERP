@@ -2,12 +2,13 @@ import "dotenv/config";
 
 // src/configs/oauth.providers.ts
 export const providers = {
-  monday: {
-    authorizeUrl: "https://auth.monday.com/oauth2/authorize",
-    tokenUrl: "https://auth.monday.com/oauth2/token",
-    clientId: process.env.MONDAY_CLIENT_ID!,
-    clientSecret: process.env.MONDAY_CLIENT_SECRET!,
-    scopes: "boards:read boards:write me:read",
+  // scopes must be exactly the app's requiredScopes (app-hsmeta.json), or HubSpot refuses the consent screen
+  hubspot: {
+    authorizeUrl: "https://app.hubspot.com/oauth/authorize",
+    tokenUrl: "https://api.hubspot.com/oauth/2026-09/token",
+    clientId: process.env.HUBSPOT_CLIENT_ID!,
+    clientSecret: process.env.HUBSPOT_CLIENT_SECRET!,
+    scopes: "crm.objects.tickets.read crm.objects.tickets.write crm.objects.contacts.read",
     extraParams: {},
   },
   jira: {

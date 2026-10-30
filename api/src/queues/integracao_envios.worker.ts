@@ -8,7 +8,7 @@ import { Either } from "../globals/errors/left_right_either.error";
 import QueueClient from "./queue.client";
 import { ENVIO_QUEUES, EnvioJob, JOB_EXPIRE_SECONDS, MAX_ATTEMPTS, approxRetryDelayMs, envioQueueOptions } from "./integracao_envios.jobs";
 
-// creates the issue/item of one row in a provider; returns its id/key and link
+// creates the issue/ticket of one row in a provider; returns its id/key and link
 export type EnvioSender = (envio: QueuedEnvio) => Promise<Either<BaseAppError, { key: string; url: string }>>;
 
 // shorter than the job's expiry, so when pg-boss hands an expired job to another worker, that worker
@@ -17,7 +17,7 @@ const LEASE_MINUTES = Math.floor(JOB_EXPIRE_SECONDS / 60) - 1;
 const SWEEP_MS = 5 * 60_000;
 const RESTART_MS = 30_000;
 
-// Runs the "create this issue/item" jobs of every provider's queue. A failure throws, so pg-boss retries
+// Runs the "create this issue/ticket" jobs of every provider's queue. A failure throws, so pg-boss retries
 // the job with backoff; after the last attempt pg-boss moves it to the provider's dead-letter queue.
 // In a NestJS app this becomes the queues' worker provider.
 class IntegracaoEnvioWorker {

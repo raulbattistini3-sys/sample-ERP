@@ -23,7 +23,7 @@ app.listen(port, host, async (error?: Error) => {
    }
    pinoLogger.handle({ applicationValues: config }, "DEBUG");
    console.log(`Server listening on host: ${host} and port: ${port}`);
-   // pg-boss worker that creates the Jira issues / monday items of new auditorias
+   // pg-boss worker that creates the Jira issues / HubSpot tickets of new auditorias
    void integracaoEnvioWorker.start();
 });
 
