@@ -52,7 +52,12 @@ class AuditoriaController extends BaseController {
   };
 
   update = async (req: Request, res: Response, next: NextFunction) => {
-    const result = await this.auditoriaService.updateAuditoria(req.body);
+    // the URL decides which auditoria is updated; usuario_id only satisfies the shared schema
+    const result = await this.auditoriaService.updateAuditoria({
+      ...req.body,
+      id: req.params.id,
+      usuario_id: req.user?.id,
+    });
     if (result.isLeft()) {
       return this.fail(req, next, result.value);
     }

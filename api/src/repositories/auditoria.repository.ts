@@ -234,7 +234,7 @@ class AuditoriaRepository implements IAuditoryRepository {
         return left(new RepositoryError("No id provided"));
       }
       const auditoria = await this.db.query.auditorias.findFirst({
-        where: (auditorias, { eq }) => eq(auditorias.id, id),
+        where: eq(auditorias.id, id),
         with: { detalhamento: true },
       });
       if (!auditoria) {

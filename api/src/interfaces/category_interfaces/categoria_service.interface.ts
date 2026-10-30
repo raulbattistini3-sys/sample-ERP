@@ -8,7 +8,7 @@ import {
    ResponseGetCategoriesDto,
 } from "../../dtos/category_dtos/get_categories.dto";
 import { PayloadUpdateCategory } from "../../dtos/category_dtos/update_category.dto";
-import Categoria from "../../entities/categoria.entity";
+import { Categoria } from "../../entities/categoria.entity";
 import { BaseAppError } from "../../errors/global_error.error";
 import { Either } from "../../globals/errors/left_right_either.error";
 

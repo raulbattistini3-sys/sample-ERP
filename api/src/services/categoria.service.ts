@@ -1,4 +1,4 @@
-import Categoria from "../entities/categoria.entity";
+import { Categoria } from "../entities/categoria.entity";
 import { ICategoryService } from "../interfaces/category_interfaces/categoria_service.interface";
 import {
    ResponseFindCategoryByIdDto,

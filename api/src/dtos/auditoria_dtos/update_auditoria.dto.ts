@@ -1,16 +1,7 @@
-import { BaseDefaultMessage } from "../global_get.dto";
-import { AuditoriaEntity } from "../../entities/auditoria.entity";
-import { DetalhamentoAuditoriaEntity } from "../../entities/detalhamento_auditoria.entity";
+import { z } from "zod";
+import { UpdateAuditoriaSchema } from "../../utils/schemas/auditoria.schema";
 
-type PayloadUpdateAuditoria = Omit<AuditoriaEntity, "detalhamento_auditoria"> &
-    Omit<DetalhamentoAuditoriaEntity, "id" | "auditoria">;
+// PUT /auditoria/:id body, after parsing (snake_case, like the create payload)
+type PayloadUpdateAuditoria = z.infer<typeof UpdateAuditoriaSchema>;
 
-type ResponseUpdateAuditoria = BaseDefaultMessage &
-    Omit<AuditoriaEntity, "id" | "detalhamento_auditoria"> & {
-        detalhamento_auditoria: Omit<
-            DetalhamentoAuditoriaEntity,
-            "id" | "auditoria"
-        >;
-    };
-
-export { PayloadUpdateAuditoria, ResponseUpdateAuditoria };
+export { PayloadUpdateAuditoria };

@@ -53,7 +53,7 @@
     "monday:codegen": "graphql-codegen --config codegen.ts",
     "dev": "tsnd --transpile-only --respawn ./src/index.ts --ignore-watch node_modules",
     "start:dev": "tsc && node dist/index.js",
-    "start": "node dist/src/index.js",
+    "start": "node dist/index.js",
     "build": "tsc"
   }
 }
