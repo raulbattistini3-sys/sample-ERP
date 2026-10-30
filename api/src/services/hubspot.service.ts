@@ -14,13 +14,20 @@ const API_VERSION = "2026-09";
 const TICKETS = `/crm/objects/${API_VERSION}/tickets`;
 const PIPELINES = `/crm/pipelines/${API_VERSION}/tickets`;
 const CONTACTS = `/crm/objects/${API_VERSION}/contacts`;
-const CONTACT_PROPERTIES = "firstname,lastname,email,phone,company,lifecyclestage,createdate,lastmodifieddate";
-const CONTACTS_PER_PAGE = 100;
+const COMPANIES = `/crm/objects/${API_VERSION}/companies`;
+const CONTACT_PROPERTIES =
+  "firstname,lastname,email,phone,company,lifecyclestage,createdate,lastmodifieddate,jobtitle,hs_seniority,hs_buying_role";
+const COMPANY_PROPERTIES = "name,domain,industry";
+const PER_PAGE = 100;
 // tickets are the CRM object type 0-5
 const ticketUrl = (hubId: unknown, id: string) => `https://app.hubspot.com/contacts/${hubId}/record/0-5/${id}`;
 
 export type HubspotConfig = { pipelineId: string; pipelineName: string; stageId: string; stageName: string };
-export type HubspotContact = { id: string; url?: string; properties: Record<string, string | null | undefined> };
+type HubspotRecord = { id: string; url?: string; properties: Record<string, string | null | undefined> };
+export type HubspotCompany = HubspotRecord;
+// a contact linked to a company comes with one entry per association type, so an id can repeat
+export type HubspotContact = HubspotRecord & { associations?: { companies?: { results?: { id: string }[] } } };
+type HubspotPage<T> = { results?: T[]; paging?: { next?: { after?: string } } };
 type Pipeline = { id: string; label: string; stages: { id: string; label: string }[] };
 
 const ConfigSchema = z.object({
@@ -84,13 +91,21 @@ class HubspotService {
     return this.createTicket(summary, paragraphs);
   }
 
-  // one page of contacts; after is the cursor of the next one, undefined on the last
-  async listContacts(after?: string): Promise<Either<BaseAppError, { contacts: HubspotContact[]; after?: string }>> {
-    const query = new URLSearchParams({ limit: String(CONTACTS_PER_PAGE), properties: CONTACT_PROPERTIES, ...(after && { after }) });
-    const response = await this.request(`${CONTACTS}?${query}`);
+  listContacts(after?: string) {
+    return this.page<HubspotContact>(CONTACTS, { properties: CONTACT_PROPERTIES, associations: "companies" }, after);
+  }
+
+  listCompanies(after?: string) {
+    return this.page<HubspotCompany>(COMPANIES, { properties: COMPANY_PROPERTIES }, after);
+  }
+
+  // one page of records; after is the cursor of the next one, undefined on the last
+  private async page<T>(path: string, params: Record<string, string>, after?: string): Promise<Either<BaseAppError, { results: T[]; after?: string }>> {
+    const query = new URLSearchParams({ limit: String(PER_PAGE), ...params, ...(after && { after }) });
+    const response = await this.request(`${path}?${query}`);
     if (response.isLeft()) return left(response.value);
-    const body = response.value as { results?: HubspotContact[]; paging?: { next?: { after?: string } } };
-    return right({ contacts: body.results ?? [], after: body.paging?.next?.after });
+    const body = response.value as HubspotPage<T>;
+    return right({ results: body.results ?? [], after: body.paging?.next?.after });
   }
 
   private async createTicket(subject: string, paragraphs: string[]): Promise<Either<BaseAppError, { key: string; url: string }>> {

@@ -14,6 +14,7 @@ const clienteController = new ClienteController(new ClienteService(clienteReposi
 const clienteRoutes = Router();
 clienteRoutes.use(authMiddleware.requireAdminRole);
 clienteRoutes.get("/", clienteController.getAll);
+clienteRoutes.get("/empresas", clienteController.getEmpresas);
 clienteRoutes.post("/sincronizar", clienteController.sincronizar);
 
 export { clienteRoutes };

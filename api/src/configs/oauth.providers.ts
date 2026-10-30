@@ -8,7 +8,7 @@ export const providers = {
     tokenUrl: "https://api.hubspot.com/oauth/2026-09/token",
     clientId: process.env.HUBSPOT_CLIENT_ID!,
     clientSecret: process.env.HUBSPOT_CLIENT_SECRET!,
-    scopes: "crm.objects.tickets.read crm.objects.tickets.write crm.objects.contacts.read",
+    scopes: "crm.objects.tickets.read crm.objects.tickets.write crm.objects.contacts.read crm.objects.companies.read",
     extraParams: {},
   },
   jira: {

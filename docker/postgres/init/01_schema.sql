@@ -504,3 +504,21 @@ CREATE TABLE IF NOT EXISTS public."clientes" (
 	"sincronizado_em" timestamp with time zone DEFAULT now() NOT NULL
 );
 CREATE INDEX IF NOT EXISTS "clientes_nome_idx" ON public."clientes" (lower("nome"));
+
+
+-- api/drizzle/0017_empresas.sql
+CREATE TABLE IF NOT EXISTS public."empresas" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"hubspot_id" text NOT NULL UNIQUE,
+	"nome" text NOT NULL,
+	"dominio" text,
+	"setor" text,
+	"url" text,
+	"sincronizado_em" timestamp with time zone DEFAULT now() NOT NULL
+);
+CREATE INDEX IF NOT EXISTS "empresas_nome_idx" ON public."empresas" (lower("nome"));
+ALTER TABLE public."clientes" ADD COLUMN IF NOT EXISTS "cargo" text;
+ALTER TABLE public."clientes" ADD COLUMN IF NOT EXISTS "senioridade" text;
+ALTER TABLE public."clientes" ADD COLUMN IF NOT EXISTS "papeis" text[] DEFAULT '{}' NOT NULL;
+ALTER TABLE public."clientes" ADD COLUMN IF NOT EXISTS "empresas_hubspot_ids" text[] DEFAULT '{}' NOT NULL;
+CREATE INDEX IF NOT EXISTS "clientes_empresas_idx" ON public."clientes" USING gin ("empresas_hubspot_ids");

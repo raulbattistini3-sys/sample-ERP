@@ -26,6 +26,15 @@ class ClienteController extends BaseController {
     return res.status(200).json({ data, pageNumber: page, pageSize: amount, totalItems, sincronizado_em: sincronizadoEm });
   };
 
+  // companies with their contacts ranked; ?decisores=true keeps only the ones with a decision maker
+  getEmpresas = async (req: Request, res: Response) => {
+    const page = positive(req.query.page, 1);
+    const amount = Math.min(positive(req.query.amount, 20), MAX_AMOUNT);
+    const busca = typeof req.query.busca === "string" ? req.query.busca.trim() : "";
+    const { data, totalItems, semEmpresa } = await this.clienteService.listarEmpresas(page, amount, busca, req.query.decisores === "true");
+    return res.status(200).json({ data, pageNumber: page, pageSize: amount, totalItems, sem_empresa: semEmpresa });
+  };
+
   sincronizar = async (req: Request, res: Response, next: NextFunction) => {
     const result = await this.clienteService.sincronizar();
     if (result.isLeft()) return this.fail(req, next, result.value);
