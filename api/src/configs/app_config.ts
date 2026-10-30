@@ -26,7 +26,7 @@ class Config {
 
   private loadApiConfig(): ApiConfig {
     return {
-      port: Number(process.env.APP_PORT) || 10000,
+      port: Number(process.env.PORT) || 10000,
       host: process.env.APP_HOST || "0.0.0.0",
     };
   }
