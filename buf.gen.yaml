@@ -1,0 +1,16 @@
+# buf generate   (buf: go install github.com/bufbuild/buf/cmd/buf@v1.75.0)
+# The plugins are pinned in go.mod's tool block, so no protoc or global plugins are needed.
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/raulbattistini3-sys/sample-ERP/gen/go
+plugins:
+  - local: ["go", "tool", "protoc-gen-go"]
+    out: gen/go
+    opt: paths=source_relative
+  - local: ["go", "tool", "protoc-gen-go-grpc"]
+    out: gen/go
+    opt: paths=source_relative
+clean: true
