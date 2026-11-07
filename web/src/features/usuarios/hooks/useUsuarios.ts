@@ -1,4 +1,5 @@
-import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSingleFlightMutation } from "../../../hooks/useSingleFlightMutation";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getUsuarios,
   getUsuarioById,
@@ -26,34 +27,34 @@ export const useUsuario = (id: string) =>
   useQuery({ queryKey: ["usuarios", id], queryFn: () => getUsuarioById(id), enabled: !!id });
 
 export const useRegisterUsuario = () =>
-  useMutation({ mutationFn: registerUsuario });
+  useSingleFlightMutation({ mutationFn: registerUsuario });
 
 export const useCreateUsuario = () => {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSingleFlightMutation({
     mutationFn: createUsuario,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["usuarios"] }),
   });
 };
 
-export const useForgotPassword = () => useMutation({ mutationFn: forgotPassword });
+export const useForgotPassword = () => useSingleFlightMutation({ mutationFn: forgotPassword });
 
-export const useResetPassword = () => useMutation({ mutationFn: resetPassword });
+export const useResetPassword = () => useSingleFlightMutation({ mutationFn: resetPassword });
 
 // on success the new session replaces the old one, whose token the API no longer accepts
 export const useChangePassword = () => {
   const { applySession } = useAuth();
-  return useMutation({ mutationFn: changePassword, onSuccess: applySession });
+  return useSingleFlightMutation({ mutationFn: changePassword, onSuccess: applySession });
 };
 
 export const useLogin = () => {
   const { login } = useAuth();
-  return useMutation({ mutationFn: login });
+  return useSingleFlightMutation({ mutationFn: login });
 };
 
 export const useUpdateUsuario = () => {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSingleFlightMutation({
     mutationFn: updateUsuario,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["usuarios"] }),
   });
@@ -61,7 +62,7 @@ export const useUpdateUsuario = () => {
 
 export const useArchiveUsuario = () => {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSingleFlightMutation({
     mutationFn: archiveUsuario,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["usuarios"] }),
   });
@@ -69,7 +70,7 @@ export const useArchiveUsuario = () => {
 
 export const useDeleteUsuario = () => {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSingleFlightMutation({
     mutationFn: deleteUsuario,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["usuarios"] }),
   });

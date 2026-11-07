@@ -8,11 +8,15 @@ description = "Runs the whole sample-ERP stack natively: embedded Postgres, impo
 [dependencies]
 anyhow = "1"
 axum = "0.8"
+axum-server = { version = "0.9", default-features = false, features = ["tls-rustls-no-provider"] }
+futures-util = "0.3"
 dotenvy = "0.15"
 mime_guess = "2"
 postgresql_archive = { version = "0.22", default-features = false }
 postgresql_embedded = { version = "0.22", default-features = false, features = ["theseus", "tokio", "tls-rustls-ring"] }
 rand = "0.9"
+reqwest = { version = "0.13", default-features = false, features = ["stream"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rust-embed = { version = "8", features = ["include-exclude"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -18,8 +18,8 @@ use std::{
 };
 
 const EXE: &str = env::consts::EXE_SUFFIX;
-/// Must match web::API_URL_PLACEHOLDER in the launcher, which swaps it for the API's address.
-const API_URL_PLACEHOLDER: &str = "__SAMPLE_ERP_API_URL__";
+/// The web app calls the API on its own origin, through the launcher's gateway (no CORS, no address baked in).
+const WEB_API_URL: &str = "/api";
 /// What a Spring Boot 4 app with JPA, Flyway, Security and Actuator loads from the JDK.
 const BILLING_MODULES: &str = "java.base,java.compiler,java.desktop,java.instrument,java.management,\
 java.naming,java.net.http,java.prefs,java.rmi,java.scripting,java.security.jgss,java.security.sasl,\
@@ -68,7 +68,7 @@ fn dist(repo: &Path, out: &Path, billing: bool) -> Result<()> {
     run(Command::new(tool("bun")).args(["install", "--frozen-lockfile"]).current_dir(&web))?;
     run(Command::new(tool("bun"))
         .args(["run", "build"])
-        .env("VITE_API_URL", API_URL_PLACEHOLDER)
+        .env("VITE_API_URL", WEB_API_URL)
         .current_dir(&web))?;
 
     step("api: bun build --compile");

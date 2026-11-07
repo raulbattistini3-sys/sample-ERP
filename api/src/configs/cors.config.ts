@@ -17,6 +17,7 @@ const origins = allowedOrigins.length > 0 ? allowedOrigins : DEFAULT_ORIGINS;
 export const corsOptions: CorsOptions = {
    origin: (origin, callback) => callback(null, !origin || origins.includes(origin)),
    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-   allowedHeaders: ["Content-Type", "Authorization"],
+   // Idempotency-Key: the web sends one on every POST, for the launcher's gateway
+   allowedHeaders: ["Content-Type", "Authorization", "Idempotency-Key"],
    maxAge: 600, // cache preflights for 10 minutes
 };

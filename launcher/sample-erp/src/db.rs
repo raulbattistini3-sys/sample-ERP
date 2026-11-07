@@ -60,8 +60,21 @@ pub async fn start(paths: &Paths, cfg: &Config) -> Result<PostgreSQL> {
     if first_launch {
         crate::log("postgres", "first launch: downloading a portable Postgres 17 (one time)");
     }
+    let install_root = settings.installation_dir.clone();
     let mut pg = PostgreSQL::new(settings);
-    pg.setup().await.context("installing Postgres")?;
+    // Windows Defender scans the freshly extracted .exe files and can briefly block the rename that moves
+    // them into place ("access denied", os error 5); a second try a few seconds later goes through
+    for attempt in 1..=3u64 {
+        match pg.setup().await {
+            Ok(()) => break,
+            Err(e) if attempt < 3 => {
+                crate::log("postgres", &format!("install attempt {attempt} failed ({e}); retrying"));
+                remove_partial_extracts(&install_root);
+                tokio::time::sleep(Duration::from_secs(3 * attempt)).await;
+            }
+            Err(e) => return Err(e).context("installing Postgres"),
+        }
+    }
     pg.start().await.with_context(|| {
         format!(
             "starting Postgres on port {} (see data/postgres/data/start.log)",
@@ -85,6 +98,17 @@ fn use_msvc_build() -> Result<()> {
         },
     )?;
     Ok(())
+}
+
+/// The archive is unpacked into a `.tmp*` folder next to its destination first; a failed rename leaves it
+/// behind.
+fn remove_partial_extracts(install_root: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(install_root) else { return };
+    for entry in entries.flatten() {
+        if entry.file_name().to_string_lossy().starts_with(".tmp") {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
 }
 
 /// Creates and seeds the database on first launch, then applies the migrations it hasn't seen.

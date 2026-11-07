@@ -7,6 +7,7 @@
 
 mod config;
 mod db;
+mod gateway;
 mod services;
 mod web;
 #[cfg(windows)]
@@ -31,6 +32,11 @@ pub fn log(source: &str, line: &str) {
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    // One TLS crypto provider for the whole process, before any HTTP client exists. postgresql_archive
+    // turns on reqwest's rustls-no-provider, and that applies to the gateway's client too: without this,
+    // building it panics on every launch that doesn't download Postgres first (the download installs one).
+    // ring rather than aws-lc-rs, which needs cmake and NASM to build on Windows.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let result = cli().await;
     if let Err(e) = &result {
         eprintln!("\nerror: {e:#}");
@@ -88,9 +94,9 @@ async fn run(paths: &Paths, cfg: Config) -> Result<()> {
             bail!("port {port} is taken (is another copy, or docker compose, running?); set {key} in config/launcher.env");
         }
     }
-    // bound now and handed to axum later, so the port can't be taken in between
-    let web_listener = StdListener::bind((Ipv4Addr::LOCALHOST, cfg.web_port)).with_context(|| {
-        format!("port {} is taken; set ERP_WEB_PORT in config/launcher.env", cfg.web_port)
+    // the gateway: the only public port. Bound now and handed to axum later, so it can't be taken in between
+    let web_listener = StdListener::bind((cfg.gateway.bind, cfg.web_port)).with_context(|| {
+        format!("port {} is taken on {}; set ERP_WEB_PORT in config/launcher.env", cfg.web_port, cfg.gateway.bind)
     })?;
     web_listener.set_nonblocking(true)?;
 
@@ -155,12 +161,11 @@ async fn run_stack(
         ("DATABASE_URL", cfg.database_url()),
         ("APP_HOST", "127.0.0.1".into()),
         ("PORT", cfg.api_port.to_string()),
-        (
-            "CORS_ORIGINS",
-            format!("http://localhost:{0},http://127.0.0.1:{0}", cfg.web_port),
-        ),
+        // the browser calls /api on the gateway's own origin, so CORS only matters for these
+        ("CORS_ORIGINS", format!("{0},{1}", cfg.web_url(), cfg.web_url().replace("localhost", "127.0.0.1"))),
         ("WEB_URL", cfg.web_url()),
-        ("API_PUBLIC_URL", format!("http://localhost:{}", cfg.api_port)),
+        // OAuth callbacks come back through the gateway: <web>/api/integracoes/<provider>/callback
+        ("API_PUBLIC_URL", format!("{}/api", cfg.web_url())),
         // with this set the API hands imports to the Go importer instead of forking worker processes,
         // which a single compiled executable can't do
         ("IMPORTER_GRPC_URL", format!("127.0.0.1:{}", cfg.importer_port)),
@@ -186,6 +191,8 @@ async fn run_stack(
             ("BILLING_INTERNAL_TOKEN", secrets.billing_token.clone()),
             ("BILLING_PORT", cfg.billing_port.to_string()),
             ("SERVER_ADDRESS", "127.0.0.1".into()),
+            // served under /billing by the gateway: honour its X-Forwarded-Prefix in links and redirects
+            ("SERVER_FORWARD_HEADERS_STRATEGY", "framework".into()),
         ]));
         tasks.spawn(services::supervise(
             Spec {
@@ -199,15 +206,25 @@ async fn run_stack(
         ));
     }
 
-    // web: the static app, with the API address filled in
+    // the gateway: web app, /api and /billing on one port; the services stay on loopback
+    let mut upstreams = vec![gateway::Upstream { prefix: "/api", base: format!("http://127.0.0.1:{}", cfg.api_port) }];
+    if billing {
+        upstreams.push(gateway::Upstream { prefix: "/billing", base: format!("http://127.0.0.1:{}", cfg.billing_port) });
+    }
+    let g = &cfg.gateway;
+    let settings = gateway::Settings {
+        upstreams,
+        rate: g.rate,
+        burst: g.burst,
+        trust_proxy: g.trust_proxy,
+        max_body: g.max_body_mb * 1024 * 1024,
+        max_import: g.max_import_mb * 1024 * 1024,
+        https: g.tls.is_some(),
+    };
     let mut web_state = state_rx.clone();
-    let mut web = tokio::spawn(web::serve(
-        tokio::net::TcpListener::from_std(web_listener)?,
-        cfg.api_browser_url(),
-        async move {
-            let _ = web_state.wait_for(|s| *s != State::Running).await;
-        },
-    ));
+    let mut web = tokio::spawn(gateway::serve(web_listener, settings, g.tls.clone(), async move {
+        let _ = web_state.wait_for(|s| *s != State::Running).await;
+    }));
 
     let banner = {
         let api = cfg.api_port;
@@ -218,15 +235,22 @@ async fn run_stack(
   first sign-in  {} / {}  (asked to choose a new password; ignore once done)",
             cfg.admin.email, cfg.admin.password
         );
-        let billing_line =
-            if billing { format!("\n  billing  http://localhost:{}/docs", cfg.billing_port) } else { String::new() };
+        let billing_line = if billing {
+            format!(
+                "\n  billing  {0}/billing/docs   (Stripe: forward webhooks to {0}/billing/webhooks/stripe)",
+                cfg.web_url()
+            )
+        } else {
+            String::new()
+        };
+        let docs = format!("{}/api/docs", cfg.web_url());
         tokio::spawn(async move {
             if !wait_for_port(api, Duration::from_secs(90)).await {
                 log("launcher", "the API is not answering yet; check its output above");
                 return;
             }
             println!(
-                "\n  sample-erp is up\n  web      {web_url}\n  api      http://localhost:{api}/docs{billing_line}{admin_line}\n  Ctrl+C stops everything.\n"
+                "\n  sample-erp is up on one port\n  web      {web_url}\n  api      {docs}{billing_line}{admin_line}\n  Ctrl+C stops everything.\n"
             );
             if open {
                 open_browser(&web_url);

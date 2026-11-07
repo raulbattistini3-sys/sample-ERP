@@ -1,4 +1,5 @@
-import { keepPreviousData, useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSingleFlightMutation } from "../../../hooks/useSingleFlightMutation";
+import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LAZY_PAGE_SIZE, LIST_PAGE_SIZE } from "../../../lib/pagination";
 import { downloadTextFile } from "../../../lib/csv";
 import { fetchProductsForDownload, productsFileName, productsToCsv } from "../utils/productsSpreadsheet";
@@ -39,7 +40,7 @@ export const useProduct = (id: string) =>
 
 export const useCreateProduct = () => {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSingleFlightMutation({
     mutationFn: createProduct,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["products"] }),
   });
@@ -47,7 +48,7 @@ export const useCreateProduct = () => {
 
 export const useUpdateProduct = () => {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSingleFlightMutation({
     mutationFn: updateProduct,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["products"] }),
   });
@@ -55,7 +56,7 @@ export const useUpdateProduct = () => {
 
 export const useDeactivateProduct = () => {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSingleFlightMutation({
     mutationFn: deactivateProduct,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["products"] }),
   });
@@ -63,7 +64,7 @@ export const useDeactivateProduct = () => {
 
 export const useDeleteProduct = () => {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSingleFlightMutation({
     mutationFn: deleteProduct,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["products"] }),
   });
@@ -71,7 +72,7 @@ export const useDeleteProduct = () => {
 
 // fetches every product the signed-in user can see and saves them as a spreadsheet (CSV)
 export const useDownloadProducts = () =>
-  useMutation({
+  useSingleFlightMutation({
     mutationFn: async () => {
       const { products, totals } = await fetchProductsForDownload();
       downloadTextFile(productsFileName(), productsToCsv(products, totals));
@@ -80,7 +81,7 @@ export const useDownloadProducts = () =>
 
 export const useImportProducts = () => {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSingleFlightMutation({
     mutationFn: importProducts,
     onSuccess: (result) => {
       if (result.errors.length === 0) queryClient.invalidateQueries({ queryKey: ["products"] });
@@ -89,7 +90,7 @@ export const useImportProducts = () => {
 };
 
 // hands the chosen file to the importer; the result comes from useProductImport
-export const useStartProductImport = () => useMutation({ mutationFn: startProductImport });
+export const useStartProductImport = () => useSingleFlightMutation({ mutationFn: startProductImport });
 
 // polls an import every second until it is concluida, rejeitada or falhou; a concluded one refreshes
 // the product lists

@@ -1,4 +1,5 @@
-import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSingleFlightMutation } from "../../../hooks/useSingleFlightMutation";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LAZY_PAGE_SIZE, nextLazyPage } from "../../../lib/pagination";
 import { getAuditorias, getAuditoriaById, createAuditoriaManual, archiveAuditoria, deleteAuditoria } from "../api/auditoria.api";
 
@@ -15,7 +16,7 @@ export const useAuditoria = (id: string) =>
 
 export const useCreateAuditoria = () => {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSingleFlightMutation({
     mutationFn: createAuditoriaManual,
     // the audited product/categoria changed too
     onSuccess: () =>
@@ -27,7 +28,7 @@ export const useCreateAuditoria = () => {
 
 export const useArchiveAuditoria = () => {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSingleFlightMutation({
     mutationFn: archiveAuditoria,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["auditorias"] }),
   });
@@ -35,7 +36,7 @@ export const useArchiveAuditoria = () => {
 
 export const useDeleteAuditoria = () => {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSingleFlightMutation({
     mutationFn: deleteAuditoria,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["auditorias"] }),
   });

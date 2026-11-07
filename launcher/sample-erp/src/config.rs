@@ -81,10 +81,24 @@ pub struct Config {
     pub billing_port: u16,
     pub import_workers: String,
     pub open_browser: bool,
+    pub gateway: GatewayConfig,
     /// The first superuser, created by the API when the database has none (BOOTSTRAP_SU_*). Its
     /// password is a known one, so the web app makes it pick a new one at first sign-in.
     pub admin: Admin,
     pub secrets: Secrets,
+}
+
+/// The public port's behaviour (see gateway/mod.rs).
+pub struct GatewayConfig {
+    /// 127.0.0.1 by default; 0.0.0.0 to serve other machines (put it behind HTTPS then)
+    pub bind: std::net::IpAddr,
+    pub rate: f64,
+    pub burst: u32,
+    pub trust_proxy: bool,
+    pub max_body_mb: usize,
+    pub max_import_mb: usize,
+    /// both set: the gateway serves HTTPS with this certificate and key (PEM)
+    pub tls: Option<(PathBuf, PathBuf)>,
 }
 
 pub struct Admin {
@@ -113,10 +127,25 @@ impl Config {
             importer_port: port("ERP_IMPORTER_PORT", 50051)?,
             billing_port: port("ERP_BILLING_PORT", 8081)?,
             import_workers: vars.get("ERP_IMPORT_WORKERS").cloned().unwrap_or_else(|| "2".into()),
-            open_browser: !matches!(
-                vars.get("ERP_OPEN_BROWSER").map(|v| v.to_ascii_lowercase()).as_deref(),
-                Some("0" | "false" | "no" | "off")
-            ),
+            open_browser: flag(&vars, "ERP_OPEN_BROWSER", true),
+            gateway: GatewayConfig {
+                bind: match vars.get("ERP_BIND") {
+                    Some(v) => v.parse().with_context(|| format!("ERP_BIND={v} is not an IP address"))?,
+                    None => std::net::IpAddr::from([127, 0, 0, 1]),
+                },
+                rate: number(&vars, "ERP_RATE", 20.0)?,
+                burst: number(&vars, "ERP_BURST", 40.0)? as u32,
+                trust_proxy: flag(&vars, "ERP_TRUST_PROXY", false),
+                max_body_mb: number(&vars, "ERP_MAX_BODY_MB", 1.0)? as usize,
+                // the API takes spreadsheets up to 15 MB (api/src/middlewares/upload.middleware.ts)
+                max_import_mb: number(&vars, "ERP_MAX_IMPORT_MB", 16.0)? as usize,
+                tls: match (vars.get("ERP_TLS_CERT"), vars.get("ERP_TLS_KEY")) {
+                    (Some(c), Some(k)) if !c.is_empty() && !k.is_empty() => Some((PathBuf::from(c), PathBuf::from(k))),
+                    (None, None) => None,
+                    (Some(c), Some(k)) if c.is_empty() && k.is_empty() => None,
+                    _ => bail!("set both ERP_TLS_CERT and ERP_TLS_KEY, or neither"),
+                },
+            },
             admin: Admin {
                 name: vars.get("ERP_ADMIN_NAME").cloned().unwrap_or_else(|| "John Doe".into()),
                 email: vars.get("ERP_ADMIN_EMAIL").cloned().unwrap_or_else(|| "admin@sample-erp.local".into()),
@@ -133,14 +162,25 @@ impl Config {
         )
     }
 
+    /// The public address: the gateway, the only port a browser (or Stripe) talks to.
     pub fn web_url(&self) -> String {
-        format!("http://localhost:{}", self.web_port)
+        let scheme = if self.gateway.tls.is_some() { "https" } else { "http" };
+        format!("{scheme}://localhost:{}", self.web_port)
     }
+}
 
-    /// What the browser calls. 127.0.0.1 rather than localhost: the API listens on IPv4 only, and
-    /// localhost may resolve to ::1 first.
-    pub fn api_browser_url(&self) -> String {
-        format!("http://127.0.0.1:{}", self.api_port)
+fn number(vars: &HashMap<String, String>, key: &str, default: f64) -> Result<f64> {
+    match vars.get(key) {
+        Some(v) => v.parse::<f64>().ok().filter(|n| *n >= 0.0).with_context(|| format!("{key}={v} is not a non-negative number")),
+        None => Ok(default),
+    }
+}
+
+fn flag(vars: &HashMap<String, String>, key: &str, default: bool) -> bool {
+    match vars.get(key).map(|v| v.to_ascii_lowercase()).as_deref() {
+        Some("0" | "false" | "no" | "off") => false,
+        Some("1" | "true" | "yes" | "on") => true,
+        _ => default,
     }
 }
 

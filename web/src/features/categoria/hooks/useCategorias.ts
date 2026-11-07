@@ -1,4 +1,5 @@
-import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSingleFlightMutation } from "../../../hooks/useSingleFlightMutation";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ALL_ITEMS_AMOUNT, LIST_PAGE_SIZE } from "../../../lib/pagination";
 import {
   getCategorias,
@@ -30,7 +31,7 @@ export const useCategoria = (id: string) =>
 
 export const useCreateCategoria = () => {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSingleFlightMutation({
     mutationFn: createCategoria,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["categorias"] }),
   });
@@ -38,7 +39,7 @@ export const useCreateCategoria = () => {
 
 export const useUpdateCategoria = () => {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSingleFlightMutation({
     mutationFn: updateCategoria,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["categorias"] }),
   });
@@ -46,7 +47,7 @@ export const useUpdateCategoria = () => {
 
 export const useArchiveCategoria = () => {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSingleFlightMutation({
     mutationFn: archiveCategoria,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["categorias"] }),
   });
@@ -54,7 +55,7 @@ export const useArchiveCategoria = () => {
 
 export const useDeleteCategoria = () => {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSingleFlightMutation({
     mutationFn: deleteCategoria,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["categorias"] }),
   });
