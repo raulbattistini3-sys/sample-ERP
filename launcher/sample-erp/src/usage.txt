@@ -1,0 +1,10 @@
+sample-erp: the whole stack without Docker
+
+  sample-erp                 start everything: Postgres, importer, API, billing (when
+                             config/billing.env exists) and the web app; Ctrl+C stops it all
+  sample-erp promote EMAIL   give the account with that e-mail the SU permission
+  sample-erp help            this text
+
+Settings: config/launcher.env (ports, ERP_OPEN_BROWSER=false), config/api.env (the API's
+optional secrets), config/billing.env (Stripe keys). Data: the data folder; delete it to start
+over with an empty database.
