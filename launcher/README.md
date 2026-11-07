@@ -35,8 +35,31 @@ winget install --id GoLang.Go -e
 winget install --id EclipseAdoptium.Temurin.21.JDK -e
 ```
 
-Rust links with the MSVC tools, which is why the Build Tools line is there. Open a new terminal afterwards so
-PATH picks everything up.
+Rust links with the MSVC tools, which is why the Build Tools line is there.
+
+A terminal keeps the PATH it started with, so the new tools aren't found until you open a new one. To refresh
+the current session instead, paste this function into PowerShell and run `refreshenv`. It reloads every
+machine and user variable, and rebuilds PATH from both. Add it to `$PROFILE` to always have it.
+
+```powershell
+function refreshenv {
+    foreach ($level in 'Machine', 'User') {
+        [Environment]::GetEnvironmentVariables($level).GetEnumerator() |
+            Where-Object { $_.Key -ne 'Path' } |
+            ForEach-Object { Set-Item -Path "Env:$($_.Key)" -Value $_.Value }
+    }
+    $env:Path = @(
+        [Environment]::GetEnvironmentVariable('Path', 'Machine'),
+        [Environment]::GetEnvironmentVariable('Path', 'User')
+    ) -ne $null -join ';'
+    Write-Host "Environment variables refreshed." -ForegroundColor Green
+}
+
+refreshenv
+cargo --version; bun --version; go version; jlink --version   # each should print a version
+```
+
+This is PowerShell, not `cmd.exe`. In `cmd`, open a new window instead.
 
 #### Ubuntu 22.04/24.04 and Linux Mint 21/22
 
@@ -50,9 +73,9 @@ curl -fsSL https://bun.sh/install | bash
 # apt's Go is too old for go.mod; use the official build
 curl -fsSL https://go.dev/dl/go1.26.6.linux-amd64.tar.gz | sudo tar -C /usr/local -xz
 echo 'export PATH="$PATH:/usr/local/go/bin"' >> ~/.profile
-
-source ~/.profile && source ~/.bashrc   # or open a new terminal
 ```
+
+Then refresh the session (see [Refresh PATH on Linux](#refresh-path-on-linux)).
 
 Mint 21 and 22 are built on Ubuntu 22.04 and 24.04, so the same packages apply.
 
@@ -66,12 +89,47 @@ curl -fsSL https://bun.sh/install | bash
 
 curl -fsSL https://go.dev/dl/go1.26.6.linux-amd64.tar.gz | sudo tar -C /usr/local -xz
 echo 'export PATH="$PATH:/usr/local/go/bin"' >> ~/.bash_profile
-
-source ~/.bash_profile && source ~/.bashrc   # or log in again
 ```
+
+Then refresh the session (see [Refresh PATH on Linux](#refresh-path-on-linux)).
 
 `java-21-amazon-corretto-devel` is the full JDK, including `jlink`; the headless package lacks it. Amazon
 Linux 2 (end of life, glibc 2.26) isn't covered here.
+
+#### Refresh PATH on Linux
+
+The installers add their folders to PATH through shell startup files, which only an open terminal reads
+again when told to. Which files they write depends on the distro and the shell: rustup writes `~/.profile`
+and `~/.bashrc`, Bun writes `~/.bashrc` or `~/.zshrc`, and Go was added above. So this function adds the
+three tool folders directly, then rereads the current shell's startup file. It works the same in bash and
+zsh, on any of the distros above. Paste it into the terminal and run `refreshenv`, or add it to `~/.bashrc`
+(`~/.zshrc` for zsh) to always have it.
+
+```bash
+refreshenv() {
+    for dir in "$HOME/.cargo/bin" "$HOME/.bun/bin" /usr/local/go/bin; do
+        [ -d "$dir" ] || continue
+        case ":$PATH:" in
+            *":$dir:"*) ;;
+            *) PATH="$PATH:$dir" ;;
+        esac
+    done
+    export PATH
+    if [ -n "$ZSH_VERSION" ]; then
+        [ -f "$HOME/.zshrc" ] && . "$HOME/.zshrc"
+    elif [ -n "$BASH_VERSION" ]; then
+        [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"
+    fi
+    hash -r 2>/dev/null   # forget cached command locations
+    echo "Environment variables refreshed."
+}
+
+refreshenv
+cargo --version && bun --version && go version && jlink --version   # each should print a version
+```
+
+If a version check still fails, log out and back in. That rereads every startup file, including the
+`~/.profile` or `~/.bash_profile` that only a login shell reads.
 
 On a server, everything listens on 127.0.0.1. To try it from your own machine, use an SSH tunnel:
 `ssh -L 8080:localhost:8080 -L 3333:localhost:3333 ec2-user@<host>`. Set `ERP_OPEN_BROWSER=false` in
