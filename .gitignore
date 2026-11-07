@@ -138,3 +138,8 @@ requirements.txt
 # native launcher: `cargo xtask dist` output and the Rust build cache
 /bin/
 launcher/target/
+
+
+# local files
+sample-ERP-v0.0.1-notes.md
+prod-ca-2021.crt

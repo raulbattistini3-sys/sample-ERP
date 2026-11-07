@@ -81,8 +81,9 @@ bun install
 Edit `api/.env`:
 
 ```dotenv
-# sslmode=disable is required: the API asks for SSL by default and a plain Postgres has no TLS
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/sample_erp?sslmode=disable
+# development: a plain connection (a local Postgres has no TLS); see "Database TLS" below
+API_ENV=development
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/sample_erp
 JWT_SECRET=<any long random string>
 ```
 
@@ -148,12 +149,49 @@ end \$\$;"
 
 ### 3.2 API and web
 
-Follow [2.2](#22-api) and [2.3](#23-web), but in `api/.env` use the Supabase connection string **without** `sslmode=disable`. Supabase requires SSL, and the API already connects with it:
+Follow [2.2](#22-api) and [2.3](#23-web), but in `api/.env` use the Supabase connection string:
 
 ```dotenv
+API_ENV=production
 DATABASE_URL=postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
 JWT_SECRET=<any long random string>
 ```
+
+#### Database TLS
+
+Each service that talks to Postgres has a required variable that decides how it connects:
+`API_ENV` (the API: its pool, pg-boss, drizzle-kit and the scripts), `IMPORTER_ENV` (the importer) and
+`BILLING_ENV` (billing, including Flyway).
+
+| Value | Connection |
+| --- | --- |
+| `production` | TLS. The server's certificate is verified against `DATABASE_CA_CERT`, or else `prod-ca-2021.crt` (Supabase's root CA, in the repo root), found by searching from the service's working directory upwards. |
+| `development` | Plain, unless `DATABASE_CA_CERT` is set, in which case it is verified like production. |
+
+The CA file is public, but it stays out of git (`.gitignore`): keep a copy in the repo root for local runs,
+where the services find it. The Docker images don't include it. A production host mounts it as a secret
+file and points `DATABASE_CA_CERT` at it (e.g. `/etc/secrets/prod-ca-2021.crt` on Render). Compose runs
+everything in `development`, so it needs no CA.
+
+Supabase accepts plain connections unless **Enforce SSL** is on (Database settings). Without TLS, though,
+anyone on the network path can read or alter the traffic, credentials included. Deployments therefore use
+`production`. Turning on Enforce SSL makes Supabase refuse every plain connection, including `development`
+ones pointed at it.
+
+#### Startup checks
+
+Every service checks its configuration before doing anything. On a problem it prints one `[config]` line per
+missing or invalid variable and exits with status 1.
+
+| Service | Always required | Also required in production |
+| --- | --- | --- |
+| API | `API_ENV`, `DATABASE_URL`, `JWT_SECRET` | `CORS_ORIGINS`, `WEB_URL`, a readable CA |
+| Importer | `IMPORTER_ENV`, `DATABASE_URL` | a readable CA |
+| Billing | `BILLING_ENV`, `JDBC_DATABASE_URL`, `SANDBOX_STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET`, `ERP_API_URL`, `BILLING_INTERNAL_TOKEN` | a readable CA |
+| Web (`vite`, `vite build`) | `VITE_API_URL`, an http(s) URL | |
+
+In production, `sslmode=disable` (or any other mode that doesn't verify the certificate) in the database URL is
+refused too.
 
 ## Billing service (Stripe)
 
@@ -282,7 +320,9 @@ In the API docs, call `POST /user/login`, then paste the token under **Authorize
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `DATABASE_URL` | yes | Postgres connection string (add `?sslmode=disable` for Postgres without TLS) |
+| `API_ENV` | yes | `production` (verified TLS) or `development` (plain). See [Database TLS](#database-tls) |
+| `DATABASE_URL` | yes | Postgres connection string |
+| `DATABASE_CA_CERT` | no | CA certificate for the database's TLS (default: `prod-ca-2021.crt` from the repo root, in production) |
 | `JWT_SECRET` | yes | Signs login tokens |
 | `PORT` | no | API port (default `10000`; `.env.example` uses `3333`) |
 | `APP_HOST` | no | Bind address (default `0.0.0.0`; ignored on Render). See [Hosts and ports](#hosts-and-ports) |
@@ -307,7 +347,7 @@ For the Docker Compose database, run it from your machine against the published 
 
 ```bash
 cd api
-DATABASE_URL='postgresql://postgres:postgres@localhost:5432/sample_erp?sslmode=disable' bun run db:migrate
+API_ENV=development DATABASE_URL='postgresql://postgres:postgres@localhost:5432/sample_erp' bun run db:migrate
 ```
 
 ## Useful scripts

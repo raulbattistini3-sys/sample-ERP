@@ -13,6 +13,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/importer ./importe
 # no shell or package manager, runs as an unprivileged user; `importer healthcheck` is the probe
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/importer /importer
+# the database CA isn't baked in: IMPORTER_ENV=production reads it from DATABASE_CA_CERT, a mounted secret file
 EXPOSE 50051
 HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 CMD ["/importer", "healthcheck"]
 ENTRYPOINT ["/importer"]

@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { PgBoss } from "pg-boss";
+import { databaseConnection } from "../configs/database_connection";
 import LoggerInterface from "../interfaces/logger_interfaces/logger_interface.interface";
 import ErrorLevelsEnum from "../enums/errors_enums/errors_levels.enum";
 
@@ -11,9 +12,10 @@ class QueueClient {
   private started = false;
 
   constructor(readonly schema = process.env.PGBOSS_SCHEMA || "pgboss") {
+    const { connectionString, ssl } = databaseConnection(); // same TLS as the app's pool
     this.boss = new PgBoss({
-      connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false }, // same as the app's pool (configs/app_config.ts)
+      connectionString,
+      ssl,
       schema,
       max: 5,
       application_name: "erp-api-queue",

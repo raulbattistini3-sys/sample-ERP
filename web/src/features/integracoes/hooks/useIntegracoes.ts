@@ -1,4 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSingleFlightMutation } from "../../../hooks/useSingleFlightMutation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ProviderId,
   createHubspotTestTicket,
@@ -19,14 +20,14 @@ export const useIntegracoes = () => useQuery({ queryKey: ["integracoes"], queryF
 
 // leaves the app for the provider's consent screen
 export const useConnectIntegracao = () =>
-  useMutation({
+  useSingleFlightMutation({
     mutationFn: getAuthorizeUrl,
     onSuccess: (url) => window.location.assign(url),
   });
 
 export const useDisconnectIntegracao = () => {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSingleFlightMutation({
     mutationFn: disconnectIntegracao,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integracoes"] }),
   });
@@ -37,26 +38,26 @@ export const useJiraProjects = (enabled: boolean) =>
 
 export const useSaveJiraConfig = () => {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSingleFlightMutation({
     mutationFn: saveJiraConfig,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integracoes"] }),
   });
 };
 
-export const useJiraTestIssue = () => useMutation({ mutationFn: createJiraTestIssue });
+export const useJiraTestIssue = () => useSingleFlightMutation({ mutationFn: createJiraTestIssue });
 
 export const useHubspotPipelines = (enabled: boolean) =>
   useQuery({ queryKey: ["integracoes", "hubspot", "pipelines"], queryFn: listHubspotPipelines, enabled, staleTime: 60_000 });
 
 export const useSaveHubspotConfig = () => {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSingleFlightMutation({
     mutationFn: saveHubspotConfig,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integracoes"] }),
   });
 };
 
-export const useHubspotTestTicket = () => useMutation({ mutationFn: createHubspotTestTicket });
+export const useHubspotTestTicket = () => useSingleFlightMutation({ mutationFn: createHubspotTestTicket });
 
 // refreshes while something is still on its way to a provider
 export const useAuditoriaEnvios = (auditoriaId: string) =>
@@ -73,7 +74,7 @@ export const useQueueSummary = (provider: ProviderId) =>
 
 export const useRetryQueue = (provider: ProviderId) => {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSingleFlightMutation({
     mutationFn: () => retryQueue(provider),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integracoes", provider, "fila"] }),
   });

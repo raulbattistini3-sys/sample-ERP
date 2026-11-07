@@ -15,6 +15,7 @@ import (
 
 // Config is everything the importer needs to start.
 type Config struct {
+	Env      Env
 	GRPC     GRPCConfig
 	DB       DBConfig
 	Importer ImporterConfig
@@ -33,7 +34,7 @@ func (c GRPCConfig) Addr() string {
 
 // DBConfig is the database connection.
 type DBConfig struct {
-	// same connection string the API uses, e.g. postgresql://postgres:postgres@localhost:5432/sample_erp
+	// DATABASE_URL with its TLS parameters set for Env (see database.go): verified TLS in production
 	URL string
 }
 
@@ -61,13 +62,15 @@ func Load() (*Config, error) {
 
 	var errs []error
 
+	env := getEnv(&errs)
 	cfg := &Config{
+		Env: env,
 		GRPC: GRPCConfig{
 			Host: getString("GRPC_HOST", "0.0.0.0"),
 			Port: getInt("GRPC_PORT", 50051, &errs),
 		},
 		DB: DBConfig{
-			URL: getRequired("DATABASE_URL", &errs),
+			URL: databaseURL(getRequired("DATABASE_URL", &errs), env, &errs),
 		},
 		Importer: ImporterConfig{
 			MaxRows:      getInt("MAX_IMPORT_ROWS", 5000, &errs),

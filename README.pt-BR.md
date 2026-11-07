@@ -81,8 +81,9 @@ bun install
 Edite `api/.env`:
 
 ```dotenv
-# sslmode=disable é obrigatório: a API pede SSL por padrão e um Postgres puro não tem TLS
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/sample_erp?sslmode=disable
+# development: conexão sem TLS (um Postgres local não tem); veja "TLS do banco" abaixo
+API_ENV=development
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/sample_erp
 JWT_SECRET=<qualquer texto longo e aleatório>
 ```
 
@@ -148,12 +149,49 @@ end \$\$;"
 
 ### 3.2 API e web
 
-Siga o [2.2](#22-api) e o [2.3](#23-web), mas em `api/.env` use a connection string do Supabase **sem** `sslmode=disable`. O Supabase exige SSL, e a API já conecta com ele:
+Siga o [2.2](#22-api) e o [2.3](#23-web), mas em `api/.env` use a connection string do Supabase:
 
 ```dotenv
+API_ENV=production
 DATABASE_URL=postgresql://postgres.<project-ref>:<senha>@aws-0-<região>.pooler.supabase.com:5432/postgres
 JWT_SECRET=<qualquer texto longo e aleatório>
 ```
+
+#### TLS do banco
+
+Cada serviço que fala com o Postgres tem uma variável obrigatória que decide como ele se conecta:
+`API_ENV` (a API: o pool, o pg-boss, o drizzle-kit e os scripts), `IMPORTER_ENV` (o importador) e
+`BILLING_ENV` (o billing, incluindo o Flyway).
+
+| Valor | Conexão |
+| --- | --- |
+| `production` | TLS. O certificado do servidor é verificado com `DATABASE_CA_CERT` ou, sem ela, com `prod-ca-2021.crt` (a CA raiz do Supabase, na raiz do repositório), procurado a partir da pasta de trabalho do serviço para cima. |
+| `development` | Sem TLS, a não ser que `DATABASE_CA_CERT` esteja definido; aí a conexão é verificada como em produção. |
+
+O arquivo da CA é público, mas fica fora do git (`.gitignore`): mantenha uma cópia na raiz do repositório para
+rodar localmente, onde os serviços o encontram. As imagens Docker não o incluem. Um host de produção monta o
+arquivo como secret e aponta `DATABASE_CA_CERT` para ele (ex.: `/etc/secrets/prod-ca-2021.crt` no Render). O
+Compose roda tudo em `development`, então não precisa da CA.
+
+O Supabase aceita conexões sem TLS, a menos que **Enforce SSL** esteja ligado (configurações do banco).
+Sem TLS, porém, qualquer um no caminho da rede consegue ler ou alterar o tráfego, credenciais incluídas.
+Por isso os deploys usam `production`. Ligar o Enforce SSL faz o Supabase recusar toda conexão sem TLS,
+inclusive as de `development` apontadas para ele.
+
+#### Verificações na inicialização
+
+Todo serviço confere a configuração antes de fazer qualquer coisa. Se houver problema, ele imprime uma linha
+`[config]` por variável ausente ou inválida e encerra com status 1.
+
+| Serviço | Sempre obrigatórias | Também obrigatórias em produção |
+| --- | --- | --- |
+| API | `API_ENV`, `DATABASE_URL`, `JWT_SECRET` | `CORS_ORIGINS`, `WEB_URL`, uma CA legível |
+| Importador | `IMPORTER_ENV`, `DATABASE_URL` | uma CA legível |
+| Billing | `BILLING_ENV`, `JDBC_DATABASE_URL`, `SANDBOX_STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET`, `ERP_API_URL`, `BILLING_INTERNAL_TOKEN` | uma CA legível |
+| Web (`vite`, `vite build`) | `VITE_API_URL`, uma URL http(s) | |
+
+Em produção, `sslmode=disable` (ou qualquer outro modo que não verifique o certificado) na URL do banco também
+é recusado.
 
 ## Serviço de billing (Stripe)
 
@@ -273,7 +311,9 @@ O `api/.env.example` documenta todas as variáveis. Estas são as que importam p
 
 | Variável | Obrigatória | Para que serve |
 | --- | --- | --- |
-| `DATABASE_URL` | sim | Connection string do Postgres (adicione `?sslmode=disable` para Postgres sem TLS) |
+| `API_ENV` | sim | `production` (TLS verificado) ou `development` (sem TLS). Veja [TLS do banco](#tls-do-banco) |
+| `DATABASE_URL` | sim | Connection string do Postgres |
+| `DATABASE_CA_CERT` | não | Certificado da CA para o TLS do banco (padrão em produção: `prod-ca-2021.crt` na raiz do repositório) |
 | `JWT_SECRET` | sim | Assina os tokens de login |
 | `PORT` | não | Porta da API (padrão `10000`; o `.env.example` usa `3333`) |
 | `APP_HOST` | não | Endereço de bind (padrão `0.0.0.0`; ignorado no Render). Veja [Hosts e portas](#hosts-e-portas) |
@@ -298,7 +338,7 @@ Para o banco do Docker Compose, rode da sua máquina contra a porta publicada:
 
 ```bash
 cd api
-DATABASE_URL='postgresql://postgres:postgres@localhost:5432/sample_erp?sslmode=disable' bun run db:migrate
+API_ENV=development DATABASE_URL='postgresql://postgres:postgres@localhost:5432/sample_erp' bun run db:migrate
 ```
 
 ## Scripts úteis

@@ -2,15 +2,27 @@ import axios, { AxiosError } from "axios";
 import { clearSession, getToken } from "./auth-storage";
 
 export const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL, // e.g. http://localhost:3333
+  // "/api" behind the launcher's gateway (same origin); a full address, e.g. http://localhost:3333, when
+  // the web talks to the API directly (vite dev server, Docker)
+  baseURL: import.meta.env.VITE_API_URL,
   headers: { "Content-Type": "application/json" },
 });
+
+// 128 random bits as hex. crypto.getRandomValues, unlike randomUUID, also works on plain-http pages.
+const newIdempotencyKey = () =>
+  Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
 
 // attach token to every outgoing request
 apiClient.interceptors.request.use((config) => {
   const token = getToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  // One key per call: if the same request reaches the gateway twice (a retry, or a replay by someone in
+  // the middle), it runs once; a replay with a changed body is refused (launcher/sample-erp/src/gateway).
+  // The API ignores the header when called directly.
+  if (config.method?.toLowerCase() === "post" && !config.headers["Idempotency-Key"]) {
+    config.headers["Idempotency-Key"] = newIdempotencyKey();
   }
   return config;
 });

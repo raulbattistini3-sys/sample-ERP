@@ -34,6 +34,8 @@ services:
       target: migrate
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/sample_erp?sslmode=disable
+      # plain Postgres, no TLS (drizzle.config.ts follows the API's connection rules)
+      API_ENV: development
     depends_on:
       db:
         condition: service_healthy
@@ -45,7 +47,8 @@ services:
       - path: ./api/.env
         required: false
     environment:
-      # the app's pool asks for SSL; sslmode=disable in the URL overrides that (plain Postgres has no TLS)
+      # development: a plain connection, since this Postgres has no TLS (production verifies it)
+      API_ENV: development
       DATABASE_URL: postgresql://postgres:postgres@db:5432/sample_erp?sslmode=disable
       APP_HOST: 0.0.0.0
       PORT: 3333
@@ -81,6 +84,8 @@ services:
       dockerfile: importer/Dockerfile
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/sample_erp?sslmode=disable
+      # plain Postgres, no TLS; production verifies the database's certificate
+      IMPORTER_ENV: development
       # all IPv4 interfaces, so the API reaches it across the compose network
       GRPC_HOST: 0.0.0.0
       GRPC_PORT: 50051
@@ -104,6 +109,8 @@ services:
       - path: ./billing/.env
         required: false
     environment:
+      # plain Postgres, no TLS; production verifies the database's certificate
+      BILLING_ENV: development
       JDBC_DATABASE_URL: jdbc:postgresql://db:5432/sample_erp?user=postgres&password=postgres
       ERP_API_URL: http://api:3333
       BILLING_INTERNAL_TOKEN: ${BILLING_INTERNAL_TOKEN:-local-docker-only-change-me}
