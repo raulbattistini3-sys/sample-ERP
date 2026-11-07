@@ -178,6 +178,21 @@ Sem TLS, porém, qualquer um no caminho da rede consegue ler ou alterar o tráfe
 Por isso os deploys usam `production`. Ligar o Enforce SSL faz o Supabase recusar toda conexão sem TLS,
 inclusive as de `development` apontadas para ele.
 
+#### Verificações na inicialização
+
+Todo serviço confere a configuração antes de fazer qualquer coisa. Se houver problema, ele imprime uma linha
+`[config]` por variável ausente ou inválida e encerra com status 1.
+
+| Serviço | Sempre obrigatórias | Também obrigatórias em produção |
+| --- | --- | --- |
+| API | `API_ENV`, `DATABASE_URL`, `JWT_SECRET` | `CORS_ORIGINS`, `WEB_URL`, uma CA legível |
+| Importador | `IMPORTER_ENV`, `DATABASE_URL` | uma CA legível |
+| Billing | `BILLING_ENV`, `JDBC_DATABASE_URL`, `SANDBOX_STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET`, `ERP_API_URL`, `BILLING_INTERNAL_TOKEN` | uma CA legível |
+| Web (`vite`, `vite build`) | `VITE_API_URL`, uma URL http(s) | |
+
+Em produção, `sslmode=disable` (ou qualquer outro modo que não verifique o certificado) na URL do banco também
+é recusado.
+
 ## Serviço de billing (Stripe)
 
 O `billing/` recebe os webhooks da Stripe. Para uma fatura paga ou com falha, ele salva o evento e um job em segundo plano chama a API, que envia o e-mail pelo Resend:

@@ -178,6 +178,21 @@ anyone on the network path can read or alter the traffic, credentials included. 
 `production`. Turning on Enforce SSL makes Supabase refuse every plain connection, including `development`
 ones pointed at it.
 
+#### Startup checks
+
+Every service checks its configuration before doing anything. On a problem it prints one `[config]` line per
+missing or invalid variable and exits with status 1.
+
+| Service | Always required | Also required in production |
+| --- | --- | --- |
+| API | `API_ENV`, `DATABASE_URL`, `JWT_SECRET` | `CORS_ORIGINS`, `WEB_URL`, a readable CA |
+| Importer | `IMPORTER_ENV`, `DATABASE_URL` | a readable CA |
+| Billing | `BILLING_ENV`, `JDBC_DATABASE_URL`, `SANDBOX_STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET`, `ERP_API_URL`, `BILLING_INTERNAL_TOKEN` | a readable CA |
+| Web (`vite`, `vite build`) | `VITE_API_URL`, an http(s) URL | |
+
+In production, `sslmode=disable` (or any other mode that doesn't verify the certificate) in the database URL is
+refused too.
+
 ## Billing service (Stripe)
 
 `billing/` receives Stripe's webhooks. For a paid or failed invoice it saves the event, and a background job then calls the API, which sends the email through Resend:

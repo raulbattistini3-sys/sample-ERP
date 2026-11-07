@@ -3,6 +3,7 @@ import { drizzle, NodePgClient, NodePgDatabase } from "drizzle-orm/node-postgres
 import { Pool } from "pg";
 import * as schema from "../db/schema";
 import { databaseConnection } from "./database_connection";
+import { checkRequiredEnv } from "./required_env";
 
 export type ApiConfig = {
   port: number;
@@ -19,6 +20,7 @@ class Config {
     // checks API_ENV, DATABASE_URL and the TLS certificate now, so a bad configuration stops startup
     // instead of the first query
     databaseConnection();
+    checkRequiredEnv();
   }
 
   public static getInstance(): Config {

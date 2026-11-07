@@ -12,7 +12,7 @@ import org.springframework.core.env.MapPropertySource;
 
 /**
  * Runs once the environment is ready (real variables and billing/.env both loaded) and before any bean
- * exists: sets the database's TLS. Every problem is printed at once and
+ * exists: checks the required variables and sets the database's TLS. Every problem is printed at once and
  * the JVM exits with status 1, the equivalent of Go's os.Exit(1). Registered in BillingApplication.main,
  * so tests that build their own context skip it.
  */
@@ -22,6 +22,8 @@ public final class StartupChecks implements ApplicationListener<ApplicationEnvir
 	public void onApplicationEvent(ApplicationEnvironmentPreparedEvent event) {
 		ConfigurableEnvironment env = event.getEnvironment();
 		List<String> errors = new ArrayList<>();
+
+		RequiredEnvironment.check(env, errors);
 
 		String mode = DatabaseTls.mode(env.getProperty("BILLING_ENV"), errors);
 		String url = env.getProperty("spring.datasource.url", "");
