@@ -2,6 +2,7 @@ import "dotenv/config";
 import { drizzle, NodePgClient, NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../db/schema";
+import { databaseConnection } from "./database_connection";
 
 export type ApiConfig = {
   port: number;
@@ -15,6 +16,9 @@ class Config {
   
   constructor() {
     this.appConfig = { api: this.loadApiConfig() };
+    // checks API_ENV, DATABASE_URL and the TLS certificate now, so a bad configuration stops startup
+    // instead of the first query
+    databaseConnection();
   }
 
   public static getInstance(): Config {
@@ -39,10 +43,9 @@ class Config {
 
   public getDb(): NodePgDatabase<typeof schema> {
     if (!this.db) {
-      const pool = new Pool({
-        connectionString: process.env.DATABASE_URL,
-        ssl: { rejectUnauthorized: false },
-      });
+      // API_ENV decides TLS: verified in production, plain in development (configs/database_connection.ts)
+      const { connectionString, ssl } = databaseConnection();
+      const pool = new Pool({ connectionString, ssl });
       this.db = drizzle(pool, { schema });
     }
     return this.db;

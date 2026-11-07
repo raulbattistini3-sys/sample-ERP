@@ -140,6 +140,8 @@ async fn run_stack(
                 ("GRPC_HOST", "127.0.0.1".into()),
                 ("GRPC_PORT", cfg.importer_port.to_string()),
                 ("IMPORT_WORKERS", cfg.import_workers.clone()),
+                // the embedded Postgres has no TLS
+                ("IMPORTER_ENV", "development".into()),
             ]),
             cwd: cwd.clone(),
         },
@@ -158,6 +160,8 @@ async fn run_stack(
     ]);
     api_env.extend(config::read_env_file(&paths.config.join("api.env"))?);
     api_env.extend(owned(&[
+        // the embedded Postgres has no TLS; a copied api/.env may say production
+        ("API_ENV", "development".into()),
         ("DATABASE_URL", cfg.database_url()),
         ("APP_HOST", "127.0.0.1".into()),
         ("PORT", cfg.api_port.to_string()),
@@ -190,6 +194,7 @@ async fn run_stack(
             ("ERP_API_URL", format!("http://127.0.0.1:{}", cfg.api_port)),
             ("BILLING_INTERNAL_TOKEN", secrets.billing_token.clone()),
             ("BILLING_PORT", cfg.billing_port.to_string()),
+            ("BILLING_ENV", "development".into()),
             ("SERVER_ADDRESS", "127.0.0.1".into()),
             // served under /billing by the gateway: honour its X-Forwarded-Prefix in links and redirects
             ("SERVER_FORWARD_HEADERS_STRATEGY", "framework".into()),

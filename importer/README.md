@@ -67,6 +67,8 @@ Copy `.env.example` to `.env`. Variables already in the environment win over tha
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
+| `IMPORTER_ENV` | required | `production`: TLS verified against the CA; `development`: plain. Anything else stops the importer (see the root README, "Database TLS") |
+| `DATABASE_CA_CERT` | `prod-ca-2021.crt` in production | The database's CA, a PEM file. Without it, production looks for `prod-ca-2021.crt` from the working directory upwards |
 | `DATABASE_URL` | required | The API's database, with its migrations applied. On Supabase use the session pooler (port 5432) |
 | `GRPC_HOST` | `0.0.0.0` | Bind address. All IPv4 interfaces by default |
 | `GRPC_PORT` | `50051` | Port |

@@ -11,6 +11,7 @@ FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 RUN addgroup -S billing && adduser -S billing -G billing
 COPY --from=build /app/target/billing-*.jar ./app.jar
+# the database CA isn't baked in: BILLING_ENV=production reads it from DATABASE_CA_CERT, a mounted secret file
 USER billing
 EXPOSE 8081
 # 127.0.0.1, not localhost: busybox wget can resolve that to ::1 first

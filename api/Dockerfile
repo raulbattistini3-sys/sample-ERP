@@ -13,6 +13,7 @@ RUN bun run build
 # deps has drizzle-kit, which the production image leaves out
 FROM deps AS migrate
 COPY drizzle.config.ts ./
+COPY src/configs/database_connection.ts ./src/configs/
 COPY drizzle ./drizzle
 CMD ["bun", "run", "db:migrate"]
 
@@ -27,6 +28,8 @@ WORKDIR /app
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
+# The database CA is not baked in: API_ENV=production reads it from DATABASE_CA_CERT, a secret file the
+# host mounts (e.g. /etc/secrets/prod-ca-2021.crt on Render).
 USER node
 EXPOSE 3333
 CMD ["node", "dist/index.js"]
