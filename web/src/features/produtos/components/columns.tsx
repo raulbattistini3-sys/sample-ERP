@@ -1,7 +1,7 @@
 import { createColumnHelper } from "@tanstack/react-table";
 import type { DataTableFeatures } from "../../../components/ui/DataTable";
 import { StatusBadge } from "../../../components/ui/PageState";
-import { formatCurrency } from "../../../lib/form";
+import { formatCurrency, formatDate } from "../../../lib/form";
 import { Product } from "../types/produto.types";
 
 const helper = createColumnHelper<DataTableFeatures, Product>();
@@ -15,6 +15,10 @@ export const productColumns = helper.columns([
     cell: ({ getValue }) => formatCurrency(getValue()),
   }),
   helper.accessor("quantidade_em_estoque", { header: "Estoque" }),
+  helper.accessor("data_de_cadastro", {
+    header: "Cadastro",
+    cell: ({ getValue }) => formatDate(getValue()),
+  }),
   helper.accessor("ativo", {
     header: "Status",
     cell: ({ getValue }) => <StatusBadge active={getValue()} />,

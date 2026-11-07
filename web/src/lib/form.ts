@@ -22,5 +22,11 @@ export const formatDateTime = (value: string) => {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("pt-BR");
 };
 
+// the calendar day only, e.g. 07/11/2026
+export const formatDate = (value: string) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("pt-BR");
+};
+
 export const formatCurrency = (value: number) =>
   value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });

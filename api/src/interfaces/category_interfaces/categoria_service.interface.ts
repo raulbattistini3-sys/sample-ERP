@@ -1,3 +1,4 @@
+import { CategoriaFilters } from "../../utils/schemas/list_filters.schema";
 import {
    PayloadCreateCategoria,
    ResponseCreateCategoria,
@@ -16,6 +17,7 @@ interface ICategoryService {
    getCategories: (
       page: number,
       amount: number,
+      filters?: CategoriaFilters,
    ) => Promise<Either<BaseAppError, ResponseGetCategoriesDto>>;
    findCategoryById: (
       id: string,

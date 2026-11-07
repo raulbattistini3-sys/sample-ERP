@@ -1,3 +1,5 @@
+import { CategoriaFilters } from "../utils/schemas/list_filters.schema";
+import { inList, matchesAll, statusFilter } from "../utils/helpers/list_filters";
 import { Categoria } from "../entities/categoria.entity";
 import { ICategoryService } from "../interfaces/category_interfaces/categoria_service.interface";
 import {
@@ -27,6 +29,7 @@ class CategoriaService implements ICategoryService {
    async getCategories(
       page: number,
       amount: number,
+      filters: CategoriaFilters = {},
    ): Promise<Either<BaseAppError, ResponseGetCategoriesDto>> {
       try {
          const validation = this.categoriaValidator.validatePageAndAmount(
@@ -41,7 +44,15 @@ class CategoriaService implements ICategoryService {
             return left(categorias.value);
          }
 
-         const paginatedResult = paginate(categorias.value, page, amount);
+         const ativo = statusFilter(filters.status);
+         const filtradas = categorias.value.filter((c) =>
+            matchesAll([
+               inList(filters.nome, c.nome),
+               inList(filters.tipo, c.tipo),
+               ativo === undefined ? undefined : c.ativo === ativo,
+            ]),
+         );
+         const paginatedResult = paginate(filtradas, page, amount);
          const response: ResponseGetCategoriesDto = {
             data: paginatedResult.data.map(toCategoriaResponse),
             pageSize: paginatedResult.perPage,

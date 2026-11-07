@@ -1,3 +1,5 @@
+import { UsuarioFilters } from "../utils/schemas/list_filters.schema";
+import { inList, matchesAll, statusFilter } from "../utils/helpers/list_filters";
 import IUserService from "../interfaces/usuario_interfaces/usuario_service.interface";
 import { ResponseArchiveUsuario } from "../dtos/usuario_dtos/delete_usuario.dto";
 import {
@@ -44,6 +46,7 @@ class UsuarioService implements IUserService {
    async getUsers(
       page: number,
       amount: number,
+      filters: UsuarioFilters = {},
    ): Promise<Either<BaseAppError, ResponseGetUsuariosDto>> {
       try {
          const validation = this.userValidator.validatePageAndAmount(
@@ -57,7 +60,11 @@ class UsuarioService implements IUserService {
          if (usuarios.isLeft()) {
             return left(usuarios.value);
          }
-         const paginatedData = paginate(usuarios.value, page, amount);
+         const ativo = statusFilter(filters.status);
+         const filtrados = usuarios.value.filter((u) =>
+            matchesAll([inList(filters.permissoes, u.permissoes), ativo === undefined ? undefined : u.ativo === ativo]),
+         );
+         const paginatedData = paginate(filtrados, page, amount);
          const response: ResponseGetUsuariosDto = {
             data: paginatedData.data.map(toUsuarioResponse),
             pageNumber: paginatedData.currentPage,

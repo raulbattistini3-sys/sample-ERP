@@ -1,3 +1,5 @@
+import { parseListFilters } from "../utils/helpers/list_filters";
+import { USUARIO_FILTERS } from "../utils/schemas/list_filters.schema";
 import { Request, Response, NextFunction } from "express";
 import BaseController from "./base.controller";
 import LoggerInterface from "../interfaces/logger_interfaces/logger_interface.interface";
@@ -30,7 +32,11 @@ class UsuarioController extends BaseController {
   getAll = async (req: Request, res: Response, next: NextFunction) => {
     const page = Number(req.query.page ?? 1);
     const amount = Number(req.query.amount ?? 20);
-    const result = await this.usuarioService.getUsers(page, amount);
+    const filters = parseListFilters(req.query, USUARIO_FILTERS);
+    if (filters.isLeft()) {
+      return this.fail(req, next, filters.value);
+    }
+    const result = await this.usuarioService.getUsers(page, amount, filters.value);
     if (result.isLeft()) {
       return this.fail(req, next, result.value);
     }

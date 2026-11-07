@@ -1,12 +1,13 @@
+import { ListFilterParams } from "../../../hooks/useListFilters";
 import { useSingleFlightMutation } from "../../../hooks/useSingleFlightMutation";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LAZY_PAGE_SIZE, nextLazyPage } from "../../../lib/pagination";
 import { getAuditorias, getAuditoriaById, createAuditoriaManual, archiveAuditoria, deleteAuditoria } from "../api/auditoria.api";
 
-export const useAuditorias = () =>
+export const useAuditorias = (filters: ListFilterParams = {}) =>
   useInfiniteQuery({
-    queryKey: ["auditorias", "list"],
-    queryFn: ({ pageParam }) => getAuditorias(pageParam, LAZY_PAGE_SIZE),
+    queryKey: ["auditorias", "list", filters],
+    queryFn: ({ pageParam }) => getAuditorias(pageParam, LAZY_PAGE_SIZE, filters),
     initialPageParam: 1,
     getNextPageParam: nextLazyPage,
   });

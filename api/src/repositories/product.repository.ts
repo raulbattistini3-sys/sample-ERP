@@ -1,3 +1,5 @@
+import { ProdutoFilters } from "../utils/schemas/list_filters.schema";
+import { escapeLike, statusFilter } from "../utils/helpers/list_filters";
 import { and, asc, count, eq, sql } from "drizzle-orm";
 import { applyChanges, diffProduct, recordProductChange, recordProductChanges } from "./audit_trail.repository";
 import { DrizzleDB } from "../db/client";
@@ -86,15 +88,30 @@ class ProductRepository implements IProductRepository {
 
   // Keyset: continues right after the last row seen, so it costs the same however far down the list is.
   // id breaks ties between equal names; produtos_name_id_idx serves this order.
-  async getProductsAfter(cursor: ProductCursor | null, limit: number, includeInactive = false): Promise<Either<RepositoryError, ProductWithCategoria[]>> {
+  // filters: categoria names and ICMS rates (any of each), and ativo (only when inactive rows are visible)
+  async getProductsAfter(
+    cursor: ProductCursor | null,
+    limit: number,
+    includeInactive = false,
+    filters: ProdutoFilters = {},
+  ): Promise<Either<RepositoryError, ProductWithCategoria[]>> {
     try {
+      const ativo = includeInactive ? statusFilter(filters.status) : true;
       const productData = await this.db
         .select({ produto: produtos, categoria: categorias })
         .from(produtos)
         .innerJoin(categorias, eq(produtos.categoriaId, categorias.id))
         .where(
           and(
-            includeInactive ? undefined : eq(produtos.ativo, true),
+            ativo === undefined ? undefined : eq(produtos.ativo, ativo),
+            filters.categoria ? sql`${categorias.nome}::text = any(${sql.param(filters.categoria)}::text[])` : undefined,
+            filters.icms ? sql`${produtos.icms} = any(${sql.param(filters.icms.map(Number))}::float8[])` : undefined,
+            filters.busca
+              ? sql`${filters.busca_por?.[0] === "sku" ? produtos.sku : produtos.name} ilike ${`%${escapeLike(filters.busca[0])}%`}`
+              : undefined,
+            // Date parameters: node-pg writes them in the server's local time, as it did data_de_cadastro
+            filters.cadastro_desde ? sql`${produtos.dataDeCadastro} >= ${new Date(filters.cadastro_desde[0])}` : undefined,
+            filters.cadastro_antes ? sql`${produtos.dataDeCadastro} < ${new Date(filters.cadastro_antes[0])}` : undefined,
             cursor ? sql`(${produtos.name}, ${produtos.id}) > (${cursor.name}, ${cursor.id})` : undefined,
           ),
         )

@@ -1,3 +1,5 @@
+import { checkPeriod, parseListFilters } from "../utils/helpers/list_filters";
+import { PRODUTO_FILTERS } from "../utils/schemas/list_filters.schema";
 import { Request, Response, NextFunction } from "express";
 import BaseController from "./base.controller";
 import LoggerInterface from "../interfaces/logger_interfaces/logger_interface.interface";
@@ -45,7 +47,15 @@ class ProductController extends BaseController {
   getScroll = async (req: Request, res: Response, next: NextFunction) => {
     const cursor = typeof req.query.cursor === "string" ? req.query.cursor : undefined;
     const amount = Number(req.query.amount ?? 30);
-    const result = await this.productService.getProductsScroll(this.session(req), cursor, amount, includeInactive(req));
+    const filters = parseListFilters(req.query, PRODUTO_FILTERS);
+    if (filters.isLeft()) {
+      return this.fail(req, next, filters.value);
+    }
+    const periodo = checkPeriod(filters.value.cadastro_desde, filters.value.cadastro_antes, "cadastro");
+    if (periodo) {
+      return this.fail(req, next, periodo);
+    }
+    const result = await this.productService.getProductsScroll(this.session(req), cursor, amount, includeInactive(req), filters.value);
     if (result.isLeft()) {
       return this.fail(req, next, result.value);
     }
