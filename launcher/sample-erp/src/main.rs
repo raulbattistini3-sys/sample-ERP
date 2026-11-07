@@ -152,6 +152,8 @@ async fn run_stack(
     // database, host/port, URLs and CORS always win over the file)
     let mut api_env = owned(&[
         ("NODE_ENV", "production".into()),
+        // Stripe status and cobranças go through billing; without it the pages say it isn't running
+        ("BILLING_URL", if billing { format!("http://127.0.0.1:{}", cfg.billing_port) } else { String::new() }),
         ("JWT_SECRET", secrets.jwt_secret.clone()),
         // the first superuser, created only while the database has no active SU
         ("BOOTSTRAP_SU_NAME", cfg.admin.name.clone()),

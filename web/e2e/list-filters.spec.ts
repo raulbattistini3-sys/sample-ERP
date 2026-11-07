@@ -145,8 +145,12 @@ test("the search bar finds a word in the name, or part of the SKU", async ({ pag
     })
     .toBe(true);
 
-  // switching to SKU searches the SKUs instead (the fake ones read FK-INF-…)
+  // SKU can be chosen on an empty box too (it couldn't before), then searches the SKUs instead (the fake
+  // ones read FK-INF-…)
+  await box.fill("");
+  await expect(page).not.toHaveURL(/busca=/);
   await page.getByRole("radio", { name: "SKU" }).click();
+  await expect(page.getByRole("radio", { name: "SKU" })).toHaveAttribute("aria-checked", "true");
   await box.fill("-INF-");
   await expect(page).toHaveURL(/busca_por=sku/);
   await expect

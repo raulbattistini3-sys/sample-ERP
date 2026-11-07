@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Package, Tags, Users, ClipboardList, Contact, KeyRound, LogOut, Plug } from "lucide-react";
+import { Package, Tags, Users, ClipboardList, Contact, KeyRound, LogOut, Plug, Receipt } from "lucide-react";
 import { NavItem } from "../components/ui/NavItem";
 import { Avatar } from "../components/ui/Avatar";
 import { useAuth } from "../context/AuthContext";
@@ -13,6 +13,7 @@ const navItems = [
   { to: "/auditoria", label: "Auditoria", icon: ClipboardList, requiresAdm: false },
   { to: "/clientes", label: "Clientes", icon: Contact, requiresAdm: true },
   { to: "/integracoes", label: "Integrações", icon: Plug, requiresAdm: true },
+  { to: "/cobrancas", label: "Cobranças", icon: Receipt, requiresAdm: true },
 ];
 
 type SidebarProps = { className?: string };
