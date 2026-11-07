@@ -28,12 +28,16 @@ export const useProducts = (page = 1, amount = LIST_PAGE_SIZE) =>
     placeholderData: keepPreviousData,
   });
 
-export const useProductsScroll = (filters: ListFilterParams = {}) =>
+// enabled: false once the local search engine drives the list (features/produtos/search). The previous
+// rows stay on screen while a new filter loads, instead of the list blanking into a spinner per keystroke.
+export const useProductsScroll = (filters: ListFilterParams = {}, enabled = true) =>
   useInfiniteQuery({
     queryKey: ["products", "scroll", filters],
     queryFn: ({ pageParam }) => getProductsScroll(pageParam, LAZY_PAGE_SIZE, filters),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    placeholderData: keepPreviousData,
+    enabled,
   });
 
 export const useProduct = (id: string) =>

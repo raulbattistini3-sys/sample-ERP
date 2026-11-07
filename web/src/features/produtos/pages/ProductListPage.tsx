@@ -3,7 +3,7 @@ import { DateRangeFilter, localMidnight } from "../../../components/ui/DateRange
 import { FilterBar, FilterOption, MultiSelectFilter } from "../../../components/ui/MultiSelectFilter";
 import { useListFilters } from "../../../hooks/useListFilters";
 import { CategoriaNomesEnum } from "../../categoria/types/categoria.types";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Download, Loader2, Plus, Upload } from "lucide-react";
 import { useDownloadProducts, useProductsScroll } from "../hooks/useProducts";
 import { DataTable } from "../../../components/ui/DataTable";
@@ -16,6 +16,8 @@ import { isAdminRole } from "../../../lib/permissoes";
 import { useUser } from "../../../hooks/useSession";
 import { productColumns } from "../components/columns";
 import { FakeDataButton } from "../../../components/FakeDataButton";
+import { useLocalProducts, useProductEngine } from "../search/useLocalProducts";
+import { SearchEngineStatus } from "../search/SearchEngineStatus";
 
 const FILTERS = ["busca", "busca_por", "categoria", "icms", "status", "cadastro_de", "cadastro_ate"] as const;
 const SEARCH_FIELDS: SearchField[] = [
@@ -46,8 +48,20 @@ export function ProductListPage() {
       ...(cadastro_ate?.[0] && { cadastro_antes: [localMidnight(cadastro_ate[0], 1)] }),
     };
   }, [params]);
-  const { data, isLoading, error, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = useProductsScroll(apiParams);
-  const products = useMemo(() => data?.pages.flatMap((pagina) => pagina.data) ?? [], [data]);
+  // First paint comes from the server (one small page). Once it's on screen, the whole visible list is
+  // downloaded as a columnar snapshot and the local engine (pkg/tablecore) takes over: filters and the
+  // search bar then run in the browser, on the main thread or in a worker, with no request per keystroke.
+  const [firstPagePainted, setFirstPagePainted] = useState(false);
+  const { engine, status: engineStatus } = useProductEngine(firstPagePainted);
+  const local = useLocalProducts(engine, apiParams);
+  const server = useProductsScroll(apiParams, !local.active);
+  useEffect(() => {
+    if (server.data || server.error) setFirstPagePainted(true);
+  }, [server.data, server.error]);
+  const serverProducts = useMemo(() => server.data?.pages.flatMap((pagina) => pagina.data) ?? [], [server.data]);
+  const products = local.active ? local.products : serverProducts;
+  const isLoading = !local.active && server.isLoading;
+  const error = local.active ? null : server.error;
   const downloadMutation = useDownloadProducts();
   const user = useUser();
 
@@ -102,6 +116,7 @@ export function ProductListPage() {
         {/* only ADM/SU see inactive products */}
         {isAdminRole(user?.permissoes) && <MultiSelectFilter label="Status" options={STATUS_OPTIONS} selected={filters.status} onChange={(v) => setFilter("status", v)} />}
       </FilterBar>
+      <SearchEngineStatus mode={local.active ? "local" : engineStatus === "loading" ? "loading" : "server"} run={local.run} />
       {downloadMutation.isError && (
         <ErrorAlert
           message={getApiErrorMessage(downloadMutation.error, "Não foi possível gerar a planilha.")}
@@ -120,12 +135,16 @@ export function ProductListPage() {
             onRowClick={(p) => openItem(`/products/${p.id}`)}
             mobileTitleColumnId="name"
           />
-          <LoadMore
-            hasNextPage={hasNextPage}
-            isFetchingNextPage={isFetchingNextPage}
-            isFetchNextPageError={isFetchNextPageError}
-            fetchNextPage={fetchNextPage}
-          />
+          {local.active ? (
+            <LoadMore hasNextPage={local.hasMore} isFetchingNextPage={false} isFetchNextPageError={false} fetchNextPage={local.loadMore} />
+          ) : (
+            <LoadMore
+              hasNextPage={server.hasNextPage}
+              isFetchingNextPage={server.isFetchingNextPage}
+              isFetchNextPageError={server.isFetchNextPageError}
+              fetchNextPage={server.fetchNextPage}
+            />
+          )}
         </>
       )}
     </div>
