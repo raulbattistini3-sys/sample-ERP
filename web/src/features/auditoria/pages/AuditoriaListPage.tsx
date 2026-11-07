@@ -7,6 +7,7 @@ import { Button } from "../../../components/ui/Button";
 import { DataTable } from "../../../components/ui/DataTable";
 import { LoadMore } from "../../../components/ui/LoadMore";
 import { ErrorAlert, LoadingState, PageHeader } from "../../../components/ui/PageState";
+import { FakeDataButton } from "../../../components/FakeDataButton";
 import { useListPage } from "../../../hooks/useListPage";
 import { getApiErrorMessage } from "../../../lib/api-client";
 import { AuditoriaRow, auditoriaColumns } from "../components/columns";
@@ -41,6 +42,7 @@ export const AuditoriaListPage = () => {
         title="Auditoria"
         actions={
           <>
+            <FakeDataButton tipo="auditorias" />
             <Button onClick={() => openItem("/auditoria/new")}>
               <Plus className="h-4 w-4" aria-hidden="true" />
               Nova auditoria

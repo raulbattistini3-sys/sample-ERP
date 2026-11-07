@@ -5,6 +5,7 @@
 //   bun run admin:promote <email> [--role SU|ADM]
 import "dotenv/config";
 import { Pool } from "pg";
+import { databaseConnection } from "../src/configs/database_connection";
 
 const ROLES = ["SU", "ADM"] as const;
 type Role = (typeof ROLES)[number];
@@ -25,15 +26,8 @@ if (roleFlag !== -1) {
 }
 const email = args[0]?.trim();
 if (!email || args.length !== 1) usage();
-if (!process.env.DATABASE_URL) {
-   console.error("DATABASE_URL is not set (api/.env)");
-   process.exit(1);
-}
-
-const pool = new Pool({
-   connectionString: process.env.DATABASE_URL,
-   ssl: { rejectUnauthorized: false },
-});
+// exits with a message when API_ENV, DATABASE_URL or the CA certificate is wrong
+const pool = new Pool(databaseConnection());
 
 try {
    // case-insensitive, like login and the usuarios_email_lower_unique index

@@ -50,6 +50,7 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "admin:promote": "bun scripts/admin_promote.ts",
+    "seed:fake": "bun scripts/seed_fake.ts",
     "dev": "tsnd --transpile-only --respawn ./src/index.ts --ignore-watch node_modules",
     "start:dev": "tsc && node dist/index.js",
     "start": "node dist/index.js",

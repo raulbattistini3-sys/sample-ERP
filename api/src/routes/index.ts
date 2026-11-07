@@ -8,6 +8,7 @@ import { authMiddleware } from "./auth_middleware.instance";
 import { integracaoRoutes, publicIntegracaoRoutes } from "./integracao.routes";
 import { clienteRoutes } from "./cliente.routes";
 import { billingRoutes } from "./billing.routes";
+import { databaseConnection } from "../configs/database_connection";
 const router = Router();
 
 // POST /user/register and /user/login
@@ -31,5 +32,12 @@ router.use("/categorias", categoriaRoutes);
 router.use("/detalhamento-auditoria", detalhamentoAuditoriaRoutes);
 router.use("/integracoes", integracaoRoutes);
 router.use("/clientes", clienteRoutes);
+
+// the web's "Gerar dados fictícios" buttons; never mounted in production, so those requests are a 404.
+// Required lazily, so a production API doesn't even load the module.
+if (databaseConnection().apiEnv === "development") {
+   // eslint-disable-next-line @typescript-eslint/no-require-imports
+   router.use("/dev/fake-data", require("../fake_data/fake_data.routes").fakeDataRoutes);
+}
 
 export default router;

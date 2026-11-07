@@ -6,6 +6,7 @@ import { Button } from "../../../components/ui/Button";
 import { DataTable } from "../../../components/ui/DataTable";
 import { Pagination } from "../../../components/ui/Pagination";
 import { ErrorAlert, LoadingState, PageHeader } from "../../../components/ui/PageState";
+import { FakeDataButton } from "../../../components/FakeDataButton";
 import { useAuth } from "../../../context/AuthContext";
 import { useClampPage, useListPage } from "../../../hooks/useListPage";
 import { getApiErrorMessage } from "../../../lib/api-client";
@@ -39,6 +40,7 @@ export const UsuarioListPage = () => {
         title="Usuários"
         actions={
           <>
+            <FakeDataButton tipo="usuarios" />
             <Button onClick={() => openItem("/usuarios/new")}>
               <Plus className="h-4 w-4" aria-hidden="true" />
               Novo usuário

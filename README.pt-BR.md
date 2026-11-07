@@ -349,6 +349,9 @@ API_ENV=development DATABASE_URL='postgresql://postgres:postgres@localhost:5432/
 | `api/` | `bun run build` e depois `bun run start` | Build de produção (`dist/`) e start |
 | `api/` | `bun run db:migrate` | Aplica as novas migrations SQL de `api/drizzle/` |
 | `api/` | `bun run admin:promote <email> [--role SU\|ADM]` | Promove um usuário |
+| `api/` | `bun run seed:fake [--produtos N] [--auditorias N] [--usuarios N] [--seed N]` | Produtos, usuários e histórico de auditoria fictícios em um banco local (recusa produção e hosts remotos) |
+| `api/` | `bun run seed:fake --remover` | Apaga tudo o que o `seed:fake` criou (SKUs `FK-`, usuários `@demo.local`) |
+| `api/` | `bun run seed:fake --planilha arquivo.csv [--linhas N] [--com-erros]` | Uma planilha para Produtos > Importar, opcionalmente com linhas inválidas |
 | `web/` | `bun run dev` | Servidor de dev do Vite na :5173 |
 | `web/` | `bun run build` | Build de produção (`dist/`) |
 | `importer/` | `go run ./cmd/importer` | Importador de planilhas (lê o `importer/.env`) |
