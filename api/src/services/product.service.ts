@@ -26,7 +26,7 @@ import ProdutoValidator from "../validators/produto.validator";
 import CategoriaValidator from "../validators/categoria.validator";
 import paginate from "../utils/helpers/paginate_data.helper";
 import FirstPageCache, { FIRST_PAGE_SIZE } from "../utils/cache/first_page.cache";
-import { aoAlterarProdutos } from "../utils/cache/produtos_alterados";
+import { aoAlterarProdutos, avisarProdutosAlterados } from "../utils/cache/produtos_alterados";
 import {
    toNewProductEntity,
    toProductResponse,
@@ -108,6 +108,7 @@ class ProductService implements IProductService {
          }
 
          this.primeiraPagina.clear();
+         avisarProdutosAlterados();
          return right(toProductResponse(productData.value, categoria));
       } catch (error) {
          if (error instanceof ValidationError) {
@@ -351,6 +352,7 @@ class ProductService implements IProductService {
             );
          }
          this.primeiraPagina.clear();
+         avisarProdutosAlterados();
          return right(null);
       } catch (error) {
          if (error instanceof ValidationError) {
@@ -464,6 +466,7 @@ class ProductService implements IProductService {
             return left(new ServerError("500", true, "internal server error", saved.value));
          }
          this.primeiraPagina.clear();
+         avisarProdutosAlterados();
          return right({ ...counts, errors: [] });
       } catch (error) {
          if (error instanceof ValidationError) {
@@ -483,6 +486,7 @@ class ProductService implements IProductService {
             return left(new ServerError("500", true, "internal server error"));
          }
          this.primeiraPagina.clear();
+         avisarProdutosAlterados();
          return right(null);
       } catch (error) {
          if (error instanceof ValidationError) {
@@ -501,6 +505,7 @@ class ProductService implements IProductService {
             return left(new ServerError("500", true, "internal server error"));
          }
          this.primeiraPagina.clear();
+         avisarProdutosAlterados();
          return right(null);
       } catch (error) {
          if (error instanceof ValidationError) {

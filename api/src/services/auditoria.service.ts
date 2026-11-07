@@ -17,7 +17,7 @@ import IDetalhamentoAuditoriaRepository from "../interfaces/detalhamento_auditor
 import IAuditoryRepository from "../interfaces/auditory_interfaces/auditoria_repository.interface";
 import { IAuditoriaValidator } from "../interfaces/auditory_interfaces/auditoria_validator.interface";
 import FirstPageCache, { FIRST_PAGE_SIZE } from "../utils/cache/first_page.cache";
-import { aoAlterarProdutos } from "../utils/cache/produtos_alterados";
+import { aoAlterarProdutos, avisarProdutosAlterados } from "../utils/cache/produtos_alterados";
 
 const PRIMEIRA_PAGINA_BYTES = 64 * 1024;
 
@@ -122,6 +122,7 @@ class AuditoriaService implements IAuditoriaService {
             );
          }
          this.primeiraPagina.clear();
+         avisarProdutosAlterados();
          const response: ResponseCreateAuditoria = toAuditoriaResponse(auditoria.value);
          return right(response);
       } catch (error) {
@@ -152,6 +153,7 @@ class AuditoriaService implements IAuditoriaService {
             );
          }
          this.primeiraPagina.clear();
+         avisarProdutosAlterados();
          return right(toAuditoriaResponse(auditoria.value));
       } catch (error) {
          if (error instanceof ValidationError) {
@@ -185,6 +187,7 @@ class AuditoriaService implements IAuditoriaService {
             return left(auditoria.value);
          }
          this.primeiraPagina.clear();
+         avisarProdutosAlterados();
          return right(null);
       } catch (error) {
          if (error instanceof ValidationError) {
@@ -207,6 +210,7 @@ class AuditoriaService implements IAuditoriaService {
             return left(new ServerError("500", true, "internal server error"));
          }
          this.primeiraPagina.clear();
+         avisarProdutosAlterados();
          return right(null);
       } catch (error) {
          if (error instanceof ValidationError) {
@@ -230,6 +234,7 @@ class AuditoriaService implements IAuditoriaService {
             return left(new ServerError("500", true, "internal server error"));
          }
          this.primeiraPagina.clear();
+         avisarProdutosAlterados();
          return right(null);
       } catch (error) {
          if (error instanceof ValidationError) {

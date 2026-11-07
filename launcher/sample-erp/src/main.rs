@@ -155,6 +155,8 @@ async fn run_stack(
         // Stripe status and cobranças go through billing; without it the pages say it isn't running
         ("BILLING_URL", if billing { format!("http://127.0.0.1:{}", cfg.billing_port) } else { String::new() }),
         ("JWT_SECRET", secrets.jwt_secret.clone()),
+        // the web's search timings and the API's snapshot builds, one NDJSON file per day (pkg/telemetry)
+        ("TELEMETRY_DIR", paths.data.join("telemetry").to_string_lossy().into_owned()),
         // the first superuser, created only while the database has no active SU
         ("BOOTSTRAP_SU_NAME", cfg.admin.name.clone()),
         ("BOOTSTRAP_SU_EMAIL", cfg.admin.email.clone()),

@@ -30,7 +30,9 @@ services:
   # (the init scripts record them), so this matters for a db-data volume created by an older checkout.
   migrate:
     build:
-      context: ./api
+      # the repo root: the API imports ../pkg (code shared with the web)
+      context: .
+      dockerfile: api/Dockerfile
       target: migrate
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/sample_erp?sslmode=disable
@@ -42,7 +44,9 @@ services:
     restart: "no"
 
   api:
-    build: ./api
+    build:
+      context: .
+      dockerfile: api/Dockerfile
     env_file:
       - path: ./api/.env
         required: false
@@ -130,7 +134,8 @@ services:
 
   web:
     build:
-      context: ./web
+      context: .
+      dockerfile: web/Dockerfile
       args:
         # the browser calls the API, so this is the host-mapped address, not http://api:3333
         VITE_API_URL: http://localhost:3333

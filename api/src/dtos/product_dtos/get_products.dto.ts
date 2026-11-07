@@ -10,6 +10,20 @@ type ResponseGetProductsDto = BaseMessageGet<ProductResponseDto>;
 // where a scroll stopped: the last row's position in the name, id order
 type ProductCursor = { name: string; id: string };
 
+// one product in the columnar snapshot; numeric columns may come back from pg as strings
+type ProductSnapshotRow = {
+   id: string;
+   name: string;
+   sku: string;
+   categoria: string;
+   valorDeCusto: number | string;
+   icms: number | string;
+   valorDeVenda: number | string;
+   dataDeCadastro: Date;
+   quantidadeEmEstoque: number | string;
+   ativo: boolean;
+};
+
 // no totalItems: counting the table costs more than reading the page
 type ResponseScrollProductsDto = { data: ProductResponseDto[]; pageSize: number; nextCursor: string | null };
 
@@ -28,6 +42,7 @@ export {
    ResponseGetProductsDto,
    ResponseScrollProductsDto,
    ProductCursor,
+   ProductSnapshotRow,
    ResponseGetProductDto,
    ProductFilterDto,
    ResponseFindFilteredProductsDto,

@@ -16,6 +16,8 @@ import IImportadorClient from "../interfaces/importacao_interfaces/importador_cl
 import ImportacaoRepository from "../repositories/importacao.repository";
 import ImportacaoCluster from "../queues/importacoes.cluster";
 import { uploadPlanilha } from "../middlewares/upload.middleware";
+import ProductSnapshotService from "../services/product_snapshot.service";
+import ProductSnapshotController from "../controllers/product_snapshot.controller";
 
 
 const config = Config.getInstance();
@@ -34,6 +36,8 @@ const productService = new ProductService(
 );
 
 const productController = new ProductController(productService, logger);
+// the whole visible list as one binary file, for the web's local search (pkg/tablecore)
+const productSnapshotController = new ProductSnapshotController(new ProductSnapshotService(productRepository), logger);
 
 // With IMPORTER_GRPC_URL the Go importer does the work; without it, this API does. Both are closed on
 // shutdown by index.ts
@@ -47,6 +51,7 @@ const importacaoController = new ImportacaoController(new ImportacaoService(impo
 const productRoutes = Router();
 
 productRoutes.get("/scroll", productController.getScroll);
+productRoutes.get("/snapshot", productSnapshotController.get);
 productRoutes.get("/filter", productController.getByFilter);
 productRoutes.get("/download", productController.getToDownload);
 // bulk create/update from a spreadsheet: ADM and SU only. /imports queues the file for the importer

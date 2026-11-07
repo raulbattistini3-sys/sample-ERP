@@ -52,8 +52,8 @@
     "admin:promote": "bun scripts/admin_promote.ts",
     "seed:fake": "bun scripts/seed_fake.ts",
     "dev": "tsnd --transpile-only --respawn ./src/index.ts --ignore-watch node_modules",
-    "start:dev": "tsc && node dist/index.js",
-    "start": "node dist/index.js",
+    "start:dev": "tsc && node dist/api/src/index.js",
+    "start": "node dist/api/src/index.js",
     "build": "tsc"
   }
 }
