@@ -5,7 +5,7 @@ import { ExternalLink, Link2, Loader2, RotateCcw, Send, Unlink } from "lucide-re
 import { Button } from "../../../components/ui/Button";
 import { Field, Select } from "../../../components/ui/Field";
 import { ErrorAlert, FormCard, LoadingState, PageHeader, SuccessAlert } from "../../../components/ui/PageState";
-import { useAuth } from "../../../context/AuthContext";
+import { useUser } from "../../../hooks/useSession";
 import { getApiErrorMessage } from "../../../lib/api-client";
 import { formatDateTime } from "../../../lib/form";
 import { isAdminRole } from "../../../lib/permissoes";
@@ -319,7 +319,7 @@ function IntegracaoCard({ integracao }: { integracao: Integracao }) {
 }
 
 export const IntegracoesPage = () => {
-  const { user } = useAuth();
+  const user = useUser();
   const [searchParams, setSearchParams] = useSearchParams();
   const { data, isLoading, error } = useIntegracoes();
 

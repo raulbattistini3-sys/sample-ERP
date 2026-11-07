@@ -7,7 +7,7 @@ import { DataTable } from "../../../components/ui/DataTable";
 import { Pagination } from "../../../components/ui/Pagination";
 import { ErrorAlert, LoadingState, PageHeader } from "../../../components/ui/PageState";
 import { FakeDataButton } from "../../../components/FakeDataButton";
-import { useAuth } from "../../../context/AuthContext";
+import { useUser } from "../../../hooks/useSession";
 import { useClampPage, useListPage } from "../../../hooks/useListPage";
 import { getApiErrorMessage } from "../../../lib/api-client";
 import { LIST_PAGE_SIZE } from "../../../lib/pagination";
@@ -23,7 +23,7 @@ const STATUS_OPTIONS: FilterOption[] = [
 ];
 
 export const UsuarioListPage = () => {
-  const { user } = useAuth();
+  const user = useUser();
   const { page, setPage, openItem } = useListPage();
   const { filters, params, setFilter, clear, active } = useListFilters(FILTERS);
   const { data, isLoading, error, isPlaceholderData } = useUsuarios(page, undefined, params);

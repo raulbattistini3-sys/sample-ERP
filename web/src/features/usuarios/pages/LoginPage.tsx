@@ -4,7 +4,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Field, Input } from "../../../components/ui/Field";
 import { ErrorAlert, SuccessAlert } from "../../../components/ui/PageState";
-import { useAuth } from "../../../context/AuthContext";
+import { useIsAuthenticated } from "../../../hooks/useSession";
 import { AuthLayout } from "../../../layouts/AuthLayout";
 import { getApiErrorMessage } from "../../../lib/api-client";
 import { toFieldErrors } from "../../../lib/form";
@@ -14,7 +14,7 @@ import { LoginUsuarioPayload, LoginUsuarioSchema } from "../types/usuario.types"
 type FieldErrors = Partial<Record<keyof LoginUsuarioPayload, string>>;
 
 export const LoginPage = () => {
-  const { isAuthenticated } = useAuth();
+  const isAuthenticated = useIsAuthenticated();
   const navigate = useNavigate();
   const location = useLocation();
   // set by the api client when the API ended the session

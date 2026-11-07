@@ -4,7 +4,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Field, Input } from "../../../components/ui/Field";
 import { ErrorAlert } from "../../../components/ui/PageState";
-import { useAuth } from "../../../context/AuthContext";
+import { useIsAuthenticated } from "../../../hooks/useSession";
 import { AuthLayout } from "../../../layouts/AuthLayout";
 import { getApiErrorMessage } from "../../../lib/api-client";
 import { toFieldErrors } from "../../../lib/form";
@@ -16,7 +16,7 @@ type FormValues = Pick<RegisterUsuarioPayload, "nome" | "email" | "senha"> & { c
 type FieldErrors = Partial<Record<keyof FormValues, string>>;
 
 export const RegisterPage = () => {
-  const { isAuthenticated } = useAuth();
+  const isAuthenticated = useIsAuthenticated();
   const navigate = useNavigate();
   const registerMutation = useRegisterUsuario();
   const loginMutation = useLogin();

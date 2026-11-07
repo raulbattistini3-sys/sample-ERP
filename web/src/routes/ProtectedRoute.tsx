@@ -1,10 +1,11 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { useIsAuthenticated, useUser } from "../hooks/useSession";
 
 export const CHANGE_PASSWORD_PATH = "/trocar-senha";
 
 export function ProtectedRoute() {
-  const { user, isAuthenticated } = useAuth();
+  const user = useUser();
+  const isAuthenticated = useIsAuthenticated();
   const location = useLocation();
   // remember where the user was headed so LoginPage can send them back
   if (!isAuthenticated) return <Navigate to="/login" replace state={{ from: location }} />;

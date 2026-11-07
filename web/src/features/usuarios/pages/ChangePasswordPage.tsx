@@ -4,7 +4,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Field, Input } from "../../../components/ui/Field";
 import { ErrorAlert } from "../../../components/ui/PageState";
-import { useAuth } from "../../../context/AuthContext";
+import { useSessionActions, useUser } from "../../../hooks/useSession";
 import { AuthLayout } from "../../../layouts/AuthLayout";
 import { getApiErrorMessage } from "../../../lib/api-client";
 import { toFieldErrors } from "../../../lib/form";
@@ -17,7 +17,8 @@ type FieldErrors = Partial<Record<keyof ChangePasswordFormValues, string>>;
 // first superuser) is sent here by ProtectedRoute and can't leave until it does
 export const ChangePasswordPage = () => {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const user = useUser();
+  const { logout } = useSessionActions();
   const changeMutation = useChangePassword();
   const forced = !!user?.trocaSenhaObrigatoria;
 

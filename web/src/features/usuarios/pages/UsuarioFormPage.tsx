@@ -5,7 +5,7 @@ import { Archive, Trash2 } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Field, Input, Select } from "../../../components/ui/Field";
 import { ErrorAlert, FormCard, LoadingState, PageHeader } from "../../../components/ui/PageState";
-import { useAuth } from "../../../context/AuthContext";
+import { useUser } from "../../../hooks/useSession";
 import { getApiErrorMessage } from "../../../lib/api-client";
 import { toFieldErrors } from "../../../lib/form";
 import { isAdminRole, isSu } from "../../../lib/permissoes";
@@ -35,7 +35,7 @@ type FieldErrors = Partial<Record<keyof FormValues, string>>;
 
 export const UsuarioFormPage = () => {
   const { id = "" } = useParams();
-  const { user } = useAuth();
+  const user = useUser();
   const { data: usuario, isLoading, error } = useUsuario(id);
 
   if (!isAdminRole(user?.permissoes)) {
@@ -51,7 +51,7 @@ export const UsuarioFormPage = () => {
 };
 
 function UsuarioForm({ usuario }: { usuario?: Usuario }) {
-  const { user } = useAuth();
+  const user = useUser();
   const isEdit = !!usuario;
 
   const createMutation = useCreateUsuario();

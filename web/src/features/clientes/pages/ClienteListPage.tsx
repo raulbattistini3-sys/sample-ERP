@@ -6,7 +6,7 @@ import { DataTable, type DataTableFeatures } from "../../../components/ui/DataTa
 import { Input } from "../../../components/ui/Field";
 import { LoadMore } from "../../../components/ui/LoadMore";
 import { ErrorAlert, LoadingState, PageHeader } from "../../../components/ui/PageState";
-import { useAuth } from "../../../context/AuthContext";
+import { useUser } from "../../../hooks/useSession";
 import { getApiErrorMessage } from "../../../lib/api-client";
 import { isAdminRole } from "../../../lib/permissoes";
 import { Cliente } from "../api/clientes.api";
@@ -42,7 +42,7 @@ const BUSCA_DEBOUNCE_MS = 300;
 
 // the customers are HubSpot's contacts and companies, read live and read-only here
 export function ClienteListPage() {
-  const { user } = useAuth();
+  const user = useUser();
   const [digitado, setDigitado] = useState("");
   const [busca, setBusca] = useState("");
   const [visao, setVisao] = useState<"empresas" | "lista">("empresas");

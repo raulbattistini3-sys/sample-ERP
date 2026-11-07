@@ -5,7 +5,7 @@ import { ArrowLeft, FileDown, Loader2, Upload } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { DataTable, type DataTableFeatures } from "../../../components/ui/DataTable";
 import { ErrorAlert, FormCard, PageHeader, SuccessAlert } from "../../../components/ui/PageState";
-import { useAuth } from "../../../context/AuthContext";
+import { useUser } from "../../../hooks/useSession";
 import { useBackToList } from "../../../hooks/useListPage";
 import { getApiErrorMessage } from "../../../lib/api-client";
 import { downloadTextFile } from "../../../lib/csv";
@@ -71,7 +71,7 @@ function RowErrors({ errors }: { errors: ImportRowError[] }) {
 }
 
 export const ProductImportPage = () => {
-  const { user } = useAuth();
+  const user = useUser();
   const backToList = useBackToList("/products");
   const startImport = useStartProductImport();
   const fallbackImport = useImportProducts();
