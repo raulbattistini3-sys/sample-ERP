@@ -141,6 +141,13 @@
       "when": 1792630822121,
       "tag": "0019_produtos_name_id_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792640822121,
+      "tag": "0020_usuarios_troca_senha",
+      "breakpoints": true
     }
   ]
 }

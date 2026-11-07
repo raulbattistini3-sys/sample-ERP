@@ -64,7 +64,8 @@ class UsuarioRepository implements IUsuarioRepository {
   }
 
   async createUsuario(
-    payload: Omit<UsuarioEntity, "id" | "sessaoVersao">,
+    payload: Omit<UsuarioEntity, "id" | "sessaoVersao" | "trocaSenhaObrigatoria"> &
+      Partial<Pick<UsuarioEntity, "trocaSenhaObrigatoria">>,
   ): Promise<Either<BaseAppError, UsuarioEntity>> {
     try {
       if (!payload) return left(new RepositoryError("No payload found"));
@@ -74,6 +75,21 @@ class UsuarioRepository implements IUsuarioRepository {
       if (pgErrorCode(error) === UNIQUE_VIOLATION) {
         return left(new ValidationError("409", "E-mail já cadastrado", error));
       }
+      return left(new RepositoryError("Database error", error));
+    }
+  }
+
+  // a senha the usuario chose: ends older sessions and clears a pending forced change
+  async changeSenha(id: string, senhaHash: string): Promise<Either<BaseAppError, UsuarioEntity>> {
+    try {
+      const [usuario] = await this.db
+        .update(usuarios)
+        .set({ senha: senhaHash, sessaoVersao: sql`${usuarios.sessaoVersao} + 1`, trocaSenhaObrigatoria: false })
+        .where(and(eq(usuarios.id, id), eq(usuarios.ativo, true)))
+        .returning();
+      if (!usuario) return left(new RepositoryError("No usuario found"));
+      return right(usuario);
+    } catch (error) {
       return left(new RepositoryError("Database error", error));
     }
   }

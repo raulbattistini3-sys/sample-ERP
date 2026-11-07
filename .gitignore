@@ -135,3 +135,6 @@ dist
 .yarn/install-state.gz
 .pnp.*
 requirements.txt
+# native launcher: `cargo xtask dist` output and the Rust build cache
+/bin/
+launcher/target/

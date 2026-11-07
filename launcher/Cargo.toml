@@ -1,0 +1,14 @@
+# Native, Docker-free launcher for the whole stack. Two crates:
+#   sample-erp  the runtime: embedded Postgres, migrations, the services, and the web app (served by axum)
+#   xtask       the build: `cargo xtask dist` compiles every service and fills ../bin
+[workspace]
+resolver = "3"
+members = ["sample-erp", "xtask"]
+
+[workspace.package]
+edition = "2024"
+publish = false
+
+# no LTO and the default codegen units: a slightly bigger exe, but the release build fits in far less memory
+[profile.release]
+strip = true

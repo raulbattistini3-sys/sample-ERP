@@ -2,7 +2,7 @@ import { Router } from "express";
 import { auditoriaRoutes } from "./auditoria.routes";
 import { productRoutes } from "./product.routes";
 import { detalhamentoAuditoriaRoutes } from "./detalhamento_auditoria.routes";
-import { publicUsuarioRoutes, usuarioRoutes } from "./usuario.routes";
+import { publicUsuarioRoutes, sessionUsuarioRoutes, usuarioRoutes } from "./usuario.routes";
 import { categoriaRoutes } from "./categoria.routes";
 import { authMiddleware } from "./auth_middleware.instance";
 import { integracaoRoutes, publicIntegracaoRoutes } from "./integracao.routes";
@@ -19,6 +19,10 @@ router.use("/internal/billing", billingRoutes);
 
 // everything below requires a valid token from an active usuario
 router.use(authMiddleware.authenticate);
+
+// refresh-token and change-password; the only routes open to a usuario that must change its senha
+router.use("/user", sessionUsuarioRoutes);
+router.use(authMiddleware.requirePasswordChanged);
 
 router.use("/user", usuarioRoutes);
 router.use("/auditoria", auditoriaRoutes);

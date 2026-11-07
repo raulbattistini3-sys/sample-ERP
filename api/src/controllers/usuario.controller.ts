@@ -66,6 +66,14 @@ class UsuarioController extends BaseController {
     return res.status(200).json(this.usuarioService.refreshToken(req.user!, req.sessaoVersao!));
   };
 
+  changePassword = async (req: Request, res: Response, next: NextFunction) => {
+    const result = await this.usuarioService.changePassword(req.user!.id, req.body);
+    if (result.isLeft()) {
+      return this.fail(req, next, result.value);
+    }
+    return res.status(200).json(result.value);
+  };
+
   login = async (req: Request, res: Response, next: NextFunction) => {
     const result = await this.usuarioService.loginUsuario(req.body);
     if (result.isLeft()) {

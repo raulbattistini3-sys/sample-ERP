@@ -34,6 +34,11 @@ interface IUsuarioService {
       actor: UsuarioResponseDto,
    ) => Promise<Either<BaseAppError, ResponseCreateUsuario>>;
    refreshToken: (usuario: UsuarioResponseDto, sessaoVersao: number) => ResponseLoginUsuarioDto;
+   // the signed-in usuario's own senha; returns a new session, since the old token stops working
+   changePassword: (
+      usuarioId: string,
+      payload: unknown,
+   ) => Promise<Either<BaseAppError, ResponseLoginUsuarioDto>>;
    updateUser: (
       id: string,
       payload: PayloadUpdateUsuarioDto,

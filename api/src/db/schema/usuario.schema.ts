@@ -12,4 +12,6 @@ export const usuarios = mysqlTable("usuarios", {
   ativo: boolean("ativo").notNull(),
   // stamped into every token as "ver"; bumped when the senha changes, which ends older sessions
   sessaoVersao: int("sessao_versao").notNull().default(0),
+  // set on the bootstrap superuser (known password): every route but change-password is refused until it is cleared
+  trocaSenhaObrigatoria: boolean("troca_senha_obrigatoria").notNull().default(false),
 });

@@ -1,5 +1,5 @@
--- Rows the API needs on a fresh database. Users sign up through POST /user/register; promote the
--- first one with: docker compose exec db psql -U postgres -d sample_erp -c "update usuarios set permissoes = 'SU' where lower(email) = lower('you@example.com')"
+-- Rows the API needs on a fresh database. The first superuser is not here: the API creates it at startup
+-- from BOOTSTRAP_SU_* (docker-compose.yml, the native launcher), with a password it must change at first sign-in.
 
 -- the 10 categorias (one per categorias_nomes value), same as production
 INSERT INTO public.categorias (nome, tipo, ativo) VALUES

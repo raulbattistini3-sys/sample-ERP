@@ -181,6 +181,7 @@ class UsuarioService implements IUserService {
                : existing.value.senha,
             // a new senha ends every session opened with the old one
             sessaoVersao: existing.value.sessaoVersao + (payload.senha ? 1 : 0),
+            trocaSenhaObrigatoria: existing.value.trocaSenhaObrigatoria,
          };
          // only a change that leaves the usuario without active SU rights needs the guard
          const removesSu = !isSu(payload.permissoes) || !nextAtivo;
@@ -254,6 +255,7 @@ class UsuarioService implements IUserService {
             ativo: false,
             senha: userClass.senha,
             sessaoVersao: userClass.sessaoVersao,
+            trocaSenhaObrigatoria: userClass.trocaSenhaObrigatoria,
             nome: userClass.nome,
             permissoes: userClass.permissoes,
             email: userClass.email,
@@ -296,6 +298,37 @@ class UsuarioService implements IUserService {
       const token = generateToken(userData.value);
       const response: ResponseLoginUsuarioDto = { ...toUsuarioResponse(userData.value), token };
       return right(response);
+   } catch (error) {
+      if (error instanceof ValidationError) {
+         return left(error);
+      }
+      return left(new ServerError("500", true, undefined, error));
+   }
+}
+
+async changePassword(
+   usuarioId: string,
+   payload: unknown,
+): Promise<Either<BaseAppError, ResponseLoginUsuarioDto>> {
+   try {
+      const validation = this.userValidator.validateChangePasswordPayload(payload);
+      if (validation.isLeft()) {
+         return left(validation.value);
+      }
+      const { senhaAtual, novaSenha } = payload as { senhaAtual: string; novaSenha: string };
+      const current = await this.userRepository.getUsuario(usuarioId);
+      if (current.isLeft()) {
+         return left(current.value);
+      }
+      // 400, not 401: the web client treats a 401 as an ended session and signs the usuario out
+      if (!(await comparePassword(senhaAtual, current.value.senha))) {
+         return left(new ValidationError("400", "Senha atual incorreta."));
+      }
+      const updated = await this.userRepository.changeSenha(usuarioId, await hashPassword(novaSenha));
+      if (updated.isLeft()) {
+         return left(updated.value);
+      }
+      return right({ ...toUsuarioResponse(updated.value), token: generateToken(updated.value) });
    } catch (error) {
       if (error instanceof ValidationError) {
          return left(error);

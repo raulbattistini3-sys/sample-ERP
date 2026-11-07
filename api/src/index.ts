@@ -5,6 +5,7 @@ import BaseErrorMiddleware from "./middlewares/global_middleware.middleware";
 import AppLogger from "./utils/logger/pino_logger.util";
 import { integracaoEnvioWorker } from "./routes/integracao.routes";
 import { importacaoCluster, importadorClient } from "./routes/product.routes";
+import { ensureBootstrapSu } from "./services/bootstrap_su";
 
 const config = Config.getInstance();
 
@@ -23,6 +24,8 @@ app.listen(port, host, async (error?: Error) => {
    }
    pinoLogger.handle({ applicationValues: config }, "DEBUG");
    console.log(`Server listening on host: ${host} and port: ${port}`);
+   // the first superuser of an empty database, when BOOTSTRAP_SU_* is set
+   await ensureBootstrapSu(pinoLogger);
    // pg-boss worker that creates the Jira issues / HubSpot tickets of new auditorias
    void integracaoEnvioWorker.start();
    // the processes that run the imports queued in the importacoes table, when no Go importer is configured

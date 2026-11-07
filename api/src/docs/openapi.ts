@@ -19,6 +19,7 @@ import {
   LoginUserSchema,
   RegisterUserSchema,
   ResetPasswordSchema,
+  ChangePasswordSchema,
   UpdateUserSchema,
 } from "../utils/schemas/user.schema";
 
@@ -34,7 +35,7 @@ const Erro = registry.register("Erro", z.object({ message: z.string(), status: z
 
 const Usuario = registry.register(
   "Usuario",
-  z.object({ id: z.string().uuid(), nome: z.string(), email: z.string(), permissoes: permissoesUsuarioEnum, ativo: z.boolean() }),
+  z.object({ id: z.string().uuid(), nome: z.string(), email: z.string(), permissoes: permissoesUsuarioEnum, ativo: z.boolean(), trocaSenhaObrigatoria: z.boolean() }),
 );
 const Sessao = registry.register("Sessao", Usuario.extend({ token: z.string() }));
 const Categoria = registry.register(
@@ -257,6 +258,7 @@ rota({ metodo: "post", caminho: "/user/register", tag: USUARIOS, resumo: "Create
 rota({ metodo: "post", caminho: "/user/login", tag: USUARIOS, resumo: "Log in", publica: true, status: 200, corpo: LoginUserSchema, resposta: Sessao, erros: [401] });
 rota({ metodo: "post", caminho: "/user/forgot-password", tag: USUARIOS, resumo: "Ask for a password reset email", descricao: "Answers the same whether the e-mail exists or not.", publica: true, status: 202, corpo: ForgotPasswordSchema, resposta: z.object({ message: z.string() }) });
 rota({ metodo: "post", caminho: "/user/reset-password", tag: USUARIOS, resumo: "Set a new password with an emailed token", publica: true, status: 204, corpo: ResetPasswordSchema });
+rota({ metodo: "post", caminho: "/user/change-password", tag: USUARIOS, resumo: "Change your own password", descricao: "Ends your other sessions and returns a new one. The only route, with refresh-token, open while trocaSenhaObrigatoria is true; every other one answers 403.", status: 200, corpo: ChangePasswordSchema, resposta: Sessao, erros: [400] });
 rota({ metodo: "post", caminho: "/user/refresh-token", tag: USUARIOS, resumo: "Get a new token before this one expires", status: 200, resposta: Sessao });
 rota({ metodo: "get", caminho: "/user", tag: USUARIOS, resumo: "List usuarios", query: Paginacao, resposta: pagina(Usuario) });
 rota({ metodo: "get", caminho: "/user/{id}", tag: USUARIOS, resumo: "Get a usuario", params: PorId, resposta: um(Usuario) });

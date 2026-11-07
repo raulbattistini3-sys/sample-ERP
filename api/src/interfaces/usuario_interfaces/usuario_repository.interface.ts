@@ -8,12 +8,15 @@ interface IUsuarioRepository {
    getUsuarios(): Promise<Either<BaseAppError, UsuarioEntity[]>>;
    createUsuario(
       // sessaoVersao starts at the database default (0)
-      payload: Omit<UsuarioEntity, "id" | "sessaoVersao">,
+      payload: Omit<UsuarioEntity, "id" | "sessaoVersao" | "trocaSenhaObrigatoria"> &
+         Partial<Pick<UsuarioEntity, "trocaSenhaObrigatoria">>,
    ): Promise<Either<BaseAppError, UsuarioEntity>>;
    // payload is the full row to save (senha already hashed)
    updateUsuario(
       payload: UsuarioEntity,
    ): Promise<Either<BaseAppError, null>>;
+   // sets a new senha (already hashed), bumps sessaoVersao and clears trocaSenhaObrigatoria
+   changeSenha(id: string, senhaHash: string): Promise<Either<BaseAppError, UsuarioEntity>>;
    deleteUsuario(id: string): Promise<Either<BaseAppError, null>>;
    // runs write in a transaction that locks the active SU rows; 409 (nothing written)
    // when targetId is the only active SU
