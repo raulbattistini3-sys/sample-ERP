@@ -57,6 +57,11 @@ services:
       IMPORTER_GRPC_URL: importer:50051
       # the billing service sends its notifications with this token
       BILLING_INTERNAL_TOKEN: ${BILLING_INTERNAL_TOKEN:-local-docker-only-change-me}
+      # the first superuser, created while the database has no active SU; the web app makes it choose
+      # a new password at first sign-in
+      BOOTSTRAP_SU_NAME: ${BOOTSTRAP_SU_NAME:-John Doe}
+      BOOTSTRAP_SU_EMAIL: ${BOOTSTRAP_SU_EMAIL:-admin@sample-erp.local}
+      BOOTSTRAP_SU_PASSWORD: ${BOOTSTRAP_SU_PASSWORD:-change-me}
     ports:
       - "3333:3333"
     depends_on:

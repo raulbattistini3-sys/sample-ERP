@@ -10,6 +10,8 @@ type AuthContextValue = {
   user: Usuario | null;
   isAuthenticated: boolean;
   login: (payload: LoginUsuarioPayload) => Promise<Usuario>;
+  // stores a session the API handed back (e.g. after changing the senha, which ends the old token)
+  applySession: (session: LoginResponse) => void;
   logout: () => void;
 };
 
@@ -65,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, applySession: handleRefreshed, logout }}>
       {children}
     </AuthContext.Provider>
   );

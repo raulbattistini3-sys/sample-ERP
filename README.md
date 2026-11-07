@@ -240,6 +240,15 @@ To add a dependency, declare it as a `private final` field. To add a collaborato
 
 ## Create the first user
 
+With Docker Compose or the native launcher (`launcher/`) there is nothing to do: the API creates a
+superuser on a database without one. Sign in as `admin@sample-erp.local` with password `change-me`, and the
+web app asks you to choose a new password before anything else. Change those defaults with
+`BOOTSTRAP_SU_NAME`, `BOOTSTRAP_SU_EMAIL` and `BOOTSTRAP_SU_PASSWORD` (Compose) or `ERP_ADMIN_*` in
+`bin/config/launcher.env` (launcher). Leave the `BOOTSTRAP_SU_*` variables unset in production. After
+that, create other accounts in **Usuários**.
+
+Without those variables (for example against Supabase):
+
 1. Open the web app and sign up at `/register`. New accounts get the `Estoque` role.
 2. Promote that account to `SU` (superuser, which manages admins). From `api/`, with `DATABASE_URL` in `api/.env` pointing at the database:
 

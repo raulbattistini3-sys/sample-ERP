@@ -7,6 +7,7 @@ import { LoginPage } from "../features/usuarios/pages/LoginPage";
 import { RegisterPage } from "../features/usuarios/pages/RegisterPage";
 import { ForgotPasswordPage } from "../features/usuarios/pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "../features/usuarios/pages/ResetPasswordPage";
+import { ChangePasswordPage } from "../features/usuarios/pages/ChangePasswordPage";
 import { UsuarioListPage } from "../features/usuarios/pages/UsuarioListPage";
 import { UsuarioFormPage } from "../features/usuarios/pages/UsuarioFormPage";
 
@@ -33,6 +34,8 @@ export const router = createBrowserRouter([
   {
     element: <ProtectedRoute />,
     children: [
+      // outside AppLayout: a forced change shows nothing but this form
+      { path: "trocar-senha", element: <ChangePasswordPage /> },
       {
         element: <AppLayout />,
         children: [

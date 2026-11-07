@@ -48,6 +48,15 @@ class AuthMiddleware {
       return next();
    };
 
+   // use after authenticate: a usuario created with a known senha (the BOOTSTRAP_SU_* superuser) gets
+   // nothing but POST /user/change-password until it picks its own
+   requirePasswordChanged = (req: Request, res: Response, next: NextFunction) => {
+      if (!req.user?.trocaSenhaObrigatoria) {
+         return next();
+      }
+      return this.reject(req, next, "403", "Troque sua senha antes de continuar.");
+   };
+
    // ADM or SU; use after authenticate. Which accounts an ADM may touch is decided in UsuarioService
    requireAdminRole = (req: Request, res: Response, next: NextFunction) => {
       if (isAdminRole(req.user?.permissoes)) {

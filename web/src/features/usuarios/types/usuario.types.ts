@@ -16,6 +16,8 @@ export const UsuarioSchema = z.object({
   email: z.email(), // built-in email format check
   permissoes: PermissoesEnum,
   ativo: z.boolean(),
+  // created with a known senha (the first superuser): ProtectedRoute sends it to /trocar-senha
+  trocaSenhaObrigatoria: z.optional(z.boolean()),
 });
 export type Usuario = z.infer<typeof UsuarioSchema>;
 
@@ -44,6 +46,14 @@ export const ResetPasswordFormSchema = z.object({
   confirmarSenha: z.string(),
 });
 export type ResetPasswordFormValues = z.infer<typeof ResetPasswordFormSchema>;
+
+// the change-password page's fields; confirmarSenha never leaves the browser
+export const ChangePasswordFormSchema = z.object({
+  senhaAtual: z.string().check(z.minLength(1, "Informe a senha atual")),
+  novaSenha: z.string().check(z.minLength(6, "A senha deve ter pelo menos 6 caracteres")),
+  confirmarSenha: z.string(),
+});
+export type ChangePasswordFormValues = z.infer<typeof ChangePasswordFormSchema>;
 
 // matches ResponseLoginUsuarioDto — parsing strips anything else the API sends back (e.g. senha)
 export const LoginResponseSchema = z.extend(UsuarioSchema, {

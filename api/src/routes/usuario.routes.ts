@@ -41,10 +41,15 @@ publicUsuarioRoutes.post("/login", usuarioController.login);
 publicUsuarioRoutes.post("/forgot-password", passwordResetController.forgotPassword);
 publicUsuarioRoutes.post("/reset-password", passwordResetController.resetPassword);
 
-// mounted after AuthMiddleware.authenticate, so req.user is set
-const usuarioRoutes = Router();
+// mounted after AuthMiddleware.authenticate but before requirePasswordChanged: what a usuario who still
+// has to change a known senha (trocaSenhaObrigatoria) may do
+const sessionUsuarioRoutes = Router();
 // sliding session: the web calls this on user activity before the token expires
-usuarioRoutes.post("/refresh-token", usuarioController.refreshToken);
+sessionUsuarioRoutes.post("/refresh-token", usuarioController.refreshToken);
+sessionUsuarioRoutes.post("/change-password", usuarioController.changePassword);
+
+// mounted after AuthMiddleware.authenticate and requirePasswordChanged, so req.user is set
+const usuarioRoutes = Router();
 // any signed-in usuario can read (the auditoria pages show auditor names); ADM/SU manage,
 // and UsuarioService only lets an SU touch ADM/SU accounts
 usuarioRoutes.get("/", usuarioController.getAll);
@@ -54,4 +59,4 @@ usuarioRoutes.put("/:id", authMiddleware.requireAdminRole, usuarioController.upd
 usuarioRoutes.delete("/:id", authMiddleware.requireAdminRole, usuarioController.delete);
 usuarioRoutes.patch("/:id/archive", authMiddleware.requireAdminRole, usuarioController.archive);
 
-export { publicUsuarioRoutes, usuarioRoutes };
+export { publicUsuarioRoutes, sessionUsuarioRoutes, usuarioRoutes };

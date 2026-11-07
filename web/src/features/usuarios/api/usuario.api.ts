@@ -23,6 +23,13 @@ export const forgotPassword = (email: string) =>
 export const resetPassword = (payload: { token: string; senha: string }) =>
   apiClient.post("/user/reset-password", payload);
 
+// the signed-in usuario's own senha; the old token stops working, so the answer is a new session.
+// 400 when senhaAtual is wrong
+export const changePassword = async (payload: { senhaAtual: string; novaSenha: string }) => {
+  const { data } = await apiClient.post("/user/change-password", payload);
+  return LoginResponseSchema.parse(data);
+};
+
 // trades the current (still valid) token for a new one; 401 if it already expired
 export const refreshSession = async () => {
   const { data } = await apiClient.post("/user/refresh-token");

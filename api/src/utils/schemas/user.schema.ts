@@ -61,4 +61,18 @@ export const ResetPasswordSchema = z.object({
         .min(6, "A senha deve ter pelo menos 6 caracteres."),
 });
 
+// POST /user/change-password (signed in): the current senha proves it's really the usuario
+export const ChangePasswordSchema = z
+    .object({
+        senhaAtual: z
+            .string({ required_error: "Informe a senha atual." })
+            .nonempty("Informe a senha atual."),
+        novaSenha: z
+            .string({ required_error: "Informe a nova senha." })
+            .min(6, "A nova senha deve ter pelo menos 6 caracteres."),
+    })
+    .refine((p) => p.novaSenha !== p.senhaAtual, {
+        message: "A nova senha deve ser diferente da atual.",
+    });
+
 export default UserSchema;

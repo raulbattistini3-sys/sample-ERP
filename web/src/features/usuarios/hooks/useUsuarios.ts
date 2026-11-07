@@ -5,6 +5,7 @@ import {
   registerUsuario,
   forgotPassword,
   resetPassword,
+  changePassword,
   createUsuario,
   updateUsuario,
   archiveUsuario,
@@ -38,6 +39,12 @@ export const useCreateUsuario = () => {
 export const useForgotPassword = () => useMutation({ mutationFn: forgotPassword });
 
 export const useResetPassword = () => useMutation({ mutationFn: resetPassword });
+
+// on success the new session replaces the old one, whose token the API no longer accepts
+export const useChangePassword = () => {
+  const { applySession } = useAuth();
+  return useMutation({ mutationFn: changePassword, onSuccess: applySession });
+};
 
 export const useLogin = () => {
   const { login } = useAuth();

@@ -1,4 +1,5 @@
-import { Package, Tags, Users, ClipboardList, Contact, LogOut, Plug } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Package, Tags, Users, ClipboardList, Contact, KeyRound, LogOut, Plug } from "lucide-react";
 import { NavItem } from "../components/ui/NavItem";
 import { Avatar } from "../components/ui/Avatar";
 import { useAuth } from "../context/AuthContext";
@@ -40,6 +41,14 @@ export function Sidebar({ className }: SidebarProps) {
             <p className="truncate text-sm font-medium text-ink">{user?.nome}</p>
             <p className="truncate text-xs text-muted">{user?.email}</p>
           </div>
+          <Link
+            to="/trocar-senha"
+            className="rounded-md p-1.5 text-muted hover:bg-canvas hover:text-ink"
+            aria-label="Trocar senha"
+            title="Trocar senha"
+          >
+            <KeyRound className="h-4 w-4" aria-hidden="true" />
+          </Link>
           <button
             onClick={logout}
             className="rounded-md p-1.5 text-muted hover:bg-canvas hover:text-ink"
