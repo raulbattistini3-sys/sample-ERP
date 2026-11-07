@@ -1,0 +1,15 @@
+# The api, web and importer images build from the repo root. Keep the context to sources: no installed
+# dependencies, build outputs, local secrets or the launcher's bundle.
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+!**/.env.example
+**/*.log
+.git
+bin
+launcher/target
+web/test-results
+web/playwright-report
+# the database CA is mounted at run time, never baked into an image
+*.crt
