@@ -8,6 +8,7 @@ import { authMiddleware } from "./auth_middleware.instance";
 import { integracaoRoutes, publicIntegracaoRoutes } from "./integracao.routes";
 import { clienteRoutes } from "./cliente.routes";
 import { billingRoutes } from "./billing.routes";
+import { cobrancaRoutes, stripeRoutes } from "./cobranca.routes";
 import { databaseConnection } from "../configs/database_connection";
 const router = Router();
 
@@ -30,8 +31,11 @@ router.use("/auditoria", auditoriaRoutes);
 router.use("/products", productRoutes);
 router.use("/categorias", categoriaRoutes);
 router.use("/detalhamento-auditoria", detalhamentoAuditoriaRoutes);
+// before the generic /integracoes/:provider routes
+router.use("/integracoes/stripe", stripeRoutes);
 router.use("/integracoes", integracaoRoutes);
 router.use("/clientes", clienteRoutes);
+router.use("/cobrancas", cobrancaRoutes);
 
 // the web's "Gerar dados fictícios" buttons; never mounted in production, so those requests are a 404.
 // Required lazily, so a production API doesn't even load the module.

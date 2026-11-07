@@ -1,3 +1,4 @@
+import { StripeCard } from "../../cobrancas/components/StripeCard";
 import { FormEvent, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ExternalLink, Link2, Loader2, RotateCcw, Send, Unlink } from "lucide-react";
@@ -358,6 +359,7 @@ export const IntegracoesPage = () => {
           {data?.map((integracao) => (
             <IntegracaoCard key={integracao.provider} integracao={integracao} />
           ))}
+          <StripeCard />
         </div>
       )}
     </div>

@@ -10,7 +10,8 @@
 //! Every proxied request, in order (after orderguard's internal/gateway, minus HMAC signing, which in an
 //! SPA would mean shipping the key to every browser):
 //!   1. per-client rate limit, 429 + Retry-After
-//!   2. path policy: /api/internal/* (billing's own channel to the API) is never reachable from outside
+//!   2. path policy: /api/internal/* and /billing/internal/* (the services' channels to each other) are never
+//!      reachable from outside
 //!   3. body cap per route: the spreadsheet imports get the larger one, 413 past it
 //!   4. Idempotency-Key on POSTs that create records (required) or any POST that sends one; never on the
 //!      routes that answer with session tokens, which would otherwise sit in memory
@@ -64,11 +65,14 @@ const IDEMPOTENCY_REQUIRED: &[&str] = &[
     "/api/auditoria/manual",
     "/api/detalhamento-auditoria",
     "/api/user",
+    // Stripe invoices: a replay must not bill anyone twice
+    "/api/cobrancas",
 ];
 // their responses carry session tokens or reset links: never stored
 const IDEMPOTENCY_NEVER: &[&str] = &["/api/user/"];
 const IMPORT_ROUTES: &[&str] = &["/api/products/imports", "/api/products/import"];
-const BLOCKED: &[&str] = &["/api/internal"];
+// the services' own channels to each other: the API takes billing's token there, and billing the API's
+const BLOCKED: &[&str] = &["/api/internal", "/billing/internal"];
 
 const HOP_BY_HOP: &[&str] = &[
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer",

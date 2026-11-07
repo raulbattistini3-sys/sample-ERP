@@ -58,7 +58,9 @@ services:
       JWT_SECRET: ${JWT_SECRET:-local-docker-only-change-me}
       # POST /products/imports hands uploaded spreadsheets to the importer over the compose network
       IMPORTER_GRPC_URL: importer:50051
-      # the billing service sends its notifications with this token
+      # Stripe status and cobranças (only with --profile billing; otherwise the pages say it isn't running)
+      BILLING_URL: http://billing:8081
+      # the billing service sends its notifications with this token, and the API calls it with the same
       BILLING_INTERNAL_TOKEN: ${BILLING_INTERNAL_TOKEN:-local-docker-only-change-me}
       # the first superuser, created while the database has no active SU; the web app makes it choose
       # a new password at first sign-in
