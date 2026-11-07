@@ -13,7 +13,7 @@ import {
   archiveUsuario,
   deleteUsuario,
 } from "../api/usuario.api";
-import { useAuth } from "../../../context/AuthContext";
+import { useSessionActions } from "../../../hooks/useSession";
 import { LIST_PAGE_SIZE } from "../../../lib/pagination";
 
 // keeps the current page on screen while the next one loads
@@ -44,12 +44,12 @@ export const useResetPassword = () => useSingleFlightMutation({ mutationFn: rese
 
 // on success the new session replaces the old one, whose token the API no longer accepts
 export const useChangePassword = () => {
-  const { applySession } = useAuth();
+  const { applySession } = useSessionActions();
   return useSingleFlightMutation({ mutationFn: changePassword, onSuccess: applySession });
 };
 
 export const useLogin = () => {
-  const { login } = useAuth();
+  const { login } = useSessionActions();
   return useSingleFlightMutation({ mutationFn: login });
 };
 

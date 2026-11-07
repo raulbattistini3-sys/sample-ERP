@@ -5,7 +5,7 @@ import { Button } from "../../../components/ui/Button";
 import { Field, Input } from "../../../components/ui/Field";
 import { ErrorAlert, FormCard, LoadingState, PageHeader, SuccessAlert } from "../../../components/ui/PageState";
 import { LoadMore } from "../../../components/ui/LoadMore";
-import { useAuth } from "../../../context/AuthContext";
+import { useUser } from "../../../hooks/useSession";
 import { getApiErrorMessage } from "../../../lib/api-client";
 import { formatCurrency, formatDate } from "../../../lib/form";
 import { isAdminRole } from "../../../lib/permissoes";
@@ -143,7 +143,7 @@ function Recentes() {
 // /cobrancas: pick clients from HubSpot (the Clientes data), describe the charge, and issue one Stripe
 // invoice per client; each client gets its payment link by e-mail and the issuer gets a summary.
 export const CobrancasPage = () => {
-  const { user } = useAuth();
+  const user = useUser();
   const stripe = useStripeConexao();
   const emitir = useEmitirCobranca();
 

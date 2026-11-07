@@ -4,15 +4,15 @@ import { RouterProvider } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { router } from "./routes/router";
 import { queryClient } from "./lib/query-client";
-import { AuthProvider } from "./context/AuthContext";
+import { SessionSync } from "./components/SessionSync";
 import "./index.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <RouterProvider router={router} />
-      </AuthProvider>
+      {/* the session lives in a Zustand store (stores/session.store.ts); this keeps it in sync */}
+      <SessionSync />
+      <RouterProvider router={router} />
     </QueryClientProvider>
   </StrictMode>,
 );

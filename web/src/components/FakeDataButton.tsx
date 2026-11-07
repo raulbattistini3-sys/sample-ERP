@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Sparkles } from "lucide-react";
 import { Button } from "./ui/Button";
 import { apiClient, getApiErrorMessage } from "../lib/api-client";
-import { useAuth } from "../context/AuthContext";
+import { useUser } from "../hooks/useSession";
 import { isAdminRole } from "../lib/permissoes";
 
 // "Gerar dados fictícios" on the list pages. The API offers /dev/fake-data only with API_ENV=development
@@ -67,7 +67,7 @@ const useFakeDataDisponivel = (habilitado: boolean) =>
    });
 
 export function FakeDataButton({ tipo }: { tipo: FakeDataTipo }) {
-   const { user } = useAuth();
+   const user = useUser();
    const admin = isAdminRole(user?.permissoes);
    const disponivel = useFakeDataDisponivel(admin);
    const queryClient = useQueryClient();

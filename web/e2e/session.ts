@@ -42,7 +42,8 @@ export async function session(api: APIRequestContext): Promise<LoginResponse> {
   return (await changed.json()) as LoginResponse;
 }
 
-// what AuthContext restores on load (lib/auth-storage.ts): the token and the user, in localStorage
+// what the session store restores on load (stores/session.store.ts via lib/auth-storage.ts): the token and
+// the user, in localStorage
 export async function signIn(page: Page, api: APIRequestContext) {
   const { token, ...user } = await session(api);
   await page.addInitScript(

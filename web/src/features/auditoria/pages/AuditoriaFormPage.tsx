@@ -4,7 +4,7 @@ import { useBackToList } from "../../../hooks/useListPage";
 import { Button } from "../../../components/ui/Button";
 import { Field, Input, Select, Textarea } from "../../../components/ui/Field";
 import { ErrorAlert, FormCard, PageHeader } from "../../../components/ui/PageState";
-import { useAuth } from "../../../context/AuthContext";
+import { useUser } from "../../../hooks/useSession";
 import { getApiErrorMessage } from "../../../lib/api-client";
 import { toDateTimeLocal, toFieldErrors, toNumber } from "../../../lib/form";
 import { isAdminRole } from "../../../lib/permissoes";
@@ -55,7 +55,7 @@ const antes = (changed: boolean, value: string) => (changed ? `Antes: ${value}` 
 
 export const AuditoriaFormPage = () => {
   const backToList = useBackToList("/auditoria");
-  const { user } = useAuth();
+  const user = useUser();
   const isAdmin = isAdminRole(user?.permissoes);
 
   // ADM/SU also receive inactive products and can audit them (and change their status)

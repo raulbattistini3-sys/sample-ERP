@@ -13,7 +13,7 @@ import { ErrorAlert, LoadingState, PageHeader } from "../../../components/ui/Pag
 import { useListPage } from "../../../hooks/useListPage";
 import { getApiErrorMessage } from "../../../lib/api-client";
 import { isAdminRole } from "../../../lib/permissoes";
-import { useAuth } from "../../../context/AuthContext";
+import { useUser } from "../../../hooks/useSession";
 import { productColumns } from "../components/columns";
 import { FakeDataButton } from "../../../components/FakeDataButton";
 
@@ -49,7 +49,7 @@ export function ProductListPage() {
   const { data, isLoading, error, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = useProductsScroll(apiParams);
   const products = useMemo(() => data?.pages.flatMap((pagina) => pagina.data) ?? [], [data]);
   const downloadMutation = useDownloadProducts();
-  const { user } = useAuth();
+  const user = useUser();
 
   return (
     <div>

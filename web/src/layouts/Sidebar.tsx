@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { Package, Tags, Users, ClipboardList, Contact, KeyRound, LogOut, Plug, Receipt } from "lucide-react";
 import { NavItem } from "../components/ui/NavItem";
 import { Avatar } from "../components/ui/Avatar";
-import { useAuth } from "../context/AuthContext";
+import { useSessionActions, useUser } from "../hooks/useSession";
 import { cn } from "../lib/cn";
 import { isAdminRole } from "../lib/permissoes";
 
@@ -19,7 +19,8 @@ const navItems = [
 type SidebarProps = { className?: string };
 
 export function Sidebar({ className }: SidebarProps) {
-  const { user, logout } = useAuth();
+  const user = useUser();
+  const { logout } = useSessionActions();
   const visibleItems = navItems.filter((item) => !item.requiresAdm || isAdminRole(user?.permissoes));
 
   return (
