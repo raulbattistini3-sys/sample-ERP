@@ -95,11 +95,11 @@ class BillingClient {
       });
       if (!res.ok) {
         const detail = await res.text().catch(() => "");
-        return left(new ServerError("503", true, `O serviço de cobranças respondeu ${res.status}`, detail));
+        return left(new ServerError("503", true, `O serviço de cobranças recusou o pedido (HTTP ${res.status}).`, detail));
       }
       return right((await res.json()) as T);
     } catch (error) {
-      return left(new BillingIndisponivel("503", true, "O serviço de cobranças não respondeu. Ele está rodando?", error));
+      return left(new BillingIndisponivel("503", true, "O serviço de cobranças está fora do ar.", error));
     }
   }
 }

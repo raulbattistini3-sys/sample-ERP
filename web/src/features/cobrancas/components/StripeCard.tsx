@@ -16,7 +16,10 @@ export function StripeCard() {
     : !data.configurado
       ? "O ERP não sabe onde está o serviço de cobranças: defina BILLING_URL (e BILLING_INTERNAL_TOKEN) na API. O launcher faz isso sozinho quando config/billing.env existe."
       : !data.alcancavel
-        ? `O serviço de cobranças (billing) não respondeu${data.erro ? `: ${data.erro}` : "."} Ele precisa estar rodando.`
+        ? // the API says what happened; the card only adds what to do about it
+          `${data.erro ?? "O serviço de cobranças está fora do ar."} ${
+            data.erro?.includes("HTTP 401") ? "Confira se o BILLING_INTERNAL_TOKEN é o mesmo na API e no billing." : "Inicie o billing e clique em Conectar."
+          }`
         : !status?.conectado
           ? `${status?.erro ?? "O Stripe recusou a conexão."} Confira SANDBOX_STRIPE_API_KEY em billing/.env (ou config/billing.env no launcher).`
           : null;
