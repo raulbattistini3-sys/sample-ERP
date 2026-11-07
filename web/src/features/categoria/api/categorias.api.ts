@@ -1,9 +1,10 @@
 // features/categorias/api/categoria.api.ts
+import { ListFilterParams } from "../../../hooks/useListFilters";
 import { apiClient, ItemResponse, ListResponse } from "../../../lib/api-client";
 import { CreateCategoriaPayload, UpdateCategoriaPayload, Categoria } from "../types/categoria.types";
 
-export const getCategorias = (page: number, amount: number) =>
-  apiClient.get<ListResponse<Categoria>>("/categorias", { params: { page, amount } }).then((r) => r.data);
+export const getCategorias = (page: number, amount: number, filters: ListFilterParams = {}) =>
+  apiClient.get<ListResponse<Categoria>>("/categorias", { params: { page, amount, ...filters } }).then((r) => r.data);
 export const getCategoriaById = (id: string) =>
   apiClient.get<ItemResponse<Categoria>>(`/categorias/${id}`).then((r) => r.data.data);
 export const createCategoria = (payload: CreateCategoriaPayload) => apiClient.post("/categorias", payload);

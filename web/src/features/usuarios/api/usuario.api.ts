@@ -1,3 +1,4 @@
+import { ListFilterParams } from "../../../hooks/useListFilters";
 import { apiClient, ItemResponse, ListResponse } from "../../../lib/api-client";
 import {
   RegisterUsuarioPayload,
@@ -35,8 +36,8 @@ export const refreshSession = async () => {
   const { data } = await apiClient.post("/user/refresh-token");
   return LoginResponseSchema.parse(data);
 };
-export const getUsuarios = (page: number, amount: number) =>
-  apiClient.get<ListResponse<Usuario>>("/user", { params: { page, amount } }).then((r) => r.data);
+export const getUsuarios = (page: number, amount: number, filters: ListFilterParams = {}) =>
+  apiClient.get<ListResponse<Usuario>>("/user", { params: { page, amount, ...filters } }).then((r) => r.data);
 // parsed so only the known fields are kept (the result may be stored in localStorage)
 export const getUsuarioById = (id: string) =>
   apiClient.get<ItemResponse<Usuario>>(`/user/${id}`).then((r) => UsuarioSchema.parse(r.data.data));

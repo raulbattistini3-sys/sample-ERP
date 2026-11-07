@@ -1,3 +1,4 @@
+import { ListFilterParams } from "../../../hooks/useListFilters";
 import { useSingleFlightMutation } from "../../../hooks/useSingleFlightMutation";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ALL_ITEMS_AMOUNT, LIST_PAGE_SIZE } from "../../../lib/pagination";
@@ -11,10 +12,10 @@ import {
 } from "../api/categorias.api";
 
 // keeps the current page on screen while the next one loads
-export const useCategorias = (page = 1, amount = LIST_PAGE_SIZE) =>
+export const useCategorias = (page = 1, amount = LIST_PAGE_SIZE, filters: ListFilterParams = {}) =>
   useQuery({
-    queryKey: ["categorias", "list", page, amount],
-    queryFn: () => getCategorias(page, amount),
+    queryKey: ["categorias", "list", page, amount, filters],
+    queryFn: () => getCategorias(page, amount, filters),
     placeholderData: keepPreviousData,
   });
 

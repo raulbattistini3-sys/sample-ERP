@@ -1,3 +1,6 @@
+import { FilterBar, FilterOption, MultiSelectFilter } from "../../../components/ui/MultiSelectFilter";
+import { useListFilters } from "../../../hooks/useListFilters";
+import { CategoriaNomesEnum, CategoriaTiposEnum } from "../types/categoria.types";
 import { Plus } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Pagination } from "../../../components/ui/Pagination";
@@ -8,9 +11,18 @@ import { LIST_PAGE_SIZE } from "../../../lib/pagination";
 import { useCategorias } from "../hooks/useCategorias";
 import { CategoriaTable } from "../components/CategoriaTable";
 
+const FILTERS = ["nome", "tipo", "status"] as const;
+const NOME_OPTIONS: FilterOption[] = CategoriaNomesEnum.options.map((nome) => ({ value: nome, label: nome }));
+const TIPO_OPTIONS: FilterOption[] = CategoriaTiposEnum.options.map((tipo) => ({ value: tipo, label: tipo }));
+const STATUS_OPTIONS: FilterOption[] = [
+  { value: "ativo", label: "Ativo" },
+  { value: "inativo", label: "Inativo" },
+];
+
 export function CategoriaListPage() {
   const { page, setPage, openItem } = useListPage();
-  const { data, isLoading, error, isPlaceholderData } = useCategorias(page);
+  const { filters, params, setFilter, clear, active } = useListFilters(FILTERS);
+  const { data, isLoading, error, isPlaceholderData } = useCategorias(page, undefined, params);
   useClampPage(page, setPage, data, isPlaceholderData);
 
   return (
@@ -18,12 +30,19 @@ export function CategoriaListPage() {
       <PageHeader
         title="Categorias"
         actions={
-          <Button onClick={() => openItem("/categorias/new")}>
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            Nova categoria
-          </Button>
+          <>
+            <Button onClick={() => openItem("/categorias/new")}>
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Nova categoria
+            </Button>
+          </>
         }
       />
+      <FilterBar active={active} onClear={clear}>
+        <MultiSelectFilter label="Nome" options={NOME_OPTIONS} selected={filters.nome} onChange={(v) => setFilter("nome", v)} />
+        <MultiSelectFilter label="Tipo" options={TIPO_OPTIONS} selected={filters.tipo} onChange={(v) => setFilter("tipo", v)} />
+        <MultiSelectFilter label="Status" options={STATUS_OPTIONS} selected={filters.status} onChange={(v) => setFilter("status", v)} />
+      </FilterBar>
       {isLoading ? (
         <LoadingState />
       ) : error ? (

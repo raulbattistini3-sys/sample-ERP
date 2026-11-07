@@ -1,6 +1,7 @@
 // aquilo que esta chamado de "ProductRepositoryInterface" pertence aqui
 // o ProductRepositoryInterface de fato seria apenas o acesso ao banco de dados
 // rever os DTOs e nomenclaturas para desacoplar regra de negócio de implementação
+import { ProdutoFilters } from "../../utils/schemas/list_filters.schema";
 import {
    CreateProductDto,
    ResponseCreateProductDto,
@@ -37,6 +38,7 @@ interface IProductService {
       cursor: string | undefined,
       amount: number,
       includeInactive?: boolean,
+      filters?: ProdutoFilters,
    ) => Promise<Either<BaseAppError, ResponseScrollProductsDto>>;
    findProductById: (
       id: string,

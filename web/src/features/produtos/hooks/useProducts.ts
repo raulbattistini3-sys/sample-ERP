@@ -1,3 +1,4 @@
+import { ListFilterParams } from "../../../hooks/useListFilters";
 import { useSingleFlightMutation } from "../../../hooks/useSingleFlightMutation";
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LAZY_PAGE_SIZE, LIST_PAGE_SIZE } from "../../../lib/pagination";
@@ -27,10 +28,10 @@ export const useProducts = (page = 1, amount = LIST_PAGE_SIZE) =>
     placeholderData: keepPreviousData,
   });
 
-export const useProductsScroll = () =>
+export const useProductsScroll = (filters: ListFilterParams = {}) =>
   useInfiniteQuery({
-    queryKey: ["products", "scroll"],
-    queryFn: ({ pageParam }) => getProductsScroll(pageParam, LAZY_PAGE_SIZE),
+    queryKey: ["products", "scroll", filters],
+    queryFn: ({ pageParam }) => getProductsScroll(pageParam, LAZY_PAGE_SIZE, filters),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });

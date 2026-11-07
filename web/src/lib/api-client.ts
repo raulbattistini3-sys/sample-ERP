@@ -6,6 +6,9 @@ export const apiClient = axios.create({
   // the web talks to the API directly (vite dev server, Docker)
   baseURL: import.meta.env.VITE_API_URL,
   headers: { "Content-Type": "application/json" },
+  // arrays as repeated keys (?categoria=A&categoria=B), the form the list filters read; axios's default
+  // would send categoria[]=A
+  paramsSerializer: { indexes: null },
 });
 
 // 128 random bits as hex. crypto.getRandomValues, unlike randomUUID, also works on plain-http pages.

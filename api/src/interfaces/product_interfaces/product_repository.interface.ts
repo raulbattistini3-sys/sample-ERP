@@ -1,3 +1,4 @@
+import { ProdutoFilters } from "../../utils/schemas/list_filters.schema";
 import { NewProductEntity, ProductEntity, ProductWithCategoria } from "../../entities/product.entity";
 import { BaseAppError } from "../../errors/global_error.error";
 import { Either } from "../../globals/errors/left_right_either.error";
@@ -14,7 +15,12 @@ interface IProductRepository {
    getProductsPage(limit: number, offset: number, includeInactive?: boolean): Promise<Either<RepositoryError, ProductWithCategoria[]>>;
    countProducts(includeInactive?: boolean): Promise<Either<RepositoryError, number>>;
    // the rows after cursor in name order, from the start when it's null
-   getProductsAfter(cursor: ProductCursor | null, limit: number, includeInactive?: boolean): Promise<Either<RepositoryError, ProductWithCategoria[]>>;
+   getProductsAfter(
+      cursor: ProductCursor | null,
+      limit: number,
+      includeInactive?: boolean,
+      filters?: ProdutoFilters,
+   ): Promise<Either<RepositoryError, ProductWithCategoria[]>>;
    // categoria is resolved to categoriaId by the service before inserting; 409 when the SKU is taken
    createProduct(
       payload: NewProductEntity,

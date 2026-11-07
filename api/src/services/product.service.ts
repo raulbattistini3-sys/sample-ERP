@@ -1,3 +1,5 @@
+import { ProdutoFilters } from "../utils/schemas/list_filters.schema";
+import { hasFilters } from "../utils/helpers/list_filters";
 import { ProductWithCategoria } from "../entities/product.entity";
 import { z } from "zod";
 import CategoriaRepository from "../repositories/categoria.repository";
@@ -153,22 +155,23 @@ class ProductService implements IProductService {
       }
    }
 
-   // the first load is cached per session, the ones after it go to the database
+   // the first unfiltered load is cached per session; the ones after it, and filtered ones, go to the database
    getProductsScroll(
       sessao: string,
       cursor: string | undefined,
       amount: number,
       includeInactive = false,
+      filters: ProdutoFilters = {},
    ): Promise<Either<BaseAppError, ResponseScrollProductsDto>> {
-      return this.primeiraPagina.read(sessao, !cursor && amount === FIRST_PAGE_SIZE, () =>
-         this.carregarScroll(cursor, amount, includeInactive),
-      );
+      const cacheable = !cursor && amount === FIRST_PAGE_SIZE && !hasFilters(filters);
+      return this.primeiraPagina.read(sessao, cacheable, () => this.carregarScroll(cursor, amount, includeInactive, filters));
    }
 
    private async carregarScroll(
       cursor: string | undefined,
       amount: number,
       includeInactive: boolean,
+      filters: ProdutoFilters,
    ): Promise<Either<BaseAppError, ResponseScrollProductsDto>> {
       try {
          const validation = this.productValidator.validatePageAndAmount(1, amount);
@@ -180,7 +183,7 @@ class ProductService implements IProductService {
             return left(new ValidationError("400", "Cursor inválido"));
          }
          // one extra row says whether there's anything after this page, without counting
-         const rows = await this.productRepository.getProductsAfter(after, amount + 1, includeInactive);
+         const rows = await this.productRepository.getProductsAfter(after, amount + 1, includeInactive, filters);
          if (rows.isLeft()) {
             return left(new ServerError("500", true, "internal server error", rows.value));
          }

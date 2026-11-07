@@ -1,3 +1,5 @@
+import { AuditoriaFilters } from "../utils/schemas/list_filters.schema";
+import { hasFilters, inList, matchesAll } from "../utils/helpers/list_filters";
 import { IAuditoriaService } from "../interfaces/auditory_interfaces/auditoria_service.interface";
 import { ResponseCreateAuditoria } from "../dtos/auditoria_dtos/create_auditoria.dto";
 import {
@@ -30,16 +32,20 @@ class AuditoriaService implements IAuditoriaService {
       // an import that updates products audits them, from another process (ImportacaoCluster)
       aoAlterarProdutos(() => this.primeiraPagina.clear());
    }
+   // the first unfiltered page is cached per session
    getAuditorias(
       sessao: string,
       page: number,
       amount: number,
+      filters: AuditoriaFilters = {},
    ): Promise<Either<BaseAppError, ResponseGetAuditorias>> {
-      return this.primeiraPagina.read(sessao, page === 1 && amount === FIRST_PAGE_SIZE, () => this.carregarAuditorias(page, amount));
+      const cacheable = page === 1 && amount === FIRST_PAGE_SIZE && !hasFilters(filters);
+      return this.primeiraPagina.read(sessao, cacheable, () => this.carregarAuditorias(page, amount, filters));
    }
    private async carregarAuditorias(
       page: number,
       amount: number,
+      filters: AuditoriaFilters,
    ): Promise<Either<BaseAppError, ResponseGetAuditorias>> {
       try {
          const validation = this.auditoriaValidator.validatePageAndAmount(
@@ -55,7 +61,10 @@ class AuditoriaService implements IAuditoriaService {
                new ServerError("500", true, "internal server error", auditorias.value),
             );
          }
-         const paginatedData = paginate(auditorias.value, page, amount);
+         const filtradas = auditorias.value.filter((a) =>
+            matchesAll([inList(filters.acao, a.acaoEfetuada), inList(filters.auditor, a.usuarioId)]),
+         );
+         const paginatedData = paginate(filtradas, page, amount);
          const response: ResponseGetAuditorias = {
             data: paginatedData.data.map(toAuditoriaResponse),
             pageNumber: paginatedData.currentPage,

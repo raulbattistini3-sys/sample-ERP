@@ -1,3 +1,4 @@
+import { ListFilterParams } from "../../../hooks/useListFilters";
 import { useSingleFlightMutation } from "../../../hooks/useSingleFlightMutation";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -16,10 +17,10 @@ import { useAuth } from "../../../context/AuthContext";
 import { LIST_PAGE_SIZE } from "../../../lib/pagination";
 
 // keeps the current page on screen while the next one loads
-export const useUsuarios = (page = 1, amount = LIST_PAGE_SIZE) =>
+export const useUsuarios = (page = 1, amount = LIST_PAGE_SIZE, filters: ListFilterParams = {}) =>
   useQuery({
-    queryKey: ["usuarios", "list", page, amount],
-    queryFn: () => getUsuarios(page, amount),
+    queryKey: ["usuarios", "list", page, amount, filters],
+    queryFn: () => getUsuarios(page, amount, filters),
     placeholderData: keepPreviousData,
   });
 

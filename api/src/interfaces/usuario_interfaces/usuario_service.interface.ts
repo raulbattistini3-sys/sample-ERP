@@ -1,3 +1,4 @@
+import { UsuarioFilters } from "../../utils/schemas/list_filters.schema";
 import { UsuarioResponseDto } from "../../dtos/usuario_dtos/usuario_response.dto";
 import { ResponseArchiveUsuario } from "../../dtos/usuario_dtos/delete_usuario.dto";
 import {
@@ -24,6 +25,7 @@ interface IUsuarioService {
    getUsers: (
       page: number,
       amount: number,
+      filters?: UsuarioFilters,
    ) => Promise<Either<BaseAppError, ResponseGetUsuariosDto>>;
    findUserById: (
       id: string,

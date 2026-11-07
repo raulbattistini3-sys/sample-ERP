@@ -1,8 +1,9 @@
+import { ListFilterParams } from "../../../hooks/useListFilters";
 import { apiClient, ItemResponse, ListResponse } from "../../../lib/api-client";
 import { CreateAuditoriaManualPayload, Auditoria } from "../types/auditoria.types";
 
-export const getAuditorias = (page: number, amount: number) =>
-  apiClient.get<ListResponse<Auditoria>>("/auditoria", { params: { page, amount } }).then((r) => r.data);
+export const getAuditorias = (page: number, amount: number, filters: ListFilterParams = {}) =>
+  apiClient.get<ListResponse<Auditoria>>("/auditoria", { params: { page, amount, ...filters } }).then((r) => r.data);
 export const getAuditoriaById = (id: string) =>
   apiClient.get<ItemResponse<Auditoria>>(`/auditoria/${id}`).then((r) => r.data.data);
 // applies the changes to the audited product/categoria and records them

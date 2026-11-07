@@ -1,3 +1,4 @@
+import { ListFilterParams } from "../../../hooks/useListFilters";
 import { apiClient, ItemResponse, ListResponse } from "../../../lib/api-client";
 import { CreateProductPayload, UpdateProductPayload, Product } from "../types/produto.types";
 import { ImportRow, ImportRowError } from "../utils/productsImport";
@@ -6,8 +7,8 @@ export const getProducts = (page: number, amount: number) =>
   apiClient.get<ListResponse<Product>>("/products", { params: { page, amount } }).then((r) => r.data);
 // a scroll has no total: nextCursor is null on the last load
 export type ProductsScrollPage = { data: Product[]; pageSize: number; nextCursor: string | null };
-export const getProductsScroll = (cursor: string | undefined, amount: number) =>
-  apiClient.get<ProductsScrollPage>("/products/scroll", { params: { cursor, amount } }).then((r) => r.data);
+export const getProductsScroll = (cursor: string | undefined, amount: number, filters: ListFilterParams = {}) =>
+  apiClient.get<ProductsScrollPage>("/products/scroll", { params: { cursor, amount, ...filters } }).then((r) => r.data);
 export const getProductById = (id: string) =>
   apiClient.get<ItemResponse<Product>>(`/products/${id}`).then((r) => r.data.data);
 // same products as the list, plus the sum of valor_de_venda per categoria over all of them

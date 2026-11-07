@@ -1,3 +1,4 @@
+import { AuditoriaFilters } from "../../utils/schemas/list_filters.schema";
 import { ResponseCreateAuditoria } from "../../dtos/auditoria_dtos/create_auditoria.dto";
 import {
    ResponseFindAuditoriaById,
@@ -11,6 +12,7 @@ interface IAuditoriaService {
       sessao: string,
       page: number,
       amount: number,
+      filters?: AuditoriaFilters,
    ) => Promise<Either<BaseAppError, ResponseGetAuditorias>>;
    findAuditoriasById: (
       id: string,

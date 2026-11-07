@@ -12,9 +12,18 @@ export const useListPage = () => {
   const location = useLocation();
   const page = parsePage(searchParams.get("page"));
 
-  // page 1 is the bare URL; replace skips the history entry for automatic corrections
+  // page 1 has no ?page=; replace skips the history entry for automatic corrections. The list's filters
+  // (useListFilters) stay in the URL.
   const setPage = (next: number, replace = false) =>
-    setSearchParams(next > 1 ? { page: String(next) } : {}, { replace });
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        if (next > 1) params.set("page", String(next));
+        else params.delete("page");
+        return params;
+      },
+      { replace },
+    );
 
   // the form/detail page uses this to send the user back to the same ?page=
   const openItem = (path: string) => navigate(path, { state: { listSearch: location.search } satisfies ListState });

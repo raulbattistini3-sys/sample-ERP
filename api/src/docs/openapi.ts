@@ -178,6 +178,12 @@ const pagina = <T extends ZodTypeAny>(item: T) =>
 const um = <T extends ZodTypeAny>(item: T) => z.object({ data: item });
 const lista = <T extends ZodTypeAny>(item: T) => z.object({ data: z.array(item) });
 
+// multi-select list filters (utils/schemas/list_filters.schema.ts): repeat the key, ?categoria=A&categoria=B,
+// or separate with commas; values of one filter are OR-ed, different filters AND-ed
+const multi = <T extends [string, ...string[]]>(values: T, what: string) =>
+  z.array(z.enum(values)).optional().openapi({ description: `${what}; repeat for several (any of them matches)` });
+const Status = multi(["ativo", "inativo"], "Status");
+
 const Paginacao = z.object({
   page: z.coerce.number().int().min(1).default(1).optional(),
   amount: z.coerce.number().int().min(1).default(20).optional(),
@@ -260,7 +266,7 @@ rota({ metodo: "post", caminho: "/user/forgot-password", tag: USUARIOS, resumo: 
 rota({ metodo: "post", caminho: "/user/reset-password", tag: USUARIOS, resumo: "Set a new password with an emailed token", publica: true, status: 204, corpo: ResetPasswordSchema });
 rota({ metodo: "post", caminho: "/user/change-password", tag: USUARIOS, resumo: "Change your own password", descricao: "Ends your other sessions and returns a new one. The only route, with refresh-token, open while trocaSenhaObrigatoria is true; every other one answers 403.", status: 200, corpo: ChangePasswordSchema, resposta: Sessao, erros: [400] });
 rota({ metodo: "post", caminho: "/user/refresh-token", tag: USUARIOS, resumo: "Get a new token before this one expires", status: 200, resposta: Sessao });
-rota({ metodo: "get", caminho: "/user", tag: USUARIOS, resumo: "List usuarios", query: Paginacao, resposta: pagina(Usuario) });
+rota({ metodo: "get", caminho: "/user", tag: USUARIOS, resumo: "List usuarios", query: Paginacao.extend({ permissoes: multi(["ADM", "Estoque", "SU"], "Permissão"), status: Status }), resposta: pagina(Usuario) });
 rota({ metodo: "get", caminho: "/user/{id}", tag: USUARIOS, resumo: "Get a usuario", params: PorId, resposta: um(Usuario) });
 rota({ metodo: "post", caminho: "/user", tag: USUARIOS, resumo: "Create a usuario", admin: true, corpo: CreateUserSchema, resposta: Usuario, erros: [409] });
 rota({ metodo: "put", caminho: "/user/{id}", tag: USUARIOS, resumo: "Update a usuario", descricao: "Changing senha ends that usuario's sessions.", admin: true, params: PorId, corpo: UpdateUserSchema, erros: [409] });
@@ -270,7 +276,7 @@ rota({ metodo: "patch", caminho: "/user/{id}/archive", tag: USUARIOS, resumo: "D
 // ---- produtos ----
 const PRODUTOS = "Produtos";
 const FiltroProdutos = FilterProdutoSchema.merge(Paginacao);
-rota({ metodo: "get", caminho: "/products/scroll", tag: PRODUTOS, resumo: "List products for infinite scroll", descricao: "Keyset pagination in name order. Send nextCursor from the previous response as cursor. There is no total, and the first load is cached per session for 30 minutes.", query: z.object({ cursor: z.string().optional(), amount: z.coerce.number().int().min(1).default(30).optional() }), resposta: z.object({ data: z.array(Produto), pageSize: z.number().int(), nextCursor: z.string().nullable() }), erros: [400] });
+rota({ metodo: "get", caminho: "/products/scroll", tag: PRODUTOS, resumo: "List products for infinite scroll", descricao: "Keyset pagination in name order. Send nextCursor from the previous response as cursor. There is no total, and the first load is cached per session for 30 minutes.", query: z.object({ cursor: z.string().optional(), amount: z.coerce.number().int().min(1).default(30).optional(), categoria: multi(categoriasNomesEnum.options, "Categoria"), icms: z.array(z.number()).optional().openapi({ description: "ICMS rate; repeat for several" }), status: Status.openapi({ description: "ADM/SU only; others see active products whatever this says" }), busca: z.string().max(100).optional().openapi({ description: "Text found anywhere in the name, or in the SKU with busca_por=sku; case-insensitive" }), busca_por: z.enum(["nome", "sku"]).optional().openapi({ description: "Which field busca searches (default nome)" }), cadastro_desde: z.string().datetime({ offset: true }).optional().openapi({ description: "Registered at or after this instant (ISO 8601 with offset); the web sends the user's local midnight" }), cadastro_antes: z.string().datetime({ offset: true }).optional().openapi({ description: "Registered before this instant (exclusive); the web sends the local midnight after the last day" }) }), resposta: z.object({ data: z.array(Produto), pageSize: z.number().int(), nextCursor: z.string().nullable() }), erros: [400] });
 rota({ metodo: "get", caminho: "/products/filter", tag: PRODUTOS, resumo: "Filter products", descricao: "Filters combine with AND. name is a case-insensitive contains.", query: FiltroProdutos, resposta: pagina(Produto), erros: [400] });
 rota({ metodo: "get", caminho: "/products/download", tag: PRODUTOS, resumo: "Filtered products with totals, for the spreadsheet", query: FiltroProdutos, resposta: pagina(Produto).extend({ aggregated_value: z.record(z.number()).openapi({ description: "Sum of valor_de_venda per categoria, over every filtered product" }) }), erros: [400] });
 rota({ metodo: "post", caminho: "/products/imports", tag: PRODUTOS, resumo: "Queue a spreadsheet import", descricao: "Answers 202 at once. Poll GET /products/imports/{id} until the status is concluida, rejeitada or falhou.", admin: true, arquivo: true, status: 202, resposta: um(Importacao), erros: [503] });
@@ -286,7 +292,7 @@ rota({ metodo: "patch", caminho: "/products/{id}/deactivate", tag: PRODUTOS, res
 // ---- categorias ----
 const CATEGORIAS = "Categorias";
 rota({ metodo: "post", caminho: "/categorias", tag: CATEGORIAS, resumo: "Create a categoria", corpo: CreateCategoriaSchema, resposta: Categoria, erros: [409] });
-rota({ metodo: "get", caminho: "/categorias", tag: CATEGORIAS, resumo: "List categorias", query: Paginacao, resposta: pagina(Categoria), erros: [400] });
+rota({ metodo: "get", caminho: "/categorias", tag: CATEGORIAS, resumo: "List categorias", query: Paginacao.extend({ nome: multi(categoriasNomesEnum.options, "Nome"), tipo: multi(["Normal", "Especial", "Personalizado"], "Tipo"), status: Status }), resposta: pagina(Categoria), erros: [400] });
 rota({ metodo: "get", caminho: "/categorias/{id}", tag: CATEGORIAS, resumo: "Get a categoria", params: PorId, resposta: um(Categoria) });
 rota({ metodo: "put", caminho: "/categorias/{id}", tag: CATEGORIAS, resumo: "Update a categoria", descricao: "The id is read from the body, so send it there too.", params: PorId, corpo: UpdateCategoriaSchema, erros: [409] });
 rota({ metodo: "delete", caminho: "/categorias/{id}", tag: CATEGORIAS, resumo: "Delete a categoria", params: PorId });
@@ -296,7 +302,7 @@ rota({ metodo: "patch", caminho: "/categorias/{id}/archive", tag: CATEGORIAS, re
 const AUDITORIAS = "Auditorias";
 rota({ metodo: "post", caminho: "/auditoria", tag: AUDITORIAS, resumo: "Create an auditoria", descricao: "The auditor is the signed-in usuario; usuario_id in the body is replaced.", corpo: CreateAuditoriaSchema.omit({ usuario_id: true }), resposta: Auditoria });
 rota({ metodo: "post", caminho: "/auditoria/manual", tag: AUDITORIAS, resumo: "Create an auditoria that changes a product or categoria", descricao: "valores is the full record as it should end up. The server diffs it against the stored row, saves both and records every changed field, in one transaction.", corpo: CreateAuditoriaManualSchema.omit({ usuario_id: true }), resposta: Auditoria, erros: [404, 409] });
-rota({ metodo: "get", caminho: "/auditoria", tag: AUDITORIAS, resumo: "List auditorias, newest first", descricao: "The first load of 30 is cached per session for 30 minutes.", query: Paginacao, resposta: pagina(Auditoria), erros: [400] });
+rota({ metodo: "get", caminho: "/auditoria", tag: AUDITORIAS, resumo: "List auditorias, newest first", descricao: "The first unfiltered load of 30 is cached per session for 30 minutes.", query: Paginacao.extend({ acao: multi(["Criacao", "Alteracao", "Delecao"], "Ação"), auditor: z.array(z.string().uuid()).optional().openapi({ description: "Auditor (usuario id); repeat for several" }) }), resposta: pagina(Auditoria), erros: [400] });
 rota({ metodo: "get", caminho: "/auditoria/{id}", tag: AUDITORIAS, resumo: "Get an auditoria", params: PorId, resposta: um(Auditoria) });
 rota({ metodo: "put", caminho: "/auditoria/{id}", tag: AUDITORIAS, resumo: "Update an auditoria", descricao: "Changes acao_efetuada and data_de_audicao only. The whole body is still validated.", params: PorId, corpo: CreateAuditoriaSchema.omit({ usuario_id: true }) });
 rota({ metodo: "delete", caminho: "/auditoria/{id}", tag: AUDITORIAS, resumo: "Delete an auditoria", params: PorId });
