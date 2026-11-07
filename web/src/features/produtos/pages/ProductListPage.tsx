@@ -15,6 +15,7 @@ import { getApiErrorMessage } from "../../../lib/api-client";
 import { isAdminRole } from "../../../lib/permissoes";
 import { useAuth } from "../../../context/AuthContext";
 import { productColumns } from "../components/columns";
+import { FakeDataButton } from "../../../components/FakeDataButton";
 
 const FILTERS = ["busca", "busca_por", "categoria", "icms", "status", "cadastro_de", "cadastro_ate"] as const;
 const SEARCH_FIELDS: SearchField[] = [
@@ -56,6 +57,7 @@ export function ProductListPage() {
         title="Produtos"
         actions={
           <>
+            <FakeDataButton tipo="produtos" />
             <Button
               variant="secondary"
               onClick={() => downloadMutation.mutate()}

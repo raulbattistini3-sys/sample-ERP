@@ -358,6 +358,9 @@ API_ENV=development DATABASE_URL='postgresql://postgres:postgres@localhost:5432/
 | `api/` | `bun run build` then `bun run start` | Production build (`dist/`) and start |
 | `api/` | `bun run db:migrate` | Apply new SQL migrations from `api/drizzle/` |
 | `api/` | `bun run admin:promote <email> [--role SU\|ADM]` | Promote a user |
+| `api/` | `bun run seed:fake [--produtos N] [--auditorias N] [--usuarios N] [--seed N]` | Fake products, usuarios and audit history in a local database (refuses production and remote hosts) |
+| `api/` | `bun run seed:fake --remover` | Delete everything `seed:fake` created (`FK-` SKUs, `@demo.local` usuarios) |
+| `api/` | `bun run seed:fake --planilha file.csv [--linhas N] [--com-erros]` | A spreadsheet for Produtos > Importar, optionally with invalid rows |
 | `web/` | `bun run dev` | Vite dev server on :5173 |
 | `web/` | `bun run build` | Production build (`dist/`) |
 | `importer/` | `go run ./cmd/importer` | Spreadsheet importer (reads `importer/.env`) |

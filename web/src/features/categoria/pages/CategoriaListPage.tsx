@@ -5,6 +5,7 @@ import { Plus } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Pagination } from "../../../components/ui/Pagination";
 import { ErrorAlert, LoadingState, PageHeader } from "../../../components/ui/PageState";
+import { FakeDataButton } from "../../../components/FakeDataButton";
 import { useClampPage, useListPage } from "../../../hooks/useListPage";
 import { getApiErrorMessage } from "../../../lib/api-client";
 import { LIST_PAGE_SIZE } from "../../../lib/pagination";
@@ -31,6 +32,7 @@ export function CategoriaListPage() {
         title="Categorias"
         actions={
           <>
+            <FakeDataButton tipo="categorias" />
             <Button onClick={() => openItem("/categorias/new")}>
               <Plus className="h-4 w-4" aria-hidden="true" />
               Nova categoria
