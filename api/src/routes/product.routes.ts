@@ -28,7 +28,8 @@ const categoriaRepository = new CategoriaRepository(db);
 const produtoValidator = new ProdutoValidator();
 const categoriaValidator = new CategoriaValidator();
 
-const productService = new ProductService(
+// exported for the product socket (sockets/produtos.socket.ts), which serves the same scroll as GET /scroll
+export const productService = new ProductService(
   productRepository,
   categoriaRepository,
   produtoValidator,

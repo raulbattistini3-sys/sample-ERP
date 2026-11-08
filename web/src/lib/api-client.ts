@@ -1,5 +1,6 @@
 import axios, { AxiosError } from "axios";
 import { clearSession, getToken } from "./auth-storage";
+import { SocketRequestError } from "./productSocket";
 
 export const apiClient = axios.create({
   // "/api" behind the launcher's gateway (same origin); a full address, e.g. http://localhost:3333, when
@@ -47,6 +48,8 @@ apiClient.interceptors.response.use(
 
 // API errors come back as { message, status } from BaseErrorMiddleware
 export const getApiErrorMessage = (error: unknown, fallback = "Algo deu errado. Tente novamente.") => {
+  // the product list's socket answers with the same messages as REST
+  if (error instanceof SocketRequestError) return error.message || fallback;
   if (axios.isAxiosError<{ message?: string }>(error)) {
     if (!error.response) return "Não foi possível conectar ao servidor.";
     return error.response.data?.message || fallback;

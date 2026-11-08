@@ -30,6 +30,21 @@ each search    scheduler.decide(spec): predicted ms on main vs worker, against a
 
 `?strategy=main|worker|fixed|adaptive` on `/products` pins the scheduler for experiments.
 
+**While the worker warms up.** Building the name index takes about 1.4 s on 600k real names (the second
+search takes 6 ms, so this cost is index building, not JIT warm-up). A search that would go to the worker before it
+has the index it needs (`scheduler.coldFor(spec)`) is answered by the server instead. The local run still goes
+ahead and replaces the server's rows when it lands. `window.__erpSearchWarm` turns true when the warm-up is
+done. The server side of this is fast thanks to the trigram indexes on `produtos.sku` and `produtos.name`
+(`api/drizzle/0021_produtos_trgm_idx.sql`).
+
+**Transport to the API.** Server pages go over REST (`GET /products/scroll`, JSON) or over a WebSocket with
+protobuf frames (`proto/produtos/v1/busca.proto`, served by `api/src/sockets/produtos.socket.ts` on the
+API's own port at `/ws`). `?transport=rest|socket` or `VITE_PRODUCTS_TRANSPORT` picks one; REST is the
+default. When the socket can't connect, for example behind the launcher's gateway, which doesn't forward
+sockets yet, the request falls back to REST. Every request emits a `transport`/`request` telemetry event with
+`requested`, `transport`, `cold` (the first request of that transport in this page load), `ms`,
+`connectMs` (socket), `bytes` and `fallback`, for comparing the two on cold runs.
+
 ## Fuzzy word matching (`fuzzy.js`, `similarity.js`)
 
 The name search is the `fuzzy` op. Each query word decides how it matches:
@@ -53,6 +68,34 @@ The server's search stays exact (word starts), so typo tolerance appears once th
 Example, 100k real product names, warm: "smarthpone" → smartphone (7 ms), "geladera" → geladeira
 (2 ms), "pelcula vidro" → película (2 ms). Building both indexes once takes about 310 ms, which the
 worker absorbs at warm-up.
+
+## SKU search (`digit-index.js`) and narrowing
+
+SKUs are a prefix plus a zero-padded number (`LT-0000123`, `LT2-0300000`). `contains` on a dictionary
+column builds, once per thread, a **digit index**. Strings are grouped by prefix and digit width, and
+each group's numbers are kept sorted. A query matches in one of three places:
+
+1. Inside the prefix: the whole group matches.
+2. Across the boundary (`t-00012`): one range of numbers.
+3. Inside the digits (`123`): one range per offset, about N/10^k ranges in all. Each range is a binary
+   search, so the work follows the number of matches.
+
+When the ranges would cost more than reading the group (`0` on 7-digit numbers), the group is read
+instead. Columns that aren't shaped like that (names, free text, more than 64 groups, more than 10%
+without a trailing number) get no index, and `contains` scans as before. Matches are always exactly what
+`includes` (and the API's `ILIKE '%…%'`) finds.
+
+**Narrowing.** Each thread keeps its last `contains` result. When the next spec only tightens it (the
+text still holds the old text, other filters equal or added), the changed filters test only those rows.
+A last result holding more than half the rows is not reused, because one straight pass is cheaper.
+`fuzzy` filters always run again, since their ranking comes from running them. The scheduler predicts
+main-thread cost from the narrowed row count, and the cost model learns per row actually tested
+(`stats.tested`).
+
+`node test/bench-sku-search.js` on 600k rows shaped like the real table, one laptop, ms per keystroke:
+the old scan takes 150–600, the index 8–70 (the most for 1-character queries), and the index plus
+narrowing under 1 once a few characters are typed. Building the index takes about 200 ms; the worker's
+warm-up search (`sku contains "a"`) pays it.
 
 ## How each runtime loads it
 

@@ -28,6 +28,7 @@
     "swagger-ui-express": "^5.0.1",
     "ts-node": "^10.9.2",
     "uuid": "^11.0.5",
+    "ws": "8.22.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
@@ -39,6 +40,7 @@
     "@types/node": "^22.10.7",
     "@types/swagger-ui-express": "^4.1.8",
     "@types/uuid": "^10.0.0",
+    "@types/ws": "8.18.2",
     "drizzle-kit": "^0.31.11",
     "ts-node-dev": "^2.0.0",
     "ts-proto": "^2.18.3",
@@ -47,6 +49,7 @@
   "scripts": {
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "socket:smoke": "bun scripts/product_socket_smoke.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "admin:promote": "bun scripts/admin_promote.ts",
