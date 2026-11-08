@@ -129,7 +129,9 @@ export class CostModel {
   observe(target, spec, stats, overheadMs) {
     const k = this.k[target];
     if (stats.prepared >= MIN_UNITS) k.prep.update(stats.prepareMs / stats.prepared);
-    if (stats.scanned >= MIN_UNITS) k.scan.update(stats.filterMs / stats.scanned);
+    // per row actually tested: a narrowed run tests far fewer rows than the spec suggests
+    const tested = stats.tested ?? stats.scanned;
+    if (tested >= MIN_UNITS) k.scan.update(stats.filterMs / tested);
     if (stats.sortClass !== "none" && stats.sortUnits >= MIN_UNITS) k.sort[stats.sortClass].update(stats.sortMs / stats.sortUnits);
     if (target === "worker" && overheadMs !== undefined) this.overhead.update(overheadMs);
     const filters = spec.filters?.length ?? 0;

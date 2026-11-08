@@ -101,7 +101,9 @@
 /**
  * @typedef {object} OpResult
  * @property {Uint32Array} indices Row indices after filtering and sorting.
- * @property {number} scanned Rows the filters looked at (limit × filters).
+ * @property {number} scanned Rows the filters would look at without narrowing (limit × filters).
+ * @property {number} [tested] Rows the filters actually tested (fewer when narrowed, or when a filter runs on what an earlier one kept).
+ * @property {boolean} [narrowed] true when the run started from the thread's last result (see compute.js)
  * @property {number} matched Rows left after filtering.
  * @property {number} prepareMs One-off string decoding (cold cache only).
  * @property {number} prepared Strings decoded by that step; 0 when warm.

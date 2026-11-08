@@ -8,7 +8,7 @@
 //   with probability ε try the other side, so both coefficients stay fresh;
 //   main is only explored when T_main ≤ 2·budget, so exploring never causes a big jank.
 
-import { isWarm, runOp, stringNeeds } from "./compute.js";
+import { isWarm, narrowedRows, runOp, stringNeeds } from "./compute.js";
 import { CostModel } from "./cost-model.js";
 
 /** @typedef {import("./types.js").Dataset} Dataset */
@@ -89,7 +89,10 @@ export function createScheduler(options) {
     const needs = stringNeeds(dataset, spec);
     const coldMain = needs.reduce((sum, n) => sum + (isWarm(n) ? 0 : n.dict.count), 0);
     const coldWorker = needs.reduce((sum, n) => sum + (workerWarm.has(n.key) ? 0 : n.dict.count), 0);
-    const predMainMs = model.predict("main", estimate, coldMain);
+    // main narrows from its own last result when the spec only tightens it; the worker's last result
+    // isn't known here, so its prediction assumes a full run
+    const mainRows = narrowedRows(dataset, spec);
+    const predMainMs = model.predict("main", mainRows === null ? estimate : { ...estimate, scanUnits: mainRows }, coldMain);
     const predWorkerMs = model.predict("worker", estimate, coldWorker);
     const mainBusy = signals?.mainBusy() ?? 0;
     const pressure = signals?.pressure() ?? "unknown";
@@ -147,9 +150,26 @@ export function createScheduler(options) {
     return { stale: false, decision, target: "main", indices, stats, timing: { totalMs: t1 - t0, mainBlockedMs: t1 - t0 } };
   }
 
+  /**
+   * True when this spec would wait on index building: it goes to the worker (the main thread is too slow
+   * for it) and the worker hasn't built a cache it needs yet, so it would queue behind the warm-up or
+   * build the cache itself (seconds on a big table). The app can answer it some other way meanwhile (the
+   * server), and keep the local result for when it lands. Strategy "main" never waits on the worker.
+   *
+   * @param {OpSpec} spec
+   * @param {Strategy} [override]
+   */
+  function coldFor(spec, override) {
+    if (!worker) return false;
+    const d = decide(spec, override);
+    if (d.target !== "worker") return false;
+    return stringNeeds(dataset, spec).some((n) => !workerWarm.has(n.key));
+  }
+
   return {
     model,
     decide,
+    coldFor,
 
     /**
      * Runs one operation where the strategy says. On a newer run in the same

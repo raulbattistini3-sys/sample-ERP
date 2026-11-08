@@ -13,7 +13,8 @@
 // in the app, whose entry is just `import "<pkg>/tablecore/worker/worker.js"`.
 
 export { openColumnar, encodeColumnar, toShared, dictString, dictStrings, cellText, NULL_I32, NULL_U8 } from "./columnar.js";
-export { runOp, textIndexStats, trigramIndexStats, stringNeeds, isWarm } from "./compute.js";
+export { runOp, textIndexStats, trigramIndexStats, digitIndexStats, stringNeeds, isWarm, resetNarrowing, narrowedRows } from "./compute.js";
+export { buildDigitIndex, digitMatchCodes } from "./digit-index.js";
 export { fuzzyMatchCodes, buildTrigramIndex } from "./fuzzy.js";
 export { fold, levenshtein, osa, prefixOsa, jaroWinkler, trigrams, trigramCosine, maxEditsFor } from "./similarity.js";
 export { tokenize } from "./text-index.js";

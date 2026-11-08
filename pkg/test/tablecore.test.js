@@ -181,3 +181,25 @@ test("numeric `in` keeps rows whose value is one of the listed numbers", () => {
   const want = rows.filter((x) => x.qty === 3 || x.qty === 7 || x.qty === 42).map((x) => x.i);
   assert.deepEqual([...r.indices], want);
 });
+
+test("coldFor: a search bound for a worker that hasn't built its index yet is cold, until the worker has", async () => {
+  const { ds } = fixture(60_000);
+  /** @type {any} */
+  const fakeWorker = {
+    run: async (/** @type {any} */ spec) => {
+      const { indices, ...stats } = runOp(ds, spec);
+      return { stale: false, id: 1, indices, stats, timing: { totalMs: 1, postMs: 0, toWorkerMs: 0, replyMs: 0, queuedBehind: 0 } };
+    },
+  };
+  const s = createScheduler({ dataset: ds, worker: fakeWorker, strategy: "worker", epsilon: 0 });
+  const spec = { filters: [{ column: "name", op: /** @type {const} */ ("prefix"), value: "mesa" }] };
+  assert.equal(s.coldFor(spec), true);
+  await s.run(spec);
+  assert.equal(s.coldFor(spec), false, "warm once the worker has run it");
+  // numbers need no string cache: never cold
+  assert.equal(s.coldFor({ filters: [{ column: "price", op: "gte", value: 10 }] }), false);
+  // pinned to the main thread: never waits on the worker
+  assert.equal(s.coldFor({ filters: [{ column: "name", op: "contains", value: "x" }] }, "main"), false);
+  // no worker at all: nothing to wait on
+  assert.equal(createScheduler({ dataset: ds, worker: null }).coldFor(spec), false);
+});

@@ -5,6 +5,7 @@
 import { dictStrings, isDecoded, NULL_I32, NULL_U8 } from "./columnar.js";
 import { buildTextIndex, matchCodes } from "./text-index.js";
 import { buildTrigramIndex, fuzzyMatchCodes } from "./fuzzy.js";
+import { buildDigitIndex, digitMatchCodes } from "./digit-index.js";
 
 /** @typedef {import("./types.js").Dataset} Dataset */
 /** @typedef {import("./types.js").Column} Column */
@@ -18,6 +19,10 @@ const collator = new Intl.Collator("pt-BR", { numeric: true, sensitivity: "base"
 
 /**
  * Filters, then sorts, the first `spec.limit` rows.
+ *
+ * Narrowing: each thread remembers its last result (see `lastRun`). When the new spec only tightens it
+ * (typing one more character into a `contains` box), the changed filters test only the rows the last
+ * result kept, instead of every row.
  *
  * @param {Dataset} ds
  * @param {OpSpec} spec
@@ -36,6 +41,7 @@ export function runOp(ds, spec) {
     if (isWarm(need)) continue;
     prepared += need.dict.count;
     if (need.kind === "lower") lowerStrings(need.dict);
+    else if (need.kind === "digits") digitIndex(need.dict);
     else if (need.kind === "index") textIndex(need.dict);
     else if (need.kind === "fuzzy") trigramIndex(need.dict);
     else dictStrings(need.dict);
@@ -45,13 +51,28 @@ export function runOp(ds, spec) {
   const t0 = performance.now();
   /** @type {Uint32Array} */
   let idx;
-  if (filters.length === 0) {
+  let tested = 0;
+  const narrow = narrowFrom(ds, spec);
+  if (narrow) {
+    // the last result already passes every unchanged filter; only the changed ones run, on its rows
+    idx = narrow.input;
+    for (const f of narrow.changed) {
+      tested += idx.length;
+      idx = applyFilter(ds, f, idx, n, ctx);
+    }
+  } else if (filters.length === 0) {
     idx = new Uint32Array(n);
     for (let i = 0; i < n; i++) idx[i] = i;
   } else {
+    tested = n;
     idx = applyFilter(ds, filters[0], null, n, ctx);
-    for (let f = 1; f < filters.length; f++) idx = applyFilter(ds, filters[f], idx, n, ctx);
+    for (let f = 1; f < filters.length; f++) {
+      tested += idx.length;
+      idx = applyFilter(ds, filters[f], idx, n, ctx);
+    }
   }
+  // In row order, before any sort, and a copy: the worker transfers `idx` away with its reply.
+  remember(ds, spec, idx);
   const t1 = performance.now();
 
   let sortClass = classifySort(ds, sort);
@@ -69,6 +90,8 @@ export function runOp(ds, spec) {
   return {
     indices: idx,
     scanned: n * filters.length,
+    tested,
+    narrowed: narrow !== null,
     matched: idx.length,
     prepareMs: t0 - tp,
     prepared,
@@ -81,10 +104,11 @@ export function runOp(ds, spec) {
 }
 
 /**
- * A string cache an op depends on: `lower` for contains/eq/in filters,
+ * A string cache an op depends on: `lower` for eq/in filters, `digits` (the lowercased strings and, when
+ * the column is codes with a number, a digit index, see digit-index.js) for contains filters,
  * `index` (inverted index) for token/prefix filters, `decoded` for the locale comparator.
  * `fuzzy` (a trigram index over the inverted index's terms, which it builds too) for fuzzy filters.
- * @typedef {{ key: string, kind: "lower" | "index" | "fuzzy" | "decoded", dict: import("./types.js").Dict }} StringNeed
+ * @typedef {{ key: string, kind: "lower" | "digits" | "index" | "fuzzy" | "decoded", dict: import("./types.js").Dict }} StringNeed
  */
 
 /**
@@ -101,7 +125,7 @@ export function stringNeeds(ds, spec) {
   for (const f of spec.filters ?? []) {
     const col = column(ds, f.column);
     if (!col.dict) continue;
-    const kind = f.op === "token" || f.op === "prefix" ? "index" : f.op === "fuzzy" ? "fuzzy" : "lower";
+    const kind = f.op === "token" || f.op === "prefix" ? "index" : f.op === "fuzzy" ? "fuzzy" : f.op === "contains" ? "digits" : "lower";
     needs.set(`${col.name}:${kind}`, { key: `${col.name}:${kind}`, kind, dict: col.dict });
   }
   for (const k of spec.sort ?? []) {
@@ -118,6 +142,7 @@ export function stringNeeds(ds, spec) {
  */
 export function isWarm(need) {
   if (need.kind === "lower") return lowerCache.has(need.dict.bytes);
+  if (need.kind === "digits") return digitCache.has(need.dict.bytes);
   if (need.kind === "index") return indexCache.has(need.dict.bytes);
   if (need.kind === "fuzzy") return trigramCache.has(need.dict.bytes);
   return isDecoded(need.dict);
@@ -179,8 +204,8 @@ function column(ds, name) {
  */
 function applyFilter(ds, f, input, n, ctx) {
   const col = column(ds, f.column);
-  const test = rowTest(col, f, ctx);
   const len = input ? input.length : n;
+  const test = rowTest(col, f, ctx, len);
   const out = new Uint32Array(len);
   let m = 0;
   if (input) {
@@ -201,6 +226,121 @@ const lowerCache = new WeakMap();
 const indexCache = new WeakMap();
 /** @type {WeakMap<Uint8Array, import("./fuzzy.js").TrigramIndex>} */
 const trigramCache = new WeakMap();
+/** null: the column isn't codes with a number, so contains scans it */
+/** @type {WeakMap<Uint8Array, import("./digit-index.js").DigitIndex | null>} */
+const digitCache = new WeakMap();
+
+/**
+ * Digit index of a dictionary, built once per thread, or null when its strings aren't "prefix + number".
+ * @param {import("./types.js").Dict} dict
+ */
+function digitIndex(dict) {
+  let index = digitCache.get(dict.bytes);
+  if (index === undefined) {
+    index = buildDigitIndex(lowerStrings(dict));
+    digitCache.set(dict.bytes, index);
+  }
+  return index;
+}
+
+/**
+ * Size and build time of a column's digit index on this thread; null when never built or not usable.
+ * @param {import("./types.js").Dict} dict
+ */
+export function digitIndexStats(dict) {
+  const d = digitCache.get(dict.bytes);
+  return d ? { bytes: d.bytes, buildMs: d.buildMs, groups: d.groups.length, rest: d.rest.length } : null;
+}
+
+/** Below this many rows to test, `contains` tests their strings rather than building a mask over the dictionary. */
+const DIGIT_INDEX_MIN_ROWS = 4096;
+
+/**
+ * The thread's last filtered result, for narrowing. One entry: typing replaces it every keystroke.
+ * @type {{ ds: Dataset, limit: number | undefined, filters: Filter[], indices: Uint32Array } | null}
+ */
+let lastRun = null;
+
+/** Narrow only from a last result holding at most this share of the rows. */
+const NARROW_MAX_SHARE = 0.5;
+
+/** @param {Filter} f */
+const filterKey = (f) => `${f.column}\u0000${f.op}`;
+
+/** @param {Filter} a @param {Filter} b */
+const sameValue = (a, b) => JSON.stringify(a.value) === JSON.stringify(b.value);
+
+/**
+ * True when every row the new filter keeps, the old one keeps too.
+ * @param {Filter} next
+ * @param {Filter} old same column and op
+ */
+function implies(next, old) {
+  if (sameValue(next, old)) return true;
+  // contains: a text that still holds the old one finds a subset
+  return old.op === "contains" && String(next.value).toLowerCase().includes(String(old.value).toLowerCase());
+}
+
+/**
+ * The last result to start from and the filters still to run on it, or null to run from every row.
+ * Every old filter must have a new one (same column and op) that implies it; new filters may be added.
+ * @param {Dataset} ds
+ * @param {OpSpec} spec
+ * @returns {{ input: Uint32Array, changed: Filter[] } | null}
+ */
+function narrowFrom(ds, spec) {
+  const last = lastRun;
+  const filters = spec.filters ?? [];
+  if (!last || last.ds !== ds || last.limit !== spec.limit || filters.length === 0) return null;
+  // Jumping through a list of most rows costs more than one straight pass over all of them.
+  if (last.indices.length > NARROW_MAX_SHARE * Math.min(spec.limit ?? ds.rows, ds.rows)) return null;
+  /** @type {Map<string, Filter>} */
+  const byKey = new Map();
+  for (const f of filters) {
+    if (byKey.has(filterKey(f))) return null;
+    byKey.set(filterKey(f), f);
+  }
+  /** @type {Set<Filter>} */
+  const unchanged = new Set();
+  for (const old of last.filters) {
+    const f = byKey.get(filterKey(old));
+    if (!f || !implies(f, old)) return null;
+    // a fuzzy filter always runs again: its ranking and match info come from running it
+    if (sameValue(f, old) && f.op !== "fuzzy") unchanged.add(f);
+  }
+  // the same spec again leaves nothing to run: the same rows
+  return { input: last.indices, changed: filters.filter((f) => !unchanged.has(f)) };
+}
+
+/**
+ * Keeps this result for the next run to narrow from. Only specs with a `contains` filter are kept:
+ * that is the filter typing extends, and copying every other result would be wasted.
+ * @param {Dataset} ds
+ * @param {OpSpec} spec
+ * @param {Uint32Array} idx
+ */
+function remember(ds, spec, idx) {
+  const filters = spec.filters ?? [];
+  lastRun = filters.some((f) => f.op === "contains")
+    ? { ds, limit: spec.limit, filters: filters.map((f) => ({ ...f })), indices: idx.slice() }
+    : null;
+}
+
+/** Forgets the last result, so the next run starts from every row (tests and benchmarks). */
+export function resetNarrowing() {
+  lastRun = null;
+}
+
+/**
+ * Rows the next run on this thread would test if it narrows from the last result, or null when it
+ * wouldn't narrow. Lets the scheduler predict main-thread cost from what main will really do.
+ * @param {Dataset} ds
+ * @param {OpSpec} spec
+ */
+export function narrowedRows(ds, spec) {
+  const narrow = narrowFrom(ds, spec);
+  return narrow ? narrow.input.length * narrow.changed.length : null;
+}
 
 /**
  * Trigram index over a dictionary's index terms, for fuzzy filters; built once per thread.
@@ -268,9 +408,10 @@ function lowerStrings(dict) {
  * @param {Column} col
  * @param {Filter} f
  * @param {FilterContext} ctx
+ * @param {number} rows how many rows the test will see
  * @returns {(row: number) => boolean}
  */
-function rowTest(col, f, ctx) {
+function rowTest(col, f, ctx, rows) {
   const v = col.values;
   if (col.type === "dict") {
     if (!col.dict) throw new Error(`${col.name}: dictionary missing`);
@@ -294,6 +435,17 @@ function rowTest(col, f, ctx) {
       };
     }
     const strings = lowerStrings(col.dict);
+    if (f.op === "contains" && rows >= DIGIT_INDEX_MIN_ROWS) {
+      // codes with a number (SKUs): number ranges instead of a string test per distinct value
+      const digits = digitIndex(col.dict);
+      if (digits) {
+        const mask = digitMatchCodes(digits, strings, col.dict.count, String(f.value).toLowerCase());
+        return (r) => {
+          const c = v[r];
+          return c >= 0 && mask[c] === 1;
+        };
+      }
+    }
     const set = f.op === "in" && Array.isArray(f.value) ? new Set(f.value.map((x) => String(x).toLowerCase())) : null;
     const q = String(f.value).toLowerCase();
     const eq = f.op === "eq";
