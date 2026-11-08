@@ -100,18 +100,27 @@ export function useLocalProducts(engine: ProductEngine | null, params: ListFilte
     };
   }, [engine, params]);
 
+  // A search the worker can't answer until it has built an index (the first seconds after the snapshot
+  // loads, while it warms up) would leave the previous result on screen that long. The server answers
+  // those meanwhile; the local run still goes ahead and takes over when it lands.
+  const cold = useMemo(() => engine !== null && engine.scheduler.coldFor(toOpSpec(params)), [engine, params]);
+
   // the engine answered, but maybe for the previous filters: keep showing that until the new run lands,
-  // which is what keeps typing smooth
-  const current = result !== null && result.engine === engine && error === null;
-  const ready = current && result.params === params;
+  // which is what keeps typing smooth (unless the new run is cold, see above)
+  const answered = result !== null && result.engine === engine && error === null;
+  const ready = answered && result.params === params;
+  const current = answered && (ready || !cold);
   const products: Product[] = useMemo(
     () => (current ? toProducts(result.engine.dataset, result.indices, count) : []),
     [current, result, count],
   );
 
   return {
-    // the local engine drives the list (even while a newer run is in flight)
+    // the local engine drives the list (even while a newer, warm run is in flight); false while a cold
+    // run is pending, and the server's list is shown
     active: current,
+    // the server answers these filters because the local engine is still building an index for them
+    cold: cold && !ready,
     ready,
     products,
     run: current ? result.run : null,

@@ -116,7 +116,7 @@ export function ProductListPage() {
         {/* only ADM/SU see inactive products */}
         {isAdminRole(user?.permissoes) && <MultiSelectFilter label="Status" options={STATUS_OPTIONS} selected={filters.status} onChange={(v) => setFilter("status", v)} />}
       </FilterBar>
-      <SearchEngineStatus mode={local.active ? "local" : engineStatus === "loading" ? "loading" : "server"} run={local.run} />
+      <SearchEngineStatus mode={local.active ? "local" : engineStatus === "loading" || local.cold ? "loading" : "server"} run={local.run} />
       {downloadMutation.isError && (
         <ErrorAlert
           message={getApiErrorMessage(downloadMutation.error, "Não foi possível gerar a planilha.")}

@@ -25,6 +25,9 @@ async function openLocal(page: Page, query = "") {
 test("after the snapshot loads, searching makes no request to the server", async ({ page, request }) => {
   await signIn(page, request);
   await openLocal(page);
+  // until the worker has built its indexes, a search that would wait on them is answered by the server
+  // (useLocalProducts); after that, never
+  await page.waitForFunction(() => (window as unknown as { __erpSearchWarm?: boolean }).__erpSearchWarm === true, null, { timeout: 30_000 });
 
   const scrolls: string[] = [];
   page.on("request", (r) => {

@@ -148,6 +148,13 @@
       "when": 1792640822121,
       "tag": "0020_usuarios_troca_senha",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792650822121,
+      "tag": "0021_produtos_trgm_idx",
+      "breakpoints": true
     }
   ]
 }

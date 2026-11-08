@@ -46,6 +46,10 @@ export async function createProductEngine(buffer: ArrayBuffer, etag: string | nu
   }
 
   const scheduler = createScheduler({ dataset, worker, signals: t.signals, strategy: strategyFromUrl(), emit: t.emit });
+  // true once the warm-up below is done (or there is none): from then on no search waits on index
+  // building, so none falls back to the server (useLocalProducts). For DevTools and the e2e tests.
+  const flags = window as unknown as { __erpSearchWarm?: boolean };
+  flags.__erpSearchWarm = false;
   t.emit({
     source: "products",
     type: "engine-ready",
@@ -71,9 +75,15 @@ export async function createProductEngine(buffer: ArrayBuffer, etag: string | nu
       await scheduler.run({ filters: [{ column: "name", op: "fuzzy", value: "xqzwv" }] }, { strategy: "worker", channel: "warmup" });
       await scheduler.run({ filters: [{ column: "sku", op: "contains", value: "a" }] }, { strategy: "worker", channel: "warmup" });
     };
-    warm().catch(() => {
-      // a failed warm-up only means the first search pays for the caches
-    });
+    warm()
+      .catch(() => {
+        // a failed warm-up only means the first search pays for the caches
+      })
+      .finally(() => {
+        flags.__erpSearchWarm = true;
+      });
+  } else {
+    flags.__erpSearchWarm = true;
   }
 
   return {
