@@ -1,5 +1,8 @@
 import { ListFilterParams } from "../../../hooks/useListFilters";
 import { apiClient, ItemResponse, ListResponse } from "../../../lib/api-client";
+import { productSocket, SocketUnavailable } from "../../../lib/productSocket";
+import { telemetry } from "../../../lib/telemetry";
+import type { Filtros, Produto } from "../../../gen/produtos/v1/busca";
 import { CreateProductPayload, UpdateProductPayload, Product } from "../types/produto.types";
 import { ImportRow, ImportRowError } from "../utils/productsImport";
 
@@ -7,8 +10,90 @@ export const getProducts = (page: number, amount: number) =>
   apiClient.get<ListResponse<Product>>("/products", { params: { page, amount } }).then((r) => r.data);
 // a scroll has no total: nextCursor is null on the last load
 export type ProductsScrollPage = { data: Product[]; pageSize: number; nextCursor: string | null };
-export const getProductsScroll = (cursor: string | undefined, amount: number, filters: ListFilterParams = {}) =>
-  apiClient.get<ProductsScrollPage>("/products/scroll", { params: { cursor, amount, ...filters } }).then((r) => r.data);
+const getProductsScrollRest = (cursor: string | undefined, amount: number, filters: ListFilterParams = {}) =>
+  apiClient.get<ProductsScrollPage>("/products/scroll", { params: { cursor, amount, ...filters } });
+
+export type ProductsTransport = "rest" | "socket";
+const TRANSPORTS: ProductsTransport[] = ["rest", "socket"];
+
+// ?transport=rest|socket on the page, else VITE_PRODUCTS_TRANSPORT, else REST
+export function productsTransport(): ProductsTransport {
+  const fromUrl = new URLSearchParams(window.location.search).get("transport") as ProductsTransport | null;
+  if (fromUrl && TRANSPORTS.includes(fromUrl)) return fromUrl;
+  const fromEnv = import.meta.env.VITE_PRODUCTS_TRANSPORT as ProductsTransport | undefined;
+  return fromEnv && TRANSPORTS.includes(fromEnv) ? fromEnv : "rest";
+}
+
+const first = (v: string[] | undefined) => v?.[0] ?? "";
+const toFiltros = (f: ListFilterParams): Filtros => ({
+  categoria: f.categoria ?? [],
+  icms: f.icms ?? [],
+  status: f.status ?? [],
+  busca: first(f.busca),
+  buscaPor: first(f.busca_por),
+  cadastroDesde: first(f.cadastro_desde),
+  cadastroAntes: first(f.cadastro_antes),
+});
+// the JSON shape of GET /products/scroll, so the list doesn't know which transport it came from
+const fromProduto = (p: Produto): Product => ({
+  id: p.id,
+  name: p.name,
+  ativo: p.ativo,
+  sku: p.sku,
+  categoria: { ...p.categoria, nome: (p.categoria?.nome ?? "") as Product["categoria"]["nome"] },
+  valor_de_custo: p.valorDeCusto,
+  icms: p.icms,
+  valor_de_venda: p.valorDeVenda,
+  data_de_cadastro: p.dataDeCadastro,
+  quantidade_em_estoque: p.quantidadeEmEstoque,
+});
+
+// the first request of each transport in this page load: the cold run (connection, JIT, caches)
+const seen = new Set<ProductsTransport>();
+
+// One page of the list over the chosen transport. The socket falls back to REST when it can't be used;
+// either way one telemetry event says which transport answered and what it cost (timings and sizes only,
+// never the filters or the rows).
+export async function getProductsScroll(cursor: string | undefined, amount: number, filters: ListFilterParams = {}): Promise<ProductsScrollPage> {
+  const requested = productsTransport();
+  const t0 = performance.now();
+  const report = (transport: ProductsTransport, data: Record<string, unknown>) => {
+    const cold = !seen.has(transport);
+    seen.add(transport);
+    telemetry().emit({
+      source: "transport",
+      type: "request",
+      ts: performance.now(),
+      data: { endpoint: "products/scroll", requested, transport, cold, ms: performance.now() - t0, page: cursor ? "next" : "first", ...data },
+    });
+  };
+
+  if (requested === "socket") {
+    try {
+      const { pagina, connectMs, bytes } = await productSocket.buscar(cursor, amount, toFiltros(filters));
+      report("socket", { ok: true, connectMs, bytes, rows: pagina.produtos.length });
+      return { data: pagina.produtos.map(fromProduto), pageSize: pagina.pageSize, nextCursor: pagina.nextCursor || null };
+    } catch (err) {
+      if (!(err instanceof SocketUnavailable)) {
+        report("socket", { ok: false, status: (err as { status?: number }).status ?? null });
+        throw err;
+      }
+      // fall through to REST, recorded as a fallback
+      report("socket", { ok: false, fallback: true, reason: err.message });
+    }
+  }
+
+  const t1 = performance.now();
+  try {
+    const res = await getProductsScrollRest(cursor, amount, filters);
+    const length = Number(res.headers["content-length"]);
+    report("rest", { ok: true, restMs: performance.now() - t1, bytes: Number.isFinite(length) ? length : null, rows: res.data.data.length });
+    return res.data;
+  } catch (err) {
+    report("rest", { ok: false, status: (err as { response?: { status?: number } }).response?.status ?? null });
+    throw err;
+  }
+}
 export const getProductById = (id: string) =>
   apiClient.get<ItemResponse<Product>>(`/products/${id}`).then((r) => r.data.data);
 // same products as the list, plus the sum of valor_de_venda per categoria over all of them

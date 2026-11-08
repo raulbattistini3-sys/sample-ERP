@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package produtos.v1;
+
+// The product list over a WebSocket: binary frames between the web and the API, on the API's own port
+// (path /ws; /api/ws behind the launcher's gateway, which doesn't forward sockets yet). Not a gRPC service:
+// a browser can't speak gRPC without a proxy, and this keeps one connection open per tab instead.
+//
+// The same products and errors as GET /products/scroll, so the web can use either transport
+// (?transport=rest|socket) and get the same list. Every frame is a ClienteFrame or a ServidorFrame.
+//
+//   web                                   API
+//   Autenticar{token}          ──────▶    checks the token like the REST middleware
+//                              ◀──────    Autenticado
+//   BuscarProdutos{id, ...}    ──────▶    the user is reloaded on every request, as on REST
+//                              ◀──────    ProdutosPagina{id, ...} or Erro{id, ...}
+//
+// Requests may overlap; replies carry the request's id and can arrive in any order.
+
+message ClienteFrame {
+  oneof frame {
+    Autenticar autenticar = 1;
+    BuscarProdutos buscar = 2;
+  }
+}
+
+message ServidorFrame {
+  oneof frame {
+    Autenticado autenticado = 1;
+    ProdutosPagina pagina = 2;
+    Erro erro = 3;
+  }
+}
+
+// The first frame of a connection. A browser can't set an Authorization header on a WebSocket, and a
+// token in the URL would end up in logs.
+message Autenticar {
+  // the session token from POST /user/login
+  string token = 1;
+}
+
+message Autenticado {}
+
+// One page of the list: GET /products/scroll's parameters.
+message BuscarProdutos {
+  // chosen by the client, echoed in the reply
+  uint32 id = 1;
+  // the previous page's next_cursor; empty starts from the top
+  string cursor = 2;
+  // rows per page; 0 means 30
+  uint32 quantidade = 3;
+  Filtros filtros = 4;
+}
+
+// The list's filters, as the REST query string carries them (validated by the same code).
+message Filtros {
+  repeated string categoria = 1;
+  // ICMS rates, as decimal strings
+  repeated string icms = 2;
+  // "ativo" and/or "inativo"
+  repeated string status = 3;
+  // the search box; empty means no search
+  string busca = 4;
+  // "nome" (default) or "sku"
+  string busca_por = 5;
+  // ISO 8601 instants with a time zone; [cadastro_desde, cadastro_antes)
+  string cadastro_desde = 6;
+  string cadastro_antes = 7;
+}
+
+message ProdutosPagina {
+  uint32 id = 1;
+  repeated Produto produtos = 2;
+  uint32 page_size = 3;
+  // empty on the last page
+  string next_cursor = 4;
+}
+
+// A product as every product endpoint returns it.
+message Produto {
+  string id = 1;
+  string name = 2;
+  bool ativo = 3;
+  string sku = 4;
+  Categoria categoria = 5;
+  double valor_de_custo = 6;
+  double icms = 7;
+  double valor_de_venda = 8;
+  // ISO 8601, as in the JSON responses
+  string data_de_cadastro = 9;
+  double quantidade_em_estoque = 10;
+}
+
+message Categoria {
+  string id = 1;
+  string nome = 2;
+  string tipo = 3;
+}
+
+// A request that failed, with the HTTP status REST would have answered.
+message Erro {
+  // the request's id; 0 when the failure isn't about one request (authentication, a malformed frame)
+  uint32 id = 1;
+  uint32 status = 2;
+  string mensagem = 3;
+}

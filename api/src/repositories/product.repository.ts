@@ -1,5 +1,5 @@
 import { ProdutoFilters } from "../utils/schemas/list_filters.schema";
-import { escapeLike, statusFilter } from "../utils/helpers/list_filters";
+import { escapeLike, escapeRegex, searchWords, statusFilter } from "../utils/helpers/list_filters";
 import { and, asc, count, eq, sql } from "drizzle-orm";
 import { applyChanges, diffProduct, recordProductChange, recordProductChanges } from "./audit_trail.repository";
 import { DrizzleDB } from "../db/client";
@@ -12,7 +12,7 @@ import { RepositoryError } from "../globals/errors/global_repository_error.error
 import { BaseAppError } from "../errors/global_error.error";
 import { ValidationError } from "../errors/client_errors/four_xx.error";
 import { ProductImportWrites } from "../dtos/product_dtos/import_products.dto";
-import { ProductCursor } from "../dtos/product_dtos/get_products.dto";
+import { ProductCursor, ProductSnapshotRow } from "../dtos/product_dtos/get_products.dto";
 import { pgErrorCode } from "../utils/helpers/pg_error.util";
 
 // ids are generated, so the only unique constraint a write on produtos can break is produtos_sku_key
@@ -22,6 +22,17 @@ const INSERT_BATCH = 5000;
 
 const skuTaken = (error: unknown, message: string): ValidationError | null =>
   pgErrorCode(error) === UNIQUE_VIOLATION ? new ValidationError("409", message, error) : null;
+
+// The search box. SKU: any part of it (ILIKE). Nome: every word typed must start a word of the name, in
+// any order ("cab usb" finds "Cabo USB-C"), split the way the web's local index splits it
+// (pkg/tablecore/text-index.js), so the server and the browser find the same products. A search with no
+// letters or digits ("%", "-") has no words and falls back to the substring match.
+function searchConditions(text: string | undefined, bySku: boolean) {
+  if (!text) return [];
+  const words = bySku ? [] : searchWords(text);
+  if (words.length === 0) return [sql`${bySku ? produtos.sku : produtos.name} ilike ${`%${escapeLike(text)}%`}`];
+  return words.map((w) => sql`${produtos.name} ~* ${`(^|[^[:alnum:]])${escapeRegex(w)}`}`);
+}
 
 class ProductRepository implements IProductRepository {
   constructor(private readonly db: DrizzleDB) {}
@@ -106,9 +117,7 @@ class ProductRepository implements IProductRepository {
             ativo === undefined ? undefined : eq(produtos.ativo, ativo),
             filters.categoria ? sql`${categorias.nome}::text = any(${sql.param(filters.categoria)}::text[])` : undefined,
             filters.icms ? sql`${produtos.icms} = any(${sql.param(filters.icms.map(Number))}::float8[])` : undefined,
-            filters.busca
-              ? sql`${filters.busca_por?.[0] === "sku" ? produtos.sku : produtos.name} ilike ${`%${escapeLike(filters.busca[0])}%`}`
-              : undefined,
+            ...searchConditions(filters.busca?.[0], filters.busca_por?.[0] === "sku"),
             // Date parameters: node-pg writes them in the server's local time, as it did data_de_cadastro
             filters.cadastro_desde ? sql`${produtos.dataDeCadastro} >= ${new Date(filters.cadastro_desde[0])}` : undefined,
             filters.cadastro_antes ? sql`${produtos.dataDeCadastro} < ${new Date(filters.cadastro_antes[0])}` : undefined,
@@ -118,6 +127,33 @@ class ProductRepository implements IProductRepository {
         .orderBy(asc(produtos.name), asc(produtos.id))
         .limit(limit);
       return right(productData);
+    } catch (error) {
+      return left(new RepositoryError("Database error", error));
+    }
+  }
+
+  // Every visible product, only the columns the list shows, in the list's order (name, id), for the
+  // columnar snapshot the web searches locally. Plain rows, no entity mapping: this can be 600k of them.
+  async getSnapshotRows(includeInactive = false): Promise<Either<RepositoryError, ProductSnapshotRow[]>> {
+    try {
+      const rows = await this.db
+        .select({
+          id: produtos.id,
+          name: produtos.name,
+          sku: produtos.sku,
+          categoria: categorias.nome,
+          valorDeCusto: produtos.valorDeCusto,
+          icms: produtos.icms,
+          valorDeVenda: produtos.valorDeVenda,
+          dataDeCadastro: produtos.dataDeCadastro,
+          quantidadeEmEstoque: produtos.quantidadeEmEstoque,
+          ativo: produtos.ativo,
+        })
+        .from(produtos)
+        .innerJoin(categorias, eq(produtos.categoriaId, categorias.id))
+        .where(includeInactive ? undefined : eq(produtos.ativo, true))
+        .orderBy(asc(produtos.name), asc(produtos.id));
+      return right(rows as ProductSnapshotRow[]);
     } catch (error) {
       return left(new RepositoryError("Database error", error));
     }

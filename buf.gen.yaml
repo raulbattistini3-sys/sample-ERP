@@ -8,13 +8,17 @@ managed:
     - file_option: go_package_prefix
       value: github.com/raulbattistini3-sys/sample-ERP/gen/go
 plugins:
+  # Go: the importer's gRPC service. produtos.v1 (the web's socket frames) has no Go side
   - local: ["go", "tool", "protoc-gen-go"]
     out: gen/go
     opt: paths=source_relative
+    types: [importador.v1]
   - local: ["go", "tool", "protoc-gen-go-grpc"]
     out: gen/go
     opt: paths=source_relative
-  # the API's typed client for the importer, inside api/src so its Dockerfile builds it with the rest
+    types: [importador.v1]
+  # the API: its typed client for the importer, and the product socket's frames; inside api/src so its
+  # Dockerfile builds it with the rest
   - local: ["node", "api/node_modules/ts-proto/protoc-gen-ts_proto"]
     out: api/src/gen
     opt:
@@ -22,5 +26,15 @@ plugins:
       - env=node
       - esModuleInterop=true
       - useDate=true
+      - forceLong=number
+  # the web: the product socket's frames only (lib/productSocket.ts), encoded with @bufbuild/protobuf
+  - local: ["node", "api/node_modules/ts-proto/protoc-gen-ts_proto"]
+    out: web/src/gen
+    types: [produtos.v1]
+    opt:
+      - outputServices=false
+      - outputJsonMethods=false
+      - env=browser
+      - esModuleInterop=true
       - forceLong=number
 clean: true

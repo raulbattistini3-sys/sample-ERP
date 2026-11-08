@@ -22,7 +22,10 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
+    "noUncheckedSideEffectImports": true,
+    /* ../pkg is plain JavaScript typed with JSDoc */
+    "allowJs": true,
+    "paths": { "@pkg/*": ["../pkg/*"] }
   },
   "include": [
     "src"

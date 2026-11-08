@@ -10,6 +10,7 @@ import { clienteRoutes } from "./cliente.routes";
 import { billingRoutes } from "./billing.routes";
 import { cobrancaRoutes, stripeRoutes } from "./cobranca.routes";
 import { databaseConnection } from "../configs/database_connection";
+import { telemetryRoutes } from "./telemetry.routes";
 const router = Router();
 
 // POST /user/register and /user/login
@@ -36,6 +37,7 @@ router.use("/integracoes/stripe", stripeRoutes);
 router.use("/integracoes", integracaoRoutes);
 router.use("/clientes", clienteRoutes);
 router.use("/cobrancas", cobrancaRoutes);
+router.use("/telemetry", telemetryRoutes);
 
 // the web's "Gerar dados fictícios" buttons; never mounted in production, so those requests are a 404.
 // Required lazily, so a production API doesn't even load the module.

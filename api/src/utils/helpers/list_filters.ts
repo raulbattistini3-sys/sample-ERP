@@ -1,4 +1,5 @@
 import { Request } from "express";
+import { tokenize } from "../../../../pkg/tablecore/text-index.js";
 import { ValidationError } from "../../errors/client_errors/four_xx.error";
 import { Either, left, right } from "../../globals/errors/left_right_either.error";
 
@@ -90,6 +91,12 @@ export function checkPeriod(desde: string[] | undefined, antes: string[] | undef
 
 // the text inside a LIKE pattern, with its wildcards taken literally
 export const escapeLike = (text: string) => text.replace(/[\\%_]/g, (c) => "\\" + c);
+
+// a literal string inside a Postgres regular expression
+export const escapeRegex = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// the distinct lowercased words of a search, split exactly like the web's index
+export const searchWords = (text: string): string[] => [...new Set(tokenize(text.toLowerCase()))];
 
 export const hasFilters = (filters: ListFilters<string>) => Object.values(filters).some((v) => v && v.length > 0);
 

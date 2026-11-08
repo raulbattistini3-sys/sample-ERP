@@ -143,3 +143,6 @@ launcher/target/
 # local files
 sample-ERP-v0.0.1-notes.md
 prod-ca-2021.crt
+
+# telemetry output (pkg/telemetry NDJSON exporter, TELEMETRY_DIR)
+*.ndjson

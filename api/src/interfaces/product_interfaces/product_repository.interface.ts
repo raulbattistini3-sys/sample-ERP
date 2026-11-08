@@ -4,7 +4,7 @@ import { BaseAppError } from "../../errors/global_error.error";
 import { Either } from "../../globals/errors/left_right_either.error";
 import { RepositoryError } from "../../globals/errors/global_repository_error.error";
 import { ProductImportWrites } from "../../dtos/product_dtos/import_products.dto";
-import { ProductCursor } from "../../dtos/product_dtos/get_products.dto";
+import { ProductCursor, ProductSnapshotRow } from "../../dtos/product_dtos/get_products.dto";
 import { DrizzleDB } from "../../db/client";
 
 interface IProductRepository {
@@ -21,6 +21,8 @@ interface IProductRepository {
       includeInactive?: boolean,
       filters?: ProdutoFilters,
    ): Promise<Either<RepositoryError, ProductWithCategoria[]>>;
+   // every visible product in list order, the columns of the web's local snapshot
+   getSnapshotRows(includeInactive?: boolean): Promise<Either<RepositoryError, ProductSnapshotRow[]>>;
    // categoria is resolved to categoriaId by the service before inserting; 409 when the SKU is taken
    createProduct(
       payload: NewProductEntity,
