@@ -85,7 +85,9 @@ export function useLocalProducts(engine: ProductEngine | null, params: ListFilte
             mainBlockedMs: outcome.timing.mainBlockedMs,
             reason: outcome.decision.reason,
             guesses: (outcome.stats.match?.words ?? [])
-              .filter((w) => w.mode === "fuzzy" && w.suggestions.length > 0)
+              // a typo ("cadera → cadeira"), words typed together ("pelculavidro → película vidro") or only
+              // the start matched ("pelculavidroazul → película…"): all shown, so a guess never looks exact
+              .filter((w) => (w.mode === "fuzzy" || w.mode === "split" || w.mode === "partial") && w.suggestions.length > 0)
               .map((w) => ({ word: w.word, term: w.suggestions[0].term })),
           },
         });

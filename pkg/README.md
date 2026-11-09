@@ -59,7 +59,29 @@ The name search is the `fuzzy` op. Each query word decides how it matches:
      measured against the closest *start* of the term. A word may be off by at most 1 edit up to
      5 letters and 2 edits beyond that. Words of 1–2 letters and numbers are never guessed.
    - **Score:** `0.5 · (1 − d/(k+1)) + 0.3 · Jaro–Winkler + 0.2 · containment`.
-3. **No match.** Nothing close enough, and since every word must match, the query finds nothing.
+3. **Words typed together** (`segment.js`). Some shoppers type "pelculavidro" for "película vidro".
+   Every split point is tried, with pieces of at least 3 letters, up to 3 pieces. Each piece is matched
+   like a word (word start, else similar word):
+   - a piece that is a whole word counts 1;
+   - the start of a longer word counts 0.7 + 0.3 · its share of the word;
+   - a typo'd word counts its similarity score, and only for pieces of at least 5 letters;
+   - each extra piece costs 10%.
+
+   The best splits compete with step 2's match of the whole word. The winner must have at least one
+   product holding all its pieces, which then count as separate AND-ed words.
+4. **Partial.** Nothing above works: the longest start of the word (4+ letters) that matches, ranked
+   below everything else. "pelculavidroazul" finds the películas when no product says "azul".
+5. **No match.** Nothing close enough, and since every word must match, the query finds nothing.
+
+Steps 2–4 are reported per word (`match.words[i].mode`: `fuzzy`, `split`, `partial`) with what the word
+was read as, which the web shows as "pelculavidro → película vidro". On the 600k real names:
+
+| query | read as | time |
+|---|---|---|
+| `pelculavidro` | película vidro (same 11,844 rows as `pelicula vidro`) | 32 ms |
+| `tecladomecanico` | teclado mecânico | 26 ms |
+| `mousesemfio` | mouse sem fio | 40 ms |
+| `tecaldo` | teclado (still a typo, not a split) | 18 ms |
 
 When any word was guessed, rows are ranked by the mean score of their words, closest first. The result
 carries how each word matched (`match.words`), and the web shows the guesses under the search bar.

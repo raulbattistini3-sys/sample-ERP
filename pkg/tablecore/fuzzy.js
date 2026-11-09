@@ -1,10 +1,15 @@
 // Fuzzy word matching on top of the inverted text index (text-index.js).
 //
-// Each query word decides how it matches:
-//   1. prefix  some index term starts with the word: exactly what `prefix` search does, score 1
-//   2. fuzzy   no term does (a typo, a missing accent): find similar terms, as a vector search over
-//              character trigrams, then verify and score them with edit distances
-//   3. none    nothing close enough; the whole query matches nothing (words are AND-ed)
+// Each query word decides how it matches, in this order (resolveWord):
+//   1. prefix   some index term starts with the word: exactly what `prefix` search does, score 1
+//   2. fuzzy    no term does (a typo, a missing accent): find similar terms, as a vector search over
+//               character trigrams, then verify and score them with edit distances
+//   3. split    the word is several words typed without spaces ("pelculavidro" → película + vidro):
+//               segment.js splits it into pieces that each match (prefix or fuzzy). Splits compete with
+//               the fuzzy match on score; the winner must have products holding all of its pieces
+//   4. partial  nothing above works: the longest start of the word (≥ MIN_PARTIAL letters) that matches,
+//               ranked below everything else ("at least the first word they meant")
+//   5. none     nothing close enough; the whole query matches nothing (words are AND-ed)
 //
 // The vector search: every distinct term (accents folded) is a sparse binary vector of its trigrams,
 // stored as an inverted list trigram → term ids (CSR in typed arrays, like the text index). A query word
@@ -22,6 +27,7 @@
 
 import { fold, jaroWinkler, maxEditsFor, prefixOsa, trigrams } from "./similarity.js";
 import { tokenize } from "./text-index.js";
+import { MIN_FUZZY_PIECE, PIECE_PENALTY, segmentWord } from "./segment.js";
 
 /** @typedef {import("./text-index.js").TextIndex} TextIndex */
 
@@ -39,6 +45,9 @@ import { tokenize } from "./text-index.js";
 const MIN_CONTAINMENT = 0.25;
 const MAX_CANDIDATES = 256;
 const SUGGESTIONS = 3;
+// partial matches: at least this many letters of the word's start, scored this much lower
+const MIN_PARTIAL = 4;
+const PARTIAL_PENALTY = 0.6;
 
 /**
  * @param {TextIndex} index
@@ -99,8 +108,10 @@ export function buildTrigramIndex(index) {
  * How one query word matched, for the UI ("did you mean") and telemetry.
  * @typedef {object} WordMatch
  * @property {string} word
- * @property {"prefix" | "fuzzy" | "none"} mode
- * @property {{ term: string, distance: number, score: number }[]} suggestions best fuzzy terms (empty for prefix)
+ * @property {"prefix" | "fuzzy" | "split" | "partial" | "none"} mode
+ * @property {{ term: string, distance: number, score: number }[]} suggestions best fuzzy terms (empty for
+ *   prefix); for split and partial, one entry: what the word was read as ("película vidro", "película…")
+ * @property {string[]} [pieces] split and partial: the parts of the word that matched
  */
 
 /**
@@ -127,7 +138,7 @@ let shared = new Uint16Array(0);
  * @param {TextIndex} index
  * @param {TrigramIndex} tri
  * @param {string} word lowercased
- * @returns {{ mode: WordMatch["mode"], terms: number[], scores: number[], suggestions: WordMatch["suggestions"] }}
+ * @returns {{ mode: "prefix" | "fuzzy" | "none", terms: number[], scores: number[], suggestions: WordMatch["suggestions"] }}
  */
 export function matchWord(index, tri, word) {
   const { terms } = index;
@@ -188,6 +199,122 @@ export function matchWord(index, tri, word) {
 }
 
 /**
+ * One AND-ed condition: the code must hold one of these terms (best score counts).
+ * @typedef {{ terms: number[], scores: number[] }} Unit
+ */
+
+/**
+ * @typedef {ReturnType<typeof matchWord> & import("./segment.js").PieceMatch} Piece
+ */
+
+/**
+ * matchWord for a piece of a word, plus what segment.js needs to compare pieces.
+ * @param {TextIndex} index
+ * @param {TrigramIndex} tri
+ * @param {string} piece
+ * @returns {Piece}
+ */
+function matchPiece(index, tri, piece) {
+  const m = matchWord(index, tri, piece);
+  if (m.mode === "prefix") {
+    // terms are sorted, so the first one starting with the piece is the piece itself when it is a word
+    const first = index.terms[m.terms[0]];
+    const quality = first === piece ? 1 : 0.7 + (0.3 * piece.length) / first.length;
+    return { ...m, quality, label: piece, distance: 0 };
+  }
+  if (m.mode === "fuzzy") return { ...m, quality: m.scores[0], label: m.suggestions[0].term, distance: m.suggestions[0].distance };
+  return { ...m, quality: 0, label: piece, distance: 0 };
+}
+
+/**
+ * Whether some code is reached by every unit (their products intersect).
+ * @param {TextIndex} index
+ * @param {Unit[]} units at most 255
+ * @param {number} codeCount
+ */
+function cooccur(index, units, codeCount) {
+  const { offsets, postings } = index;
+  // mark[c] = how many units in a row reached c
+  const mark = new Uint8Array(codeCount);
+  for (let u = 0; u < units.length; u++) {
+    let any = false;
+    for (const t of units[u].terms) {
+      for (let p = offsets[t], end = offsets[t + 1]; p < end; p++) {
+        const c = postings[p];
+        if (mark[c] === u) {
+          mark[c] = u + 1;
+          any = true;
+        }
+      }
+    }
+    if (!any) return false;
+  }
+  return true;
+}
+
+/**
+ * How one query word matches (steps 1–5 at the top): what to report, and the conditions it adds.
+ * @param {TextIndex} index
+ * @param {TrigramIndex} tri
+ * @param {string} word lowercased
+ * @param {number} codeCount
+ * @returns {{ summary: WordMatch, units: Unit[] }}
+ */
+export function resolveWord(index, tri, word, codeCount) {
+  const whole = matchWord(index, tri, word);
+  if (whole.mode === "prefix") return { summary: { word, mode: "prefix", suggestions: [] }, units: [whole] };
+
+  /** @type {Map<string, Piece>} */
+  const memo = new Map();
+  const piece = (/** @type {string} */ s) => {
+    let m = memo.get(s);
+    if (!m) memo.set(s, (m = matchPiece(index, tri, s)));
+    return m;
+  };
+
+  // the fuzzy match of the whole word and the best splits, highest score first
+  /** @type {{ score: number, units: Unit[], summary: WordMatch }[]} */
+  const options = [];
+  if (whole.mode === "fuzzy") options.push({ score: whole.scores[0], units: [whole], summary: { word, mode: "fuzzy", suggestions: whole.suggestions } });
+  for (const split of segmentWord(fold(word), piece)) {
+    // a split's rows rank below a whole-word match of the same quality
+    const factor = PIECE_PENALTY ** (split.pieces.length - 1);
+    options.push({
+      score: split.score,
+      units: split.matches.map((m) => ({ terms: m.terms, scores: m.scores.map((s) => s * factor) })),
+      summary: {
+        word,
+        mode: "split",
+        pieces: split.pieces,
+        suggestions: [{ term: split.label, distance: split.distance, score: Math.round(split.score * 1000) / 1000 }],
+      },
+    });
+  }
+  options.sort((a, b) => b.score - a.score);
+  // a split whose pieces never appear in the same product would find nothing: take the next one
+  for (const o of options) if (o.units.length === 1 || cooccur(index, o.units, codeCount)) return o;
+
+  // partial: the longest start of the word that matches on its own
+  const q = fold(word);
+  for (let len = q.length - 1; len >= MIN_PARTIAL; len--) {
+    const start = q.slice(0, len);
+    const m = piece(start);
+    if (m.mode === "prefix" || (m.mode === "fuzzy" && len >= MIN_FUZZY_PIECE)) {
+      return {
+        summary: {
+          word,
+          mode: "partial",
+          pieces: [start],
+          suggestions: [{ term: `${m.label}…`, distance: m.distance, score: Math.round(m.quality * PARTIAL_PENALTY * 1000) / 1000 }],
+        },
+        units: [{ terms: m.terms, scores: m.scores.map((s) => s * PARTIAL_PENALTY) }],
+      };
+    }
+  }
+  return { summary: { word, mode: "none", suggestions: whole.suggestions }, units: [] };
+}
+
+/**
  * Marks and scores the dictionary codes matching every word of the query.
  *
  * @param {TextIndex} index
@@ -195,8 +322,8 @@ export function matchWord(index, tri, word) {
  * @param {number} codeCount
  * @param {string} query lowercased
  * @returns {{ mask: Uint8Array, score: Float32Array, words: WordMatch[], fuzzy: boolean }}
- *   `score` is the mean of the words' best scores for matching codes; `fuzzy` is true when any word
- *   matched fuzzily (then ranking by score is worth it; otherwise every match scores 1)
+ *   `score` is the mean of the conditions' best scores for matching codes; `fuzzy` is true when any word
+ *   wasn't a plain word start (then ranking by score is worth it; otherwise every match scores 1)
  */
 export function fuzzyMatchCodes(index, tri, codeCount, query) {
   const words = [...new Set(tokenize(query))];
@@ -204,19 +331,27 @@ export function fuzzyMatchCodes(index, tri, codeCount, query) {
   const score = new Float32Array(codeCount);
   if (words.length === 0) return { mask: mask.fill(1), score: score.fill(1), words: [], fuzzy: false };
 
+  // each word adds one condition, or several when it was split into pieces; all are AND-ed
+  /** @type {Unit[]} */
+  const units = [];
+  /** @type {WordMatch[]} */
+  const summary = [];
+  let fuzzy = false;
+  for (const word of words) {
+    const r = resolveWord(index, tri, word, codeCount);
+    summary.push(r.summary);
+    if (r.summary.mode === "none") return { mask, score, words: summary, fuzzy };
+    if (r.summary.mode !== "prefix") fuzzy = true;
+    units.push(...r.units);
+  }
+
   const hits = new Uint8Array(codeCount);
   const seen = new Uint16Array(codeCount);
   const best = new Float32Array(codeCount);
   const total = new Float32Array(codeCount);
   const { offsets, postings } = index;
-  /** @type {WordMatch[]} */
-  const summary = [];
-  let fuzzy = false;
-  for (let w = 0; w < words.length; w++) {
-    const m = matchWord(index, tri, words[w]);
-    summary.push({ word: words[w], mode: m.mode, suggestions: m.suggestions });
-    if (m.mode === "none") return { mask, score, words: summary, fuzzy };
-    if (m.mode === "fuzzy") fuzzy = true;
+  for (let w = 0; w < units.length; w++) {
+    const m = units[w];
     const stamp = w + 1;
     /** @type {number[]} */
     const reached = [];
@@ -238,9 +373,9 @@ export function fuzzyMatchCodes(index, tri, codeCount, query) {
     }
   }
   for (let c = 0; c < codeCount; c++) {
-    if (hits[c] === words.length) {
+    if (hits[c] === units.length) {
       mask[c] = 1;
-      score[c] = total[c] / words.length;
+      score[c] = total[c] / units.length;
     }
   }
   return { mask, score, words: summary, fuzzy };

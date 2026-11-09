@@ -112,3 +112,40 @@ test("fuzzy: ranking puts the closest guess first", () => {
   assert.ok(found.includes("Cabide"));
   assert.ok(!found.includes("Caixa de som"));
 });
+
+test("fuzzy: words typed without spaces are split into the words they hold", () => {
+  const { ds, namesOf } = catalog();
+  for (const [query, want, label] of /** @type {[string, string[], string][]} */ ([
+    ["cabousb", ["Cabo USB-C 1m"], "cabo usb"],
+    ["mousesemfio", ["Mouse sem fio"], "mouse sem fio"],
+    ["tecladosemfio", ["Teclado sem fio"], "teclado sem fio"],
+    // a typo inside one of the words too
+    ["tecaldosemfio", ["Teclado sem fio"], "teclado sem fio"],
+  ])) {
+    const r = runOp(ds, { filters: [{ column: "name", op: "fuzzy", value: query }] });
+    assert.deepEqual(namesOf(r.indices), want, query);
+    assert.equal(r.match?.words[0].mode, "split", query);
+    assert.equal(r.match?.words[0].suggestions[0].term, label, query);
+    assert.equal(r.match?.fuzzy, true);
+  }
+  // with other words around it, each split piece is one more AND-ed condition
+  const r = runOp(ds, { filters: [{ column: "name", op: "fuzzy", value: "semfio teclado" }] });
+  assert.deepEqual(namesOf(r.indices), ["Teclado sem fio"]);
+});
+
+test("fuzzy: a plain typo stays a typo, not a split", () => {
+  const { ds } = catalog();
+  const r = runOp(ds, { filters: [{ column: "name", op: "fuzzy", value: "tecaldo" }] });
+  assert.equal(r.match?.words[0].mode, "fuzzy");
+});
+
+test("fuzzy: a split whose words never share a product is skipped; the word's start still matches", () => {
+  const { ds, namesOf } = catalog();
+  // "mouse" and "monitor" are both words, but no product has both: the start of the query is used instead
+  const r = runOp(ds, { filters: [{ column: "name", op: "fuzzy", value: "mousemonitor" }] });
+  assert.equal(r.match?.words[0].mode, "partial");
+  assert.equal(r.match?.words[0].suggestions[0].term, "mouse…");
+  assert.deepEqual(namesOf(r.indices), ["Mouse sem fio"]);
+  // and something that starts like no word at all still finds nothing
+  assert.equal(runOp(ds, { filters: [{ column: "name", op: "fuzzy", value: "qqqqqqzzzz" }] }).indices.length, 0);
+});
