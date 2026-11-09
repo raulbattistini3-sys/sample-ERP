@@ -103,7 +103,14 @@ export function useLocalProducts(engine: ProductEngine | null, params: ListFilte
   // A search the worker can't answer until it has built an index (the first seconds after the snapshot
   // loads, while it warms up) would leave the previous result on screen that long. The server answers
   // those meanwhile; the local run still goes ahead and takes over when it lands.
-  const cold = useMemo(() => engine !== null && engine.scheduler.coldFor(toOpSpec(params)), [engine, params]);
+  // Not name searches: the server matches word starts only, so a typo would find nothing and show no
+  // guesses until the local result replaced it. Those wait for the local engine, typo-tolerant.
+  const cold = useMemo(() => {
+    if (engine === null) return false;
+    const spec = toOpSpec(params);
+    if (spec.filters?.some((f) => f.op === "fuzzy")) return false;
+    return engine.scheduler.coldFor(spec);
+  }, [engine, params]);
 
   // the engine answered, but maybe for the previous filters: keep showing that until the new run lands,
   // which is what keeps typing smooth (unless the new run is cold, see above)
