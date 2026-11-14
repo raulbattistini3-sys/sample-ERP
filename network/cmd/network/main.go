@@ -3,22 +3,8 @@
 // the public gateway in front of the browser (reverse proxy, rate limits, double-click dedupe,
 // reCAPTCHA, TLS) on the public one.
 //
-// Configuration (environment):
-//
-//	NETWORK_ADDR           public gateway address (default :8080)
-//	NETWORK_CONTROL_ADDR   registry address, keep it private (default 127.0.0.1:7070)
-//	NETWORK_TOKEN          shared secret that signs registry calls (required, 32+ characters)
-//	NETWORK_ENV            development | production (default production)
-//	NETWORK_ROUTES         prefix=service list (default "/api=api,/billing=billing,/=web")
-//	NETWORK_WEB_DIR        the built web app, served when no "web" instance is registered
-//	NETWORK_RATE, NETWORK_BURST           per-client token bucket (default 20/s, 40)
-//	NETWORK_TRUST_PROXY    trust X-Forwarded-For (only behind a proxy you run)
-//	NETWORK_MAX_BODY_MB, NETWORK_MAX_IMPORT_MB   body caps (default 1, 128)
-//	NETWORK_DEDUPE_MS      double-click window (default 2000)
-//	NETWORK_TLS_CERT, NETWORK_TLS_KEY     serve HTTPS (TLS 1.2+)
-//	NETWORK_ALLOW_PUBLIC_REGISTRATION     let instances register non-private addresses (default false)
-//	RECAPTCHA_SECRET, RECAPTCHA_SITE_KEY, RECAPTCHA_MIN_SCORE (0.5), RECAPTCHA_ROUTES ("POST /api/user/login")
-//	LOG_FORMAT (json|text), LOG_LEVEL
+// Configuration: environment variables, or network/.env (see network/.env.example for every variable,
+// its default and when to set it). Variables already in the environment win over the file.
 package main
 
 import (
@@ -46,6 +32,7 @@ import (
 var version = "dev"
 
 func main() {
+	loadDotEnv()
 	// `network dev`: the development supervisor (web + api as children; the API starts the rest)
 	if len(os.Args) > 1 && os.Args[1] == "dev" {
 		os.Exit(dev(os.Args[2:]))
