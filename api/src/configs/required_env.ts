@@ -6,7 +6,7 @@ import { apiEnv } from "./database_connection";
 // DATABASE_URL and the database CA are checked by database_connection.ts the same way.
 
 const ALWAYS: Record<string, string> = {
-   JWT_SECRET: "signs login tokens; any long random string",
+   JWT_SECRET: "HS256 key for login tokens; generate it with secrets/generate.ts",
 };
 
 // their defaults point at localhost, which is only right on a developer's machine

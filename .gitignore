@@ -146,3 +146,10 @@ prod-ca-2021.crt
 
 # telemetry output (pkg/telemetry NDJSON exporter, TELEMETRY_DIR)
 *.ndjson
+
+# secrets/generate.ts output: tokens, the JWT key and the mTLS certificates. Only the generator is tracked.
+/secrets/*
+!/secrets/generate.ts
+!/secrets/package.json
+!/secrets/bun.lock
+!/secrets/README.md
