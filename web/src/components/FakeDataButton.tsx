@@ -5,13 +5,16 @@ import { Loader2, Sparkles } from "lucide-react";
 import { Button } from "./ui/Button";
 import { apiClient, getApiErrorMessage } from "../lib/api-client";
 import { useUser } from "../hooks/useSession";
+import { EM_DESENVOLVIMENTO } from "../lib/ambiente";
 import { isAdminRole } from "../lib/permissoes";
 
-// "Gerar dados fictícios" on the list pages. The API offers /dev/fake-data only with API_ENV=development
-// (api/src/fake_data/fake_data.routes.ts), so in production the check below gets a 404 and the button
-// never shows. ADM/SU only, like the routes.
+// "Gerar dados fictícios" on the list pages, in a development environment only, checked twice:
+// - here: VITE_ENVIRONMENT must start with "dev" (lib/ambiente.ts), or the button isn't even asked for
+// - the API offers /dev/fake-data only with API_ENV=development (api/src/fake_data/fake_data.routes.ts),
+//   so against a production API the check below gets a 404 and the button stays hidden
+// ADM/SU only, like the routes.
 
-export type FakeDataTipo = "produtos" | "categorias" | "usuarios" | "auditorias";
+export type FakeDataTipo = "produtos" | "categorias" | "usuarios" | "auditorias" | "clientes";
 
 type Resultado = Record<string, unknown>;
 
@@ -42,6 +45,15 @@ const TIPOS: Record<
          return criadas.length ? `Criadas: ${criadas.join(", ")}.` : String(r.motivo ?? "Nada a criar.");
       },
    },
+   clientes: {
+      padrao: 20,
+      maximo: 200,
+      pergunta:
+         "Quantos clientes fictícios criar no HubSpot conectado (cerca de 1 empresa a cada 4)? " +
+         "Use um portal de testes: empresas terminam em (demo) e e-mails em @clientes.demo.local.",
+      listas: ["clientes"],
+      resumo: (r) => `${r.clientes} clientes em ${r.empresas} empresas criados no HubSpot (lote ${r.lote}).`,
+   },
    auditorias: {
       padrao: 10,
       maximo: 200,
@@ -69,7 +81,7 @@ const useFakeDataDisponivel = (habilitado: boolean) =>
 export function FakeDataButton({ tipo }: { tipo: FakeDataTipo }) {
    const user = useUser();
    const admin = isAdminRole(user?.permissoes);
-   const disponivel = useFakeDataDisponivel(admin);
+   const disponivel = useFakeDataDisponivel(admin && EM_DESENVOLVIMENTO);
    const queryClient = useQueryClient();
    const [mensagem, setMensagem] = useState<{ texto: string; erro: boolean } | null>(null);
    const config = TIPOS[tipo];
@@ -91,7 +103,7 @@ export function FakeDataButton({ tipo }: { tipo: FakeDataTipo }) {
       return () => clearTimeout(timer);
    }, [mensagem]);
 
-   if (!admin || !disponivel.data) return null;
+   if (!EM_DESENVOLVIMENTO || !admin || !disponivel.data) return null;
 
    const aoClicar = () => {
       if (config.padrao === undefined) {
