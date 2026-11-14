@@ -8,7 +8,7 @@ import { authMiddleware } from "./auth_middleware.instance";
 import { integracaoRoutes, publicIntegracaoRoutes } from "./integracao.routes";
 import { clienteRoutes } from "./cliente.routes";
 import { billingRoutes } from "./billing.routes";
-import { cobrancaRoutes, stripeRoutes } from "./cobranca.routes";
+import { cobrancaRoutes, pagamentoRecorrenteRoutes, stripeRoutes } from "./cobranca.routes";
 import { databaseConnection } from "../configs/database_connection";
 import { telemetryRoutes } from "./telemetry.routes";
 const router = Router();
@@ -36,6 +36,7 @@ router.use("/detalhamento-auditoria", detalhamentoAuditoriaRoutes);
 router.use("/integracoes/stripe", stripeRoutes);
 router.use("/integracoes", integracaoRoutes);
 router.use("/clientes", clienteRoutes);
+router.use("/cobrancas/recorrentes", pagamentoRecorrenteRoutes);
 router.use("/cobrancas", cobrancaRoutes);
 router.use("/telemetry", telemetryRoutes);
 
