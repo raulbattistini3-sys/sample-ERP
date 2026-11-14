@@ -4,8 +4,8 @@ import { FilterBar, FilterOption, MultiSelectFilter } from "../../../components/
 import { useListFilters } from "../../../hooks/useListFilters";
 import { CategoriaNomesEnum } from "../../categoria/types/categoria.types";
 import { useEffect, useMemo, useState } from "react";
-import { Download, Loader2, Plus, Upload } from "lucide-react";
-import { useDownloadProducts, useProductsScroll } from "../hooks/useProducts";
+import { Bookmark, Download, List, Loader2, Plus, Star, Upload } from "lucide-react";
+import { MAX_MARCADOS, useDownloadProducts, useMarcacoes, useProductsScroll, useProdutosPorIds } from "../hooks/useProducts";
 import { DataTable } from "../../../components/ui/DataTable";
 import { Button } from "../../../components/ui/Button";
 import { LoadMore } from "../../../components/ui/LoadMore";
@@ -14,7 +14,10 @@ import { useListPage } from "../../../hooks/useListPage";
 import { getApiErrorMessage } from "../../../lib/api-client";
 import { isAdminRole } from "../../../lib/permissoes";
 import { useUser } from "../../../hooks/useSession";
-import { productColumns } from "../components/columns";
+import { productColumnsComMarcacoes } from "../components/columns";
+import { AcoesEmLote } from "../components/AcoesEmLote";
+import { cn } from "../../../lib/cn";
+import { Product } from "../types/produto.types";
 import { FakeDataButton } from "../../../components/FakeDataButton";
 import { useLocalProducts, useProductEngine } from "../search/useLocalProducts";
 import { SearchEngineStatus } from "../search/SearchEngineStatus";
@@ -33,6 +36,13 @@ const ICMS_OPTIONS: FilterOption[] = [0, 4, 7, 12, 17, 18, 19, 20.5].map((r) => 
 const STATUS_OPTIONS: FilterOption[] = [
   { value: "ativo", label: "Ativo" },
   { value: "inativo", label: "Inativo" },
+];
+
+type Visao = "todos" | "favorito" | "depois";
+const VISOES: { value: Visao; label: string; icon: typeof List }[] = [
+  { value: "todos", label: "Todos", icon: List },
+  { value: "favorito", label: "Favoritos", icon: Star },
+  { value: "depois", label: "Para depois", icon: Bookmark },
 ];
 
 export function ProductListPage() {
@@ -64,6 +74,22 @@ export function ProductListPage() {
   const error = local.active ? null : server.error;
   const downloadMutation = useDownloadProducts();
   const user = useUser();
+
+  // bulk actions: the ticked ids live here, so they survive sorting, filters and "load more"
+  const [selecionados, setSelecionados] = useState<Set<string>>(() => new Set());
+  const [visao, setVisao] = useState<Visao>("todos");
+  const marcacoes = useMarcacoes();
+  const columns = useMemo(() => productColumnsComMarcacoes(marcacoes.data), [marcacoes.data]);
+  const idsMarcados = visao === "todos" ? [] : (marcacoes.data?.[visao] ?? []);
+  const marcadosQueries = useProdutosPorIds(idsMarcados);
+  const marcados = marcadosQueries.map((q) => q.data).filter((p): p is Product => !!p);
+  const carregandoMarcados = visao !== "todos" && (marcacoes.isLoading || marcadosQueries.some((q) => q.isLoading));
+  const selection = {
+    selectedIds: selecionados,
+    getRowId: (p: Product) => p.id,
+    onChange: setSelecionados,
+    rowLabel: (p: Product) => p.name,
+  };
 
   return (
     <div>
@@ -116,24 +142,75 @@ export function ProductListPage() {
         {/* only ADM/SU see inactive products */}
         {isAdminRole(user?.permissoes) && <MultiSelectFilter label="Status" options={STATUS_OPTIONS} selected={filters.status} onChange={(v) => setFilter("status", v)} />}
       </FilterBar>
-      <SearchEngineStatus mode={local.active ? "local" : engineStatus === "loading" || local.cold ? "loading" : "server"} run={local.run} />
+      <div role="tablist" aria-label="Lista de produtos" className="mb-3 inline-flex rounded-md border border-border bg-surface p-0.5">
+        {VISOES.map(({ value, label, icon: Icone }) => {
+          const total = value === "todos" ? null : marcacoes.data?.[value].length;
+          return (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={visao === value}
+              onClick={() => setVisao(value)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-sm",
+                visao === value ? "bg-accent-soft font-medium text-accent" : "text-muted hover:text-ink",
+              )}
+            >
+              <Icone className="h-4 w-4" aria-hidden="true" />
+              {label}
+              {total ? <span className="text-xs">({total})</span> : null}
+            </button>
+          );
+        })}
+      </div>
+      <AcoesEmLote
+        selecionados={selecionados}
+        marcacoes={marcacoes.data}
+        podeReativar={isAdminRole(user?.permissoes)}
+        onLimpar={() => setSelecionados(new Set())}
+      />
+      {visao === "todos" && (
+        <SearchEngineStatus mode={local.active ? "local" : engineStatus === "loading" || local.cold ? "loading" : "server"} run={local.run} />
+      )}
       {downloadMutation.isError && (
         <ErrorAlert
           message={getApiErrorMessage(downloadMutation.error, "Não foi possível gerar a planilha.")}
           className="mb-4"
         />
       )}
-      {isLoading ? (
+      {visao !== "todos" ? (
+        carregandoMarcados ? (
+          <LoadingState />
+        ) : marcacoes.error ? (
+          <ErrorAlert message={getApiErrorMessage(marcacoes.error, "Erro ao carregar suas marcações.")} />
+        ) : (
+          <>
+            <DataTable
+              columns={columns}
+              data={marcados}
+              onRowClick={(p) => openItem(`/products/${p.id}`)}
+              mobileTitleColumnId="name"
+              selection={selection}
+              emptyMessage={visao === "favorito" ? "Nenhum favorito ainda: selecione produtos em Todos e clique em Favoritar." : "Nada salvo para depois."}
+            />
+            {idsMarcados.length > MAX_MARCADOS && (
+              <p className="mt-2 text-xs text-muted">Mostrando os {MAX_MARCADOS} mais recentes de {idsMarcados.length}.</p>
+            )}
+          </>
+        )
+      ) : isLoading ? (
         <LoadingState />
       ) : error ? (
         <ErrorAlert message={getApiErrorMessage(error, "Erro ao carregar produtos.")} />
       ) : (
         <>
           <DataTable
-            columns={productColumns}
+            columns={columns}
             data={products}
             onRowClick={(p) => openItem(`/products/${p.id}`)}
             mobileTitleColumnId="name"
+            selection={selection}
           />
           {local.active ? (
             <LoadMore hasNextPage={local.hasMore} isFetchingNextPage={false} isFetchNextPageError={false} fetchNextPage={local.loadMore} />

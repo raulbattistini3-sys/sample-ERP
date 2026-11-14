@@ -142,3 +142,13 @@ export const createProduct = (payload: CreateProductPayload) => apiClient.post("
 export const updateProduct = (payload: UpdateProductPayload) => apiClient.put(`/products/${payload.id}`, payload);
 export const deactivateProduct = (id: string) => apiClient.patch(`/products/${id}/deactivate`);
 export const deleteProduct = (id: string) => apiClient.delete(`/products/${id}`);
+
+// bulk actions on the selected products (POST /products/lote); ativar is ADM/SU only
+export type AcaoEmLote = "inativar" | "ativar" | "favoritar" | "desfavoritar" | "salvar_depois" | "tirar_depois";
+export type ResultadoEmLote = { acao: AcaoEmLote; selecionados: number; alterados: number };
+export const executarEmLote = (acao: AcaoEmLote, ids: string[]) =>
+  apiClient.post<ItemResponse<ResultadoEmLote>>("/products/lote", { acao, ids }).then((r) => r.data.data);
+
+// the signed-in user's own marks, newest first
+export type Marcacoes = { favorito: string[]; depois: string[] };
+export const getMarcacoes = () => apiClient.get<ItemResponse<Marcacoes>>("/products/marcacoes").then((r) => r.data.data);

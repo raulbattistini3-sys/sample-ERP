@@ -11,7 +11,7 @@ import {
   type RowData,
   type SortingState,
 } from "@tanstack/react-table";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { useMobile } from "../../hooks/useMobile";
@@ -33,6 +33,34 @@ export type DataTableColumn<TData extends RowData> = ColumnDef<DataTableFeatures
 
 const EMPTY_DATA: never[] = [];
 
+// Row checkboxes for bulk actions: the page keeps the ids (so a selection survives sorting, filtering
+// and loading more), the table only shows and toggles them. The header box covers the rows on screen.
+export type DataTableSelection<TData> = {
+  selectedIds: ReadonlySet<string>;
+  getRowId: (row: TData) => string;
+  onChange: (ids: Set<string>) => void;
+  rowLabel?: (row: TData) => string;
+};
+
+function Checkbox({ checked, indeterminate = false, label, onChange }: { checked: boolean; indeterminate?: boolean; label: string; onChange: () => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      aria-label={label}
+      checked={checked}
+      onChange={onChange}
+      // a click on the box must not open the row
+      onClick={(e) => e.stopPropagation()}
+      className="h-4 w-4 cursor-pointer rounded border-border accent-accent"
+    />
+  );
+}
+
 type DataTableProps<TData extends RowData> = {
   columns: DataTableColumn<TData>[];
   data?: TData[];
@@ -40,6 +68,7 @@ type DataTableProps<TData extends RowData> = {
   emptyMessage?: string;
   // on mobile each row becomes a card; this column is its title (defaults to the first column)
   mobileTitleColumnId?: string;
+  selection?: DataTableSelection<TData>;
 };
 
 // plain-text label for a column on the mobile cards and the sort select
@@ -51,6 +80,7 @@ export function DataTable<TData extends RowData>({
   onRowClick,
   emptyMessage = "Nenhum registro encontrado.",
   mobileTitleColumnId,
+  selection,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   // a wide table needs horizontal scrolling on a phone; cards don't
@@ -65,6 +95,40 @@ export function DataTable<TData extends RowData>({
   });
 
   const rows = table.getRowModel().rows;
+
+  const visibleIds = selection ? rows.map((row) => selection.getRowId(row.original)) : [];
+  const selectedVisible = selection ? visibleIds.filter((id) => selection.selectedIds.has(id)).length : 0;
+  const allVisibleSelected = visibleIds.length > 0 && selectedVisible === visibleIds.length;
+  const toggleRow = (row: TData) => {
+    if (!selection) return;
+    const id = selection.getRowId(row);
+    const next = new Set(selection.selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    selection.onChange(next);
+  };
+  const toggleVisible = () => {
+    if (!selection) return;
+    const next = new Set(selection.selectedIds);
+    visibleIds.forEach((id) => (allVisibleSelected ? next.delete(id) : next.add(id)));
+    selection.onChange(next);
+  };
+  const rowCheckbox = (row: TData) =>
+    selection && (
+      <Checkbox
+        checked={selection.selectedIds.has(selection.getRowId(row))}
+        label={`Selecionar ${selection.rowLabel?.(row) ?? "linha"}`}
+        onChange={() => toggleRow(row)}
+      />
+    );
+  const headerCheckbox = selection && (
+    <Checkbox
+      checked={allVisibleSelected}
+      indeterminate={selectedVisible > 0 && !allVisibleSelected}
+      label={allVisibleSelected ? "Desmarcar os itens da lista" : "Selecionar todos os itens da lista"}
+      onChange={toggleVisible}
+    />
+  );
 
   if (isMobile) {
     const sortableColumns = table.getAllLeafColumns().filter((column) => column.getCanSort());
@@ -93,6 +157,13 @@ export function DataTable<TData extends RowData>({
                 </option>,
               ])}
             </select>
+          </label>
+        )}
+
+        {selection && rows.length > 0 && (
+          <label className="flex items-center gap-2 text-sm text-muted">
+            {headerCheckbox}
+            Selecionar todos ({rows.length})
           </label>
         )}
 
@@ -126,7 +197,9 @@ export function DataTable<TData extends RowData>({
               </>
             );
             return (
-              <li key={row.id}>
+              <li key={row.id} className={cn(selection && "flex items-start gap-3")}>
+                {selection && <span className="pt-4 pl-1">{rowCheckbox(row.original)}</span>}
+                <div className={cn(selection && "min-w-0 flex-1")}>
                 {onRowClick ? (
                   <button
                     type="button"
@@ -138,6 +211,7 @@ export function DataTable<TData extends RowData>({
                 ) : (
                   <div className="rounded-md border border-border bg-surface p-4">{content}</div>
                 )}
+                </div>
               </li>
             );
           })}
@@ -152,6 +226,7 @@ export function DataTable<TData extends RowData>({
         <thead>
           {table.getHeaderGroups().map((hg) => (
             <tr key={hg.id} className="border-b border-border">
+              {selection && <th className="w-10 px-4 py-3">{headerCheckbox}</th>}
               {hg.headers.map((header) => (
                 <th
                   key={header.id}
@@ -176,7 +251,7 @@ export function DataTable<TData extends RowData>({
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={table.getAllLeafColumns().length} className="px-4 py-8 text-center text-muted">
+              <td colSpan={table.getAllLeafColumns().length + (selection ? 1 : 0)} className="px-4 py-8 text-center text-muted">
                 {emptyMessage}
               </td>
             </tr>
@@ -185,8 +260,17 @@ export function DataTable<TData extends RowData>({
             <tr
               key={row.id}
               onClick={() => onRowClick?.(row.original)}
-              className={cn("border-b border-border last:border-0", onRowClick && "cursor-pointer hover:bg-canvas")}
+              className={cn(
+                "border-b border-border last:border-0",
+                onRowClick && "cursor-pointer hover:bg-canvas",
+                selection?.selectedIds.has(selection.getRowId(row.original)) && "bg-accent-soft/40",
+              )}
             >
+              {selection && (
+                <td className="w-10 px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                  {rowCheckbox(row.original)}
+                </td>
+              )}
               {row.getAllCells().map((cell) => (
                 <td key={cell.id} className="px-4 py-3 text-ink">
                   <table.FlexRender cell={cell} />

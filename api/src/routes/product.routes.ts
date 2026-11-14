@@ -18,6 +18,10 @@ import ImportacaoCluster from "../queues/importacoes.cluster";
 import { uploadPlanilha } from "../middlewares/upload.middleware";
 import ProductSnapshotService from "../services/product_snapshot.service";
 import ProductSnapshotController from "../controllers/product_snapshot.controller";
+import ProdutoLoteController from "../controllers/produto_lote.controller";
+import ProdutoLoteService from "../services/produto_lote.service";
+import ProdutoMarcacaoRepository from "../repositories/produto_marcacao.repository";
+import { rede } from "../integrations/network/network.client";
 
 
 const config = Config.getInstance();
@@ -40,17 +44,30 @@ const productController = new ProductController(productService, logger);
 // the whole visible list as one binary file, for the web's local search (pkg/tablecore)
 const productSnapshotController = new ProductSnapshotController(new ProductSnapshotService(productRepository), logger);
 
-// With IMPORTER_GRPC_URL the Go importer does the work; without it, this API does. Both are closed on
-// shutdown by index.ts
+// The Go importer does the work when it can be found: on the network service by name ("importer", when
+// NETWORK_URL is set; IMPORTER_GRPC_URL is then the fallback while none is registered) or at
+// IMPORTER_GRPC_URL. With neither (or IMPORTER_LOCAL=true), this API does. Both are closed on shutdown
+// by index.ts
 const grpcUrl = process.env.IMPORTER_GRPC_URL;
-export const importacaoCluster = grpcUrl ? null : new ImportacaoCluster(logger);
+const usaImportadorGo = process.env.IMPORTER_LOCAL !== "true" && (!!grpcUrl || !!rede);
+export const importacaoCluster = usaImportadorGo ? null : new ImportacaoCluster(logger);
 export const importadorClient: IImportadorClient = importacaoCluster
   ? new LocalImportadorClient(new ImportacaoRepository(db), () => importacaoCluster.acordar())
-  : new GrpcImportadorClient(grpcUrl as string);
+  : new GrpcImportadorClient(rede ? async () => (await rede!.endereco("importer")) ?? grpcUrl ?? null : (grpcUrl as string));
+// clientes imports exist only in the Go importer (HubSpot, 500,000 rows): null when it isn't configured
+export const grpcImportador = importadorClient instanceof GrpcImportadorClient ? importadorClient : null;
 const importacaoController = new ImportacaoController(new ImportacaoService(importadorClient), logger);
+
+// select several products, then inactivate / favourite / save for later all of them
+const produtoLoteController = new ProdutoLoteController(
+  new ProdutoLoteService(productRepository, new ProdutoMarcacaoRepository(db)),
+  logger,
+);
 
 const productRoutes = Router();
 
+productRoutes.post("/lote", produtoLoteController.executar);
+productRoutes.get("/marcacoes", produtoLoteController.getMarcacoes);
 productRoutes.get("/scroll", productController.getScroll);
 productRoutes.get("/snapshot", productSnapshotController.get);
 productRoutes.get("/filter", productController.getByFilter);
