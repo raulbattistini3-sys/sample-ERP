@@ -160,6 +160,7 @@ async fn run_stack(
         ("NETWORK_UPSTREAM_CA", path(&tls.ca)),
     ]);
     if let Some((cert, key)) = &g.tls {
+        let (cert, key) = if cert.as_os_str() == "internal" { (&tls.network_cert, &tls.network_key) } else { (cert, key) };
         network_env.extend(owned(&[
             ("NETWORK_TLS_CERT", cert.to_string_lossy().into_owned()),
             ("NETWORK_TLS_KEY", key.to_string_lossy().into_owned()),

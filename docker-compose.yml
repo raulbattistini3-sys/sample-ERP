@@ -239,7 +239,10 @@ services:
       NETWORK_MAX_IMPORT_MB: 128
       # the API and billing announce https:// addresses; their certificates chain to this CA
       NETWORK_UPSTREAM_CA: /run/secrets/internal_ca
-    secrets: [internal_ca]
+      # the gateway's own certificate (secrets/tls/network.crt), HTTPS with TLS 1.3
+      NETWORK_TLS_CERT: /run/secrets/network_tls_cert
+      NETWORK_TLS_KEY: /run/secrets/network_tls_key
+    secrets: [internal_ca, network_tls_cert, network_tls_key]
     restart: unless-stopped
 
   # The vault's own Postgres, apart from db: a dump of the ERP database holds no CPF, and the ciphertext
@@ -322,3 +325,7 @@ secrets:
     file: ./secrets/tls/web.crt
   web_tls_key:
     file: ./secrets/tls/web.key
+  network_tls_cert:
+    file: ./secrets/tls/network.crt
+  network_tls_key:
+    file: ./secrets/tls/network.key

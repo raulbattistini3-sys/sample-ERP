@@ -21,6 +21,7 @@ bun generate.ts --force                # new values for all
 | `tls/api.crt`, `tls/api.key` | API: HTTPS server (TLS 1.3; `api`, `localhost`, `127.0.0.1`) and client certificate |
 | `tls/billing.crt`, `tls/billing.key` | billing: server and client (mutual TLS with the API; replaces `BILLING_INTERNAL_TOKEN`) |
 | `tls/web.crt`, `tls/web.key` | the web app's HTTPS (Vite dev server, nginx in compose) |
+| `tls/network.crt`, `tls/network.key` | the network gateway's HTTPS (`NETWORK_TLS_CERT`/`NETWORK_TLS_KEY`) |
 
 Without Docker, copy the values from `secrets.env` into `api/.env`; the `.env.example` files already point
 `API_TLS_*`, `IMPORTER_TLS_*`, `GRPC_TLS_*` and `BILLING_TLS_*` at `../secrets/tls/`.

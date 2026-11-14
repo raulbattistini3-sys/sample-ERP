@@ -160,6 +160,8 @@ impl Config {
                 // product spreadsheets up to 15 MB, clientes/empresas up to 120 MB (api/src/middlewares/upload.middleware.ts)
                 max_import_mb: number(&vars, "ERP_MAX_IMPORT_MB", 128.0)? as usize,
                 tls: match (vars.get("ERP_TLS_CERT"), vars.get("ERP_TLS_KEY")) {
+                    // the launcher's own certificate (data/certs/network.crt), resolved in main.rs
+                    (Some(c), _) if c.eq_ignore_ascii_case("internal") => Some((PathBuf::from("internal"), PathBuf::new())),
                     (Some(c), Some(k)) if !c.is_empty() && !k.is_empty() => Some((PathBuf::from(c), PathBuf::from(k))),
                     (None, None) => None,
                     (Some(c), Some(k)) if c.is_empty() && k.is_empty() => None,

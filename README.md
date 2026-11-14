@@ -413,7 +413,7 @@ In the API docs, call `POST /user/login`, then paste the token under **Authorize
 | `secrets/vault_db_password` | `VAULT_DB_PASSWORD`, the vault database's password |
 | `secrets/vault/` | `kek-1.key` (key-encryption key) and `index.key` (CPF blind index), mounted read-only into the vault; made once, never rotated by the script. Back them up |
 | `secrets/secrets.env` | all of the above as `KEY=value`; docker compose loads it into each service |
-| `secrets/tls/` | `ca.crt`, `importer.{crt,key}`, `vault.{crt,key}` (servers, names `importer`/`vault`, `localhost`, `127.0.0.1`) `api.{crt,key}` (server + client, names `api`, `localhost`, `127.0.0.1`), `billing.{crt,key}` (server + client) and `web.{crt,key}` (the Vite dev server and nginx). TLS 1.3 for browser -> web and browser -> api; mutual TLS for api -> importer, api -> vault and api <-> billing |
+| `secrets/tls/` | `ca.crt`, `importer.{crt,key}`, `vault.{crt,key}` (servers, names `importer`/`vault`, `localhost`, `127.0.0.1`) `api.{crt,key}` (server + client, names `api`, `localhost`, `127.0.0.1`), `billing.{crt,key}` (server + client) `web.{crt,key}` (the Vite dev server and nginx) and `network.{crt,key}` (the network gateway). TLS 1.3 for browser -> web and browser -> api; mutual TLS for api -> importer, api -> vault and api <-> billing |
 
 ```bash
 cd secrets

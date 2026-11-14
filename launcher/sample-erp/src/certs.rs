@@ -32,6 +32,8 @@ pub struct TlsFiles {
     pub api_key: PathBuf,
     pub billing_cert: PathBuf,
     pub billing_key: PathBuf,
+    pub network_cert: PathBuf,
+    pub network_key: PathBuf,
 }
 
 impl TlsFiles {
@@ -46,11 +48,13 @@ impl TlsFiles {
             api_key: dir.join("api.key"),
             billing_cert: dir.join("billing.crt"),
             billing_key: dir.join("billing.key"),
+            network_cert: dir.join("network.crt"),
+            network_key: dir.join("network.key"),
         }
     }
 
     fn all_exist(&self) -> bool {
-        [&self.ca, &self.importer_cert, &self.importer_key, &self.vault_cert, &self.vault_key, &self.api_cert, &self.api_key, &self.billing_cert, &self.billing_key]
+        [&self.ca, &self.importer_cert, &self.importer_key, &self.vault_cert, &self.vault_key, &self.api_cert, &self.api_key, &self.billing_cert, &self.billing_key, &self.network_cert, &self.network_key]
             .iter()
             .all(|p| p.exists())
     }
@@ -64,7 +68,7 @@ pub fn load_or_create(data: &Path) -> Result<TlsFiles> {
         return Ok(files);
     }
     fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
-    // a folder from an older launcher (no vault.crt or billing.crt) gets a whole new set, CA included
+    // a folder from an older launcher (no vault.crt, billing.crt or network.crt) gets a whole new set, CA included
     issue(&dir, &files).context("issuing the internal mutual TLS certificates")?;
     Ok(files)
 }
@@ -143,6 +147,15 @@ fn issue(dir: &Path, files: &TlsFiles) -> Result<()> {
         &ca_key,
     )?;
 
+    // the gateway's HTTPS certificate, used with ERP_TLS_CERT=internal (browsers must trust ca.crt)
+    let (network, network_key) = leaf(
+        "network",
+        &["network", "localhost", "127.0.0.1"],
+        vec![ExtendedKeyUsagePurpose::ServerAuth],
+        &ca,
+        &ca_key,
+    )?;
+
     let write = |path: &Path, body: String| fs::write(path, body).with_context(|| format!("writing {}", path.display()));
     write(&files.ca, ca.pem())?;
     write(&dir.join("ca.key"), ca_key.serialize_pem())?;
@@ -154,5 +167,7 @@ fn issue(dir: &Path, files: &TlsFiles) -> Result<()> {
     write(&files.api_key, api_key.serialize_pem())?;
     write(&files.billing_cert, billing.pem())?;
     write(&files.billing_key, billing_key.serialize_pem())?;
+    write(&files.network_cert, network.pem())?;
+    write(&files.network_key, network_key.serialize_pem())?;
     Ok(())
 }

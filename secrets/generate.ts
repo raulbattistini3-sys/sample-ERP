@@ -17,7 +17,8 @@
 //   tls/billing.crt, .key    billing's certificate: server (api -> billing) and client (billing -> api)
 //   tls/api.crt, api.key     the API's certificate: HTTPS server for the browser and billing, client to the
 //                            importer, the vault and billing (names api, localhost, 127.0.0.1)
-//   tls/web.crt, web.key     the web app's HTTPS certificate (nginx, vite dev, the launcher's gateway)
+//   tls/web.crt, web.key     the web app's HTTPS certificate (nginx, vite dev)
+//   tls/network.crt, .key    the network gateway's HTTPS certificate (NETWORK_TLS_CERT/KEY)
 //
 //   cd secrets && bun install && bun generate.ts             creates what is missing, keeps the rest
 //   bun generate.ts --force                                  replaces everything but the vault keys
@@ -181,9 +182,16 @@ const gerarTls = async () => {
     { type: "dns", value: "localhost" },
     { type: "ip", value: "127.0.0.1" },
   ]);
-  // the page the browser opens: nginx in compose, vite in development, the launcher's gateway
+  // the page the browser opens: nginx in compose, vite in development
   const web = await folha("web", [x509.ExtendedKeyUsage.serverAuth], [
     { type: "dns", value: "web" },
+    { type: "dns", value: "localhost" },
+    { type: "ip", value: "127.0.0.1" },
+  ]);
+
+  // the network gateway in front of the browser (and the registry's name inside compose)
+  const network = await folha("network", [x509.ExtendedKeyUsage.serverAuth], [
+    { type: "dns", value: "network" },
     { type: "dns", value: "localhost" },
     { type: "ip", value: "127.0.0.1" },
   ]);
@@ -200,6 +208,8 @@ const gerarTls = async () => {
   escrever(join(TLS_DIR, "billing.key"), billing.key);
   escrever(join(TLS_DIR, "web.crt"), web.cert);
   escrever(join(TLS_DIR, "web.key"), web.key);
+  escrever(join(TLS_DIR, "network.crt"), network.cert);
+  escrever(join(TLS_DIR, "network.key"), network.key);
 };
 
 const sha256Hex = (v: string) => createHash("sha256").update(v).digest("hex");
@@ -238,7 +248,7 @@ const main = async () => {
     ].join("\n"),
   );
 
-  const tlsExiste = ["ca.crt", "importer.crt", "importer.key", "vault.crt", "vault.key", "api.crt", "api.key", "billing.crt", "billing.key", "web.crt", "web.key"].every((f) => existsSync(join(TLS_DIR, f)));
+  const tlsExiste = ["ca.crt", "importer.crt", "importer.key", "vault.crt", "vault.key", "api.crt", "api.key", "billing.crt", "billing.key", "web.crt", "web.key", "network.crt", "network.key"].every((f) => existsSync(join(TLS_DIR, f)));
   const tlsNovo = !tlsExiste || rotate.has("tls");
   if (tlsNovo) await gerarTls();
 
@@ -248,7 +258,7 @@ const main = async () => {
   linha("network_token (NETWORK_TOKEN)", network.novo);
   linha("vault_token, vault_admin_token, vault_db_password", vaultToken.novo || vaultAdmin.novo || vaultDb.novo);
   linha("vault/kek-1.key, vault/index.key (never rotated here)", kekNova || indexNova);
-  linha("tls/ (mutual TLS api <-> importer, vault, billing; HTTPS for web and api)", tlsNovo);
+  linha("tls/ (mutual TLS api <-> importer, vault, billing; HTTPS for web, api and the network gateway)", tlsNovo);
   if (tlsNovo) console.log("  note: new certificates; trust tls/ca.crt in the browser (README, \"Trusting the local CA\")");
   if (jwt.novo && rotate.has("jwt")) console.log("  note: the new JWT_SECRET signs everyone out");
 };
