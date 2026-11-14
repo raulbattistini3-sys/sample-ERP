@@ -10,4 +10,6 @@ export interface IUsuarioValidator extends IBaseValidator {
    validateForgotPasswordPayload(payload: unknown): Either<BaseAppError, void>;
    validateResetPasswordPayload(payload: unknown): Either<BaseAppError, void>;
    validateChangePasswordPayload(payload: unknown): Either<BaseAppError, void>;
+   validateCpf(cpf: unknown): Either<BaseAppError, void>;
+   validateDataNascimento(data: unknown): Either<BaseAppError, void>;
 }

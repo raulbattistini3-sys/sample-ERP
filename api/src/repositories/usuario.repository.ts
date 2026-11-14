@@ -64,8 +64,8 @@ class UsuarioRepository implements IUsuarioRepository {
   }
 
   async createUsuario(
-    payload: Omit<UsuarioEntity, "id" | "sessaoVersao" | "trocaSenhaObrigatoria"> &
-      Partial<Pick<UsuarioEntity, "trocaSenhaObrigatoria">>,
+    payload: Omit<UsuarioEntity, "id" | "sessaoVersao" | "trocaSenhaObrigatoria" | "efetivo"> &
+      Partial<Pick<UsuarioEntity, "trocaSenhaObrigatoria" | "efetivo">>,
   ): Promise<Either<BaseAppError, UsuarioEntity>> {
     try {
       if (!payload) return left(new RepositoryError("No payload found"));
@@ -75,6 +75,21 @@ class UsuarioRepository implements IUsuarioRepository {
       if (pgErrorCode(error) === UNIQUE_VIOLATION) {
         return left(new ValidationError("409", "E-mail já cadastrado", error));
       }
+      return left(new RepositoryError("Database error", error));
+    }
+  }
+
+  // the same senha under a newer hash (bcrypt -> Argon2id at sign-in): sessions and the forced change
+  // stay as they are. Only when the stored hash is still the one that was checked, so a senha changed
+  // meanwhile is never overwritten.
+  async rehashSenha(id: string, hashAntigo: string, hashNovo: string): Promise<Either<BaseAppError, null>> {
+    try {
+      await this.db
+        .update(usuarios)
+        .set({ senha: hashNovo })
+        .where(and(eq(usuarios.id, id), eq(usuarios.senha, hashAntigo)));
+      return right(null);
+    } catch (error) {
       return left(new RepositoryError("Database error", error));
     }
   }

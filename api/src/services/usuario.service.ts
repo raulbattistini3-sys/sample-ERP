@@ -28,12 +28,49 @@ import { ValidationError } from "../errors/client_errors/four_xx.error";
 import { ServerError } from "../errors/server_errors/five_xx.error";
 import { RepositoryError } from "../globals/errors/global_repository_error.error";
 import { UsuarioEntity } from "../entities/usuario.entity";
-import { comparePassword, hashPassword } from "../utils/helpers/password.util";
+import { comparePassword, hashPassword, needsRehash } from "../utils/helpers/password.util";
 import { generateToken } from "../utils/helpers/token.util";
 import { toUsuarioResponse } from "../mappers/usuario.mapper";
 import { UsuarioResponseDto } from "../dtos/usuario_dtos/usuario_response.dto";
 import { isAdminRole, isSu } from "../utils/helpers/permissoes.util";
 import permissoesUsuarioEnum from "../enums/usuarios_permissoes.enum";
+import { vault, VaultConflito, VaultDados, VaultRecord } from "../integrations/vault/vault.client";
+import { normalizarCpf } from "../validators/cpf.validator";
+
+// the vault keeps usuarios' cpf and data_nascimento under this owner type, owner_id = usuarios.id
+const VAULT_OWNER = "usuario";
+
+type CamposSensiveis = { cpf?: string | null; dataNascimento?: string | null };
+
+const comVault = (u: UsuarioResponseDto, r: VaultRecord | null | undefined): UsuarioResponseDto => ({
+   ...u,
+   cpf: r ? (r.data.cpf ?? null) : null,
+   dataNascimento: r ? (r.data.data_nascimento ?? null) : null,
+});
+
+const vaultIndisponivel = (cause?: unknown) =>
+   new ServerError("503", true, "O cofre de dados (vault) não está disponível para CPF e data de nascimento.", cause);
+
+const vaultErro = (error: unknown) =>
+   error instanceof VaultConflito
+      ? new ValidationError("409", "Este CPF já está cadastrado para outro usuário.", error)
+      : vaultIndisponivel(error);
+
+// the vault's fields after applying a payload; null or "" on a key removes it
+const dadosVault = (atual: VaultDados, p: CamposSensiveis): VaultDados => {
+   const out = { ...atual };
+   if (p.cpf !== undefined) {
+      if (p.cpf) out.cpf = normalizarCpf(p.cpf);
+      else delete out.cpf;
+   }
+   if (p.dataNascimento !== undefined) {
+      if (p.dataNascimento) out.data_nascimento = p.dataNascimento;
+      else delete out.data_nascimento;
+   }
+   return out;
+};
+
+const tocaVault = (p: CamposSensiveis) => p.cpf !== undefined || p.dataNascimento !== undefined;
 
 const onlySuError = () =>
    new ValidationError("403", "Apenas superusuários (SU) podem gerenciar administradores");
@@ -47,6 +84,7 @@ class UsuarioService implements IUserService {
       page: number,
       amount: number,
       filters: UsuarioFilters = {},
+      actor?: UsuarioResponseDto,
    ): Promise<Either<BaseAppError, ResponseGetUsuariosDto>> {
       try {
          const validation = this.userValidator.validatePageAndAmount(
@@ -65,8 +103,18 @@ class UsuarioService implements IUserService {
             matchesAll([inList(filters.permissoes, u.permissoes), ativo === undefined ? undefined : u.ativo === ativo]),
          );
          const paginatedData = paginate(filtrados, page, amount);
+         let data = paginatedData.data.map(toUsuarioResponse);
+         if (vault().configurado && data.length > 0) {
+            // masked CPF / birth date; the list still answers when the vault doesn't
+            try {
+               const registros = await vault().getMasked(VAULT_OWNER, data.map((u) => u.id), actor?.id);
+               data = data.map((u) => comVault(u, registros.get(u.id)));
+            } catch {
+               /* the fields are left out */
+            }
+         }
          const response: ResponseGetUsuariosDto = {
-            data: paginatedData.data.map(toUsuarioResponse),
+            data,
             pageNumber: paginatedData.currentPage,
             totalItems: paginatedData.totalItems,
             pageSize: paginatedData.perPage,
@@ -81,6 +129,7 @@ class UsuarioService implements IUserService {
    }
    async findUserById(
       id: string,
+      actor?: UsuarioResponseDto,
    ): Promise<Either<BaseAppError, ResponseFindUsuarioByIdDto>> {
       try {
          const validation = this.userValidator.validateUUIDv4(id);
@@ -91,9 +140,17 @@ class UsuarioService implements IUserService {
          if (userData.isLeft()) {
             return left(userData.value);
          }
-         const response: ResponseFindUsuarioByIdDto = {
-            data: toUsuarioResponse(userData.value),
-         };
+         let usuario = toUsuarioResponse(userData.value);
+         if (vault().configurado) {
+            // in full for the usuario themself and for ADM/SU, masked for anyone else
+            const reveal = !!actor && (actor.id === id || isAdminRole(actor.permissoes));
+            try {
+               usuario = comVault(usuario, await vault().get(VAULT_OWNER, id, reveal, actor?.id));
+            } catch {
+               /* the fields are left out */
+            }
+         }
+         const response: ResponseFindUsuarioByIdDto = { data: usuario };
          return right(response);
       } catch (error) {
          if (error instanceof ValidationError) {
@@ -114,6 +171,10 @@ class UsuarioService implements IUserService {
          if (isAdminRole(payload.permissoes) && !isSu(actor.permissoes)) {
             return left(onlySuError());
          }
+         const dados = dadosVault({}, payload as CamposSensiveis);
+         if (Object.keys(dados).length > 0 && !vault().configurado) {
+            return left(vaultIndisponivel());
+         }
          const emailCheck = await this.ensureEmailAvailable(payload.email);
          if (emailCheck.isLeft()) {
             return left(emailCheck.value);
@@ -124,6 +185,7 @@ class UsuarioService implements IUserService {
             senha: await hashPassword(payload.senha),
             permissoes: payload.permissoes ?? permissoesUsuarioEnum.Values.Estoque,
             ativo: payload.ativo ?? true,
+            efetivo: (payload as { efetivo?: boolean }).efetivo ?? false,
          });
          if (userData.isLeft()) {
             if (userData.value instanceof ValidationError) {
@@ -133,7 +195,17 @@ class UsuarioService implements IUserService {
                new ServerError("500", true, "internal server error", userData.value),
             );
          }
-         const response: ResponseCreateUsuario = toUsuarioResponse(userData.value);
+         let response: ResponseCreateUsuario = toUsuarioResponse(userData.value);
+         if (Object.keys(dados).length > 0) {
+            // the row comes first so the vault's owner_id is a real usuarios.id; if the vault refuses,
+            // the row is removed, so no usuario is left without the data it was created with
+            try {
+               response = comVault(response, await vault().put(VAULT_OWNER, response.id, dados, actor.id));
+            } catch (error) {
+               await this.userRepository.deleteUsuario(response.id);
+               return left(vaultErro(error));
+            }
+         }
          return right(response);
       } catch (error) {
          if (error instanceof ValidationError) {
@@ -189,7 +261,26 @@ class UsuarioService implements IUserService {
             // a new senha ends every session opened with the old one
             sessaoVersao: existing.value.sessaoVersao + (payload.senha ? 1 : 0),
             trocaSenhaObrigatoria: existing.value.trocaSenhaObrigatoria,
+            efetivo: payload.efetivo ?? existing.value.efetivo,
          };
+         const sensiveis = payload as CamposSensiveis;
+         if (tocaVault(sensiveis)) {
+            // the vault first: a refused CPF leaves the usuario as it was
+            if (!vault().configurado) {
+               return left(vaultIndisponivel());
+            }
+            try {
+               const atual = await vault().get(VAULT_OWNER, id, true, actor.id);
+               const dados = dadosVault(atual?.data ?? {}, sensiveis);
+               if (Object.keys(dados).length > 0) {
+                  await vault().put(VAULT_OWNER, id, dados, actor.id);
+               } else if (atual) {
+                  await vault().delete(VAULT_OWNER, id, actor.id);
+               }
+            } catch (error) {
+               return left(vaultErro(error));
+            }
+         }
          // only a change that leaves the usuario without active SU rights needs the guard
          const removesSu = !isSu(payload.permissoes) || !nextAtivo;
          const updated = removesSu
@@ -232,6 +323,10 @@ class UsuarioService implements IUserService {
          if (userDeletion.isLeft()) {
             return left(userDeletion.value);
          }
+         if (vault().configurado) {
+            // best effort: a record left behind only names an id that no longer exists
+            await vault().delete(VAULT_OWNER, id, actor.id).catch(() => undefined);
+         }
          return right(null);
       } catch (error) {
          if (error instanceof ValidationError) {
@@ -263,6 +358,7 @@ class UsuarioService implements IUserService {
             senha: userClass.senha,
             sessaoVersao: userClass.sessaoVersao,
             trocaSenhaObrigatoria: userClass.trocaSenhaObrigatoria,
+            efetivo: userClass.efetivo,
             nome: userClass.nome,
             permissoes: userClass.permissoes,
             email: userClass.email,
@@ -302,7 +398,16 @@ class UsuarioService implements IUserService {
       if (!userData.value.ativo) {
          return left(new ValidationError("401", "Usuário inativo"));
       }
-      const token = generateToken(userData.value);
+      // a senha still under bcrypt (or older Argon2 parameters) moves to the current Argon2id now that the
+      // plain text is at hand; a failure here only means it is tried again at the next sign-in
+      if (needsRehash(userData.value.senha)) {
+         try {
+            await this.userRepository.rehashSenha(userData.value.id, userData.value.senha, await hashPassword(payload.senha));
+         } catch {
+            // never blocks the sign-in
+         }
+      }
+      const token = await generateToken(userData.value);
       const response: ResponseLoginUsuarioDto = { ...toUsuarioResponse(userData.value), token };
       return right(response);
    } catch (error) {
@@ -335,7 +440,7 @@ async changePassword(
       if (updated.isLeft()) {
          return left(updated.value);
       }
-      return right({ ...toUsuarioResponse(updated.value), token: generateToken(updated.value) });
+      return right({ ...toUsuarioResponse(updated.value), token: await generateToken(updated.value) });
    } catch (error) {
       if (error instanceof ValidationError) {
          return left(error);
@@ -345,8 +450,8 @@ async changePassword(
 }
 
 // sliding session: a signed-in, active usuario trades its token for a new one
-refreshToken(usuario: UsuarioResponseDto, sessaoVersao: number): ResponseLoginUsuarioDto {
-   return { ...usuario, token: generateToken({ ...usuario, sessaoVersao }) };
+async refreshToken(usuario: UsuarioResponseDto, sessaoVersao: number): Promise<ResponseLoginUsuarioDto> {
+   return { ...usuario, token: await generateToken({ ...usuario, sessaoVersao }) };
 }
 
 async registerUsuario(

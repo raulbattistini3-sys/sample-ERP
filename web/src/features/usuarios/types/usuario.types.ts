@@ -18,6 +18,10 @@ export const UsuarioSchema = z.object({
   ativo: z.boolean(),
   // created with a known senha (the first superuser): ProtectedRoute sends it to /trocar-senha
   trocaSenhaObrigatoria: z.optional(z.boolean()),
+  efetivo: z.optional(z.boolean()),
+  // from the vault: masked in listings ("***.456.789-**", "1990-**-**"), in full for oneself and ADM/SU
+  cpf: z.optional(z.nullable(z.string())),
+  dataNascimento: z.optional(z.nullable(z.string())),
 });
 export type Usuario = z.infer<typeof UsuarioSchema>;
 

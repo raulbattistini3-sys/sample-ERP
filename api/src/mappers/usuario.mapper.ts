@@ -9,4 +9,5 @@ export const toUsuarioResponse = (usuario: UsuarioEntity): UsuarioResponseDto =>
    permissoes: usuario.permissoes,
    ativo: usuario.ativo,
    trocaSenhaObrigatoria: usuario.trocaSenhaObrigatoria,
+   efetivo: usuario.efetivo,
 });
