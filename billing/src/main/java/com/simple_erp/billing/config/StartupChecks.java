@@ -40,6 +40,22 @@ public final class StartupChecks implements ApplicationListener<ApplicationEnvir
 			errors.forEach((error) -> System.err.println("[config] " + error));
 			System.exit(1);
 		}
+
+		// development only: a taken server.port moves billing to the next free one (DevPortFallback)
+		if ("development".equals(mode)) {
+			int configured = env.getProperty("server.port", Integer.class, 8080);
+			String host = env.getProperty("server.address");
+			int port = DevPortFallback.choose(configured, (p) -> DevPortFallback.isFree(host, p), System.out::println);
+			if (port == -1) {
+				System.err.println("[config] no free port in " + configured + ".."
+						+ (configured + DevPortFallback.MAX_ATTEMPTS - 1) + " (BILLING_PORT)");
+				System.exit(1);
+			}
+			if (port != configured) {
+				env.getPropertySources()
+					.addFirst(new MapPropertySource("billingDevPort", Map.of("server.port", port)));
+			}
+		}
 	}
 
 }
