@@ -5,7 +5,7 @@ import { escapeHtml } from "./password_reset_email.util";
 // with its payment link, one to whoever issued them with the outcome of every client.
 
 export const reais = (centavos: number) => (centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const dia = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("pt-BR", { timeZone: "UTC" }) : "—");
+export const dia = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("pt-BR", { timeZone: "UTC" }) : "—");
 
 const BOTAO = "background:#0f766e;color:#ffffff;padding:10px 16px;border-radius:6px;text-decoration:none;display:inline-block";
 const CAIXA = "font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1f2937";

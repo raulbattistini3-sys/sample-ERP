@@ -9,6 +9,7 @@ import com.stripe.StripeClient;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Customer;
 import com.stripe.model.Invoice;
+import com.stripe.model.StripeSearchResult;
 import com.stripe.net.RequestOptions;
 import com.stripe.param.CustomerCreateParams;
 import com.stripe.param.CustomerListParams;
@@ -30,6 +31,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -48,6 +50,8 @@ class CobrancaController {
 	static final String ORIGEM = "sample-erp";
 
 	private static final int RECENTES = 30;
+
+	private static final int PAGINA = 100;
 
 	private final StripeClient stripe;
 
@@ -79,6 +83,46 @@ class CobrancaController {
 			.stream()
 			.map(Fatura::de)
 			.toList();
+	}
+
+	/**
+	 * Every invoice the ERP issued, newest first, a page at a time ({@code pagina} is the previous
+	 * page's {@code proxima}). The API walks it to backfill the HubSpot timeline. Stripe's search
+	 * index lags about a minute behind, which a backfill doesn't mind.
+	 */
+	@GetMapping("/todas")
+	Pagina todas(@RequestParam(required = false) String pagina) throws StripeException {
+		InvoiceSearchParams.Builder params = InvoiceSearchParams.builder()
+			.setQuery("metadata['origem']:'" + ORIGEM + "'")
+			.setLimit((long) PAGINA);
+		if (pagina != null && !pagina.isBlank()) {
+			params.setPage(pagina);
+		}
+		StripeSearchResult<Invoice> resultado = this.stripe.v1().invoices().search(params.build());
+		List<Fatura> faturas = resultado.getData().stream().map(Fatura::de).toList();
+		return new Pagina(faturas, Boolean.TRUE.equals(resultado.getHasMore()) ? resultado.getNextPage() : null);
+	}
+
+	/**
+	 * The paid invoices the ERP issued, newest first, {@code limite} (1 to 100) per page; {@code pagina} is
+	 * the previous page's {@code proxima}. The Cobranças "Pagas" tab and its spreadsheet read this. The
+	 * index lags about a minute behind; the API lays the payments its webhook just heard about on top.
+	 */
+	@GetMapping("/pagas")
+	Pagina pagas(@RequestParam(required = false) String pagina, @RequestParam(defaultValue = "50") int limite)
+			throws StripeException {
+		InvoiceSearchParams.Builder params = InvoiceSearchParams.builder()
+			.setQuery("metadata['origem']:'" + ORIGEM + "' AND status:'paid'")
+			.setLimit((long) Math.max(1, Math.min(PAGINA, limite)));
+		if (pagina != null && !pagina.isBlank()) {
+			params.setPage(pagina);
+		}
+		StripeSearchResult<Invoice> resultado = this.stripe.v1().invoices().search(params.build());
+		List<Fatura> faturas = resultado.getData().stream().map(Fatura::de).toList();
+		return new Pagina(faturas, Boolean.TRUE.equals(resultado.getHasMore()) ? resultado.getNextPage() : null);
+	}
+
+	record Pagina(List<Fatura> faturas, String proxima) {
 	}
 
 	private Resultado cobrar(Pedido pedido, Cliente cliente) throws StripeException {
@@ -165,13 +209,19 @@ class CobrancaController {
 	}
 
 	record Fatura(String id, String numero, String status, String clienteNome, String clienteEmail,
-			long valorCentavos, long pagoCentavos, Instant criadaEm, Instant vencimento, String url, String emissor) {
+			long valorCentavos, long pagoCentavos, Instant criadaEm, Instant vencimento, String url, String emissor,
+			String hubspotId, String descricao, Instant pagaEm) {
 
 		static Fatura de(Invoice i) {
+			var metadata = i.getMetadata();
+			var transicoes = i.getStatusTransitions();
+			Long paga = transicoes != null ? transicoes.getPaidAt() : null;
 			return new Fatura(i.getId(), i.getNumber(), i.getStatus(), i.getCustomerName(), i.getCustomerEmail(),
 					i.getAmountDue() != null ? i.getAmountDue() : 0, i.getAmountPaid() != null ? i.getAmountPaid() : 0,
 					Instant.ofEpochSecond(i.getCreated()), i.getDueDate() != null ? Instant.ofEpochSecond(i.getDueDate()) : null,
-					i.getHostedInvoiceUrl(), i.getMetadata() != null ? i.getMetadata().get("emissor") : null);
+					i.getHostedInvoiceUrl(), metadata != null ? metadata.get("emissor") : null,
+					metadata != null ? metadata.get("hubspot_id") : null, i.getDescription(),
+					paga != null ? Instant.ofEpochSecond(paga) : null);
 		}
 
 	}
