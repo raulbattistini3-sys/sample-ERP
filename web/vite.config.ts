@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react-swc'
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 // ../pkg: code shared with the API (tablecore: columnar table, search index, worker scheduler; telemetry)
 const pkg = fileURLToPath(new URL("../pkg", import.meta.url));
@@ -100,22 +101,37 @@ ${sum}`).digest("hex");
 // HTTPS, TLS 1.3 only, for the dev server: WEB_TLS_CERT / WEB_TLS_KEY, defaulting to the certificate
 // `bun run secrets` writes (secrets/tls/web.crt, names localhost). Without either the server stays on HTTP.
 // The browser trusts it once the internal CA (secrets/tls/ca.crt) is imported, see the README.
+// Relative paths are tried from web/ and then from the repo root, so both ../secrets/tls/web.crt and
+// secrets/tls/web.crt work. A path that is set but missing is an error, not a silent fall back to HTTP.
+const web = fileURLToPath(new URL(".", import.meta.url));
+function caminho(value: string | undefined, fallback: string, key: string): string | null {
+  const v = value?.trim();
+  if (!v) return existsSync(fallback) ? fallback : null;
+  for (const base of [web, resolve(web, "..")]) {
+    const full = resolve(base, v);
+    if (existsSync(full)) return full;
+  }
+  console.error(`[config] ${key}=${v} does not exist (tried from web/ and from the repo root)`);
+  process.exit(1);
+}
 function devHttps(env: Record<string, string | undefined>) {
-  const cert = env.WEB_TLS_CERT?.trim() || fileURLToPath(new URL("../secrets/tls/web.crt", import.meta.url));
-  const key = env.WEB_TLS_KEY?.trim() || fileURLToPath(new URL("../secrets/tls/web.key", import.meta.url));
-  if (!existsSync(cert) || !existsSync(key)) return undefined;
+  const cert = caminho(env.WEB_TLS_CERT, fileURLToPath(new URL("../secrets/tls/web.crt", import.meta.url)), "WEB_TLS_CERT");
+  const key = caminho(env.WEB_TLS_KEY, fileURLToPath(new URL("../secrets/tls/web.key", import.meta.url)), "WEB_TLS_KEY");
+  if (!cert || !key) return undefined;
   return { cert: readFileSync(cert), key: readFileSync(key), minVersion: "TLSv1.3" as const };
 }
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   checkRequiredEnv(mode);
-  const env = { ...loadEnv(mode, process.cwd(), ["VITE_", "NETWORK_", "WEB_TLS_"]), ...process.env };
+  const env = { ...loadEnv(mode, process.cwd(), ["VITE_", "NETWORK_", "WEB_"]), ...process.env };
   return {
     plugins: [react(), tailwindcss(), networkRegistration(env)],
     resolve: { alias: { "@pkg": pkg } },
     // the dev server only serves files under web/ unless told otherwise
-    server: { https: devHttps(env), fs: { allow: [fileURLToPath(new URL(".", import.meta.url)), pkg] } },
+    // 127.0.0.1, not "localhost": Node/Bun may bind localhost to ::1 only, and then the network service
+    // (which registers and probes 127.0.0.1:5173) never reaches it. WEB_HOST overrides (0.0.0.0 to reach it from another machine).
+    server: { host: env.WEB_HOST?.trim() || "127.0.0.1", port: 5173, https: devHttps(env), fs: { allow: [fileURLToPath(new URL(".", import.meta.url)), pkg] } },
     // the search worker imports pkg modules, so it is bundled as an ES module worker
     worker: { format: "es" as const },
   };

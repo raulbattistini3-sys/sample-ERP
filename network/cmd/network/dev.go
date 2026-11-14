@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/raulbattistini3-sys/sample-ERP/network/client"
 	"github.com/raulbattistini3-sys/sample-ERP/network/supervisor"
 )
 
@@ -23,6 +24,10 @@ import (
 // Every line comes out as "[name] ...". Ctrl+C (or SIGTERM) stops the API first, which stops its own
 // children, then the web app, then the network; anything still running after 30 s is killed. If the web app
 // or the API exits, the rest is stopped too, so a half-up stack never lingers.
+//
+// Health check: every DEV_HEALTH_INTERVAL (default 5m) the registry is asked for healthy "api" and "web"
+// instances (it probes their health paths). No healthy API stops everything, like the API exiting; an
+// unhealthy web app is logged. Needs NETWORK_TOKEN (the children register with it).
 //
 // Flags: --no-web, --no-api; DEV_API_CHILDREN overrides the API's children (empty = none).
 func dev(args []string) int {
@@ -83,8 +88,16 @@ func dev(args []string) int {
 		}
 	}
 
+	apiDown := make(chan struct{}, 1)
+	if len(join) > 0 && api {
+		go healthLoop(ctx, sup, client.New("http://"+env("NETWORK_CONTROL_ADDR", "127.0.0.1:7070"), os.Getenv("NETWORK_TOKEN")), web, apiDown)
+	}
+
 	code := 0
 	select {
+	case <-apiDown:
+		sup.Logf("network", "the API is not healthy; stopping everything")
+		code = 1
 	case <-ctx.Done():
 		sup.Logf("network", "stopping (Ctrl+C)")
 	case name := <-exited:
@@ -111,6 +124,47 @@ func dev(args []string) int {
 	}
 	_ = started
 	return code
+}
+
+// healthLoop asks the registry, on every tick, for healthy api and web instances.
+func healthLoop(ctx context.Context, sup *supervisor.Supervisor, c *client.Client, web bool, apiDown chan<- struct{}) {
+	every := 5 * time.Minute
+	if v := os.Getenv("DEV_HEALTH_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d >= 10*time.Second {
+			every = d
+		} else {
+			sup.Logf("network", "DEV_HEALTH_INTERVAL=%q is not a duration of 10s or more; using 5m", v)
+		}
+	}
+	t := time.NewTicker(every)
+	defer t.Stop()
+	healthy := func(service string) bool {
+		cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		list, err := c.Resolve(cctx, service)
+		return err == nil && len(list) > 0
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		apiOK := healthy("api")
+		webOK := !web || healthy("web")
+		sup.Logf("network", "health check: api %s, web %s", status(apiOK), status(webOK))
+		if !apiOK {
+			apiDown <- struct{}{}
+			return
+		}
+	}
+}
+
+func status(ok bool) string {
+	if ok {
+		return "up"
+	}
+	return "DOWN"
 }
 
 // repoRoot is the folder holding api/ and web/: the working directory or one of its parents.

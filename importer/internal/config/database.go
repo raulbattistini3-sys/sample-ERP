@@ -16,7 +16,9 @@ import (
 //	production   TLS, with the server's certificate verified against the CA (DATABASE_CA_CERT, or
 //	             prod-ca-2021.crt found from the working directory upwards). sslmode=disable and the other
 //	             unverified modes in DATABASE_URL are refused: such a connection can be intercepted (MITM).
-//	development  plain TCP (a local Postgres has no TLS), unless a CA is configured with DATABASE_CA_CERT.
+//	development  plain TCP (a local Postgres has no TLS), unless a CA is found: DATABASE_CA_CERT, or a .crt
+//	             file in the repo root (the same scan as production). A certificate on disk always means
+//	             verified TLS, in every service.
 type Env string
 
 const (
@@ -71,8 +73,13 @@ func databaseURL(raw string, env Env, errs *[]error) string {
 	ca, explicit := os.Getenv("DATABASE_CA_CERT"), true
 	if ca == "" {
 		explicit = false
+		found, err := findUpwards(defaultCAFile, caSearchDepth)
+		if err != nil {
+			*errs = append(*errs, err)
+			return raw
+		}
+		ca = found
 		if env == Production {
-			ca = findUpwards(defaultCAFile, caSearchDepth)
 			if ca == "" {
 				*errs = append(*errs, fmt.Errorf("config: IMPORTER_ENV=production needs the database CA: put %s in the repo root or set DATABASE_CA_CERT", defaultCAFile))
 				return raw
@@ -96,16 +103,24 @@ func databaseURL(raw string, env Env, errs *[]error) string {
 	return u.String()
 }
 
-// findUpwards returns the absolute path of name in the working directory or one of its parents.
-func findUpwards(name string, depth int) string {
+// findUpwards returns the CA in the working directory or one of its parents: name, or else the folder's
+// only .crt file (several are ambiguous: set DATABASE_CA_CERT).
+func findUpwards(name string, depth int) (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
-		return ""
+		return "", nil
 	}
 	for range depth + 1 {
 		p := filepath.Join(dir, name)
 		if _, err := os.Stat(p); err == nil {
-			return p
+			return p, nil
+		}
+		crts, _ := filepath.Glob(filepath.Join(dir, "*.crt"))
+		if len(crts) > 1 {
+			return "", fmt.Errorf("config: several .crt files in %s; set DATABASE_CA_CERT to the database CA", dir)
+		}
+		if len(crts) == 1 {
+			return crts[0], nil
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
@@ -113,7 +128,7 @@ func findUpwards(name string, depth int) string {
 		}
 		dir = parent
 	}
-	return ""
+	return "", nil
 }
 
 func checkCA(path string) error {

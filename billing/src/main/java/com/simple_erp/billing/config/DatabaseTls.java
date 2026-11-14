@@ -16,7 +16,9 @@ import java.util.Set;
  * <li>{@code production}: TLS, with the server's certificate verified against the CA (DATABASE_CA_CERT,
  * or prod-ca-2021.crt found from the working directory upwards). sslmode=disable and the other unverified
  * modes in JDBC_DATABASE_URL are refused: such a connection can be intercepted (MITM).</li>
- * <li>{@code development}: plain TCP (a local Postgres has no TLS), unless DATABASE_CA_CERT is set.</li>
+ * <li>{@code development}: plain TCP (a local Postgres has no TLS), unless a CA is found: DATABASE_CA_CERT,
+ * or a .crt file in the repo root (the same scan as production). A certificate on disk always means
+ * verified TLS, in every service.</li>
  * </ul>
  * The JDBC URL is rewritten with sslmode=verify-full and sslrootcert, which pgjdbc enforces; Hikari and
  * Flyway both connect through it.
@@ -76,9 +78,12 @@ public final class DatabaseTls {
 		if (caCert != null && !caCert.isBlank()) {
 			ca = workingDir.resolve(caCert.trim()).toAbsolutePath().normalize();
 		}
-		else if (production) {
-			ca = findUpwards(workingDir, DEFAULT_CA_FILE);
-			if (ca == null) {
+		else {
+			ca = findUpwards(workingDir, DEFAULT_CA_FILE, errors);
+			if (ca == null && !errors.isEmpty()) {
+				return null;
+			}
+			if (ca == null && production) {
 				errors.add("BILLING_ENV=production needs the database CA: put " + DEFAULT_CA_FILE
 						+ " in the repo root or set DATABASE_CA_CERT");
 				return null;
@@ -99,12 +104,27 @@ public final class DatabaseTls {
 		return base + "?" + String.join("&", kept);
 	}
 
-	private static Path findUpwards(Path start, String name) {
+	// name, or else the folder's only .crt file (several are ambiguous: set DATABASE_CA_CERT)
+	private static Path findUpwards(Path start, String name, List<String> errors) {
 		Path dir = start.toAbsolutePath().normalize();
 		for (int i = 0; i <= CA_SEARCH_DEPTH && dir != null; i++, dir = dir.getParent()) {
 			Path candidate = dir.resolve(name);
 			if (Files.isRegularFile(candidate)) {
 				return candidate;
+			}
+			List<Path> crts = new ArrayList<>();
+			try (var files = Files.newDirectoryStream(dir, "*.crt")) {
+				files.forEach(crts::add);
+			}
+			catch (IOException ex) {
+				continue;
+			}
+			if (crts.size() > 1) {
+				errors.add("several .crt files in " + dir + "; set DATABASE_CA_CERT to the database CA");
+				return null;
+			}
+			if (crts.size() == 1) {
+				return crts.get(0);
 			}
 		}
 		return null;

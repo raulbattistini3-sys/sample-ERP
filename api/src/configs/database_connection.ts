@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { ConnectionOptions } from "node:tls";
 
@@ -10,8 +10,9 @@ import type { ConnectionOptions } from "node:tls";
 //                prod-ca-2021.crt (Supabase's root CA, in the repo root) found from the working directory
 //                upwards, like the importer and billing do. No CA, or sslmode=disable in
 //                DATABASE_URL, stops the process: an unverified connection can be intercepted (MITM).
-//   development  plain TCP (a local Postgres has no TLS), unless DATABASE_CA_CERT is set, in which case
-//                it is verified like production.
+//   development  plain TCP (a local Postgres has no TLS), unless a CA is found: DATABASE_CA_CERT, or a
+//                .crt file in the repo root (the same scan as production). Then it is verified like
+//                production: a certificate on disk always means verified TLS, in every service.
 //
 // Anything else in API_ENV, or no API_ENV at all, stops the process too: choosing is required.
 
@@ -71,9 +72,9 @@ export function databaseConnection(): DatabaseConnection {
    }
 
    let caPath = process.env.DATABASE_CA_CERT?.trim() ?? "";
-   if (!caPath && env === "production") {
+   if (!caPath) {
       caPath = findUpwards(DEFAULT_CA_CERT);
-      if (!caPath) fatal(`API_ENV=production needs the database CA: put ${DEFAULT_CA_CERT} in the repo root or set DATABASE_CA_CERT`);
+      if (!caPath && env === "production") fatal(`API_ENV=production needs the database CA: put ${DEFAULT_CA_CERT} in the repo root or set DATABASE_CA_CERT`);
    }
    let ssl: DatabaseConnection["ssl"] = false;
    if (env === "production") {
@@ -82,6 +83,9 @@ export function databaseConnection(): DatabaseConnection {
       }
       ssl = { ca: readCa(caPath), rejectUnauthorized: true };
    } else if (caPath) {
+      if (sslmode && INSECURE_SSLMODES.has(sslmode)) {
+         console.warn(`[config] DATABASE_URL has sslmode=${sslmode}, but ${caPath} is there: connecting with verified TLS`);
+      }
       ssl = { ca: readCa(caPath), rejectUnauthorized: true };
    }
 
@@ -92,13 +96,26 @@ export function databaseConnection(): DatabaseConnection {
 function findUpwards(name: string): string {
    let dir = process.cwd();
    for (let i = 0; i <= CA_SEARCH_DEPTH; i++) {
-      const candidate = join(dir, name);
-      if (existsSync(candidate)) return candidate;
+      const candidate = crtIn(dir, name);
+      if (candidate) return candidate;
       const parent = dirname(dir);
       if (parent === dir) break;
       dir = parent;
    }
    return "";
+}
+
+// the preferred name in dir, or else its only other .crt file (several: ambiguous, set DATABASE_CA_CERT)
+function crtIn(dir: string, preferred: string): string {
+   if (existsSync(join(dir, preferred))) return join(dir, preferred);
+   let names: string[] = [];
+   try {
+      names = readdirSync(dir).filter((n) => n.toLowerCase().endsWith(".crt"));
+   } catch {
+      return "";
+   }
+   if (names.length > 1) fatal(`several .crt files in ${dir} (${names.join(", ")}); set DATABASE_CA_CERT to the database CA`);
+   return names.length === 1 ? join(dir, names[0]!) : "";
 }
 
 // relative paths are from the working directory (api/ for bun run, the Render service root)

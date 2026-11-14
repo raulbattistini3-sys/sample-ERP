@@ -44,16 +44,32 @@ export function parseEnvFile(path: string): Record<string, string> {
 const sha256Hex = (v: string) => createHash("sha256").update(v).digest("hex");
 
 function specs(root: string): Record<string, Spec> {
+   // the mutual TLS files from secrets/generate.ts, as defaults; a child's own .env still wins
+   const tls = (f: string) => join(root, "secrets", "tls", f);
+   const has = existsSync(tls("ca.crt"));
    return {
-      importer: { cwd: join(root, "importer"), command: "go", args: ["run", "./cmd/importer"] },
+      importer: {
+         cwd: join(root, "importer"),
+         command: "go",
+         args: ["run", "./cmd/importer"],
+         env: has ? { GRPC_TLS_CERT: tls("importer.crt"), GRPC_TLS_KEY: tls("importer.key"), GRPC_TLS_CLIENT_CA: tls("ca.crt") } : {},
+      },
       vault: {
          cwd: join(root, "vault"),
          command: "go",
          args: ["run", "./cmd/vault", "serve"],
          // the vault needs only the token's digest; derived from the API's VAULT_TOKEN when vault/.env has none
-         env: process.env.VAULT_TOKEN ? { VAULT_TOKEN_SHA256: sha256Hex(process.env.VAULT_TOKEN) } : {},
+         env: {
+            ...(process.env.VAULT_TOKEN ? { VAULT_TOKEN_SHA256: sha256Hex(process.env.VAULT_TOKEN) } : {}),
+            ...(has ? { VAULT_TLS_CERT: tls("vault.crt"), VAULT_TLS_KEY: tls("vault.key"), VAULT_TLS_CLIENT_CA: tls("ca.crt") } : {}),
+         },
       },
-      billing: { cwd: join(root, "billing"), command: WIN ? "mvnw.cmd" : "./mvnw", args: ["spring-boot:run", "-e"] },
+      billing: {
+         cwd: join(root, "billing"),
+         command: WIN ? "mvnw.cmd" : "./mvnw",
+         args: ["spring-boot:run", "-e"],
+         env: has ? { BILLING_TLS_CERT: tls("billing.crt"), BILLING_TLS_KEY: tls("billing.key"), BILLING_TLS_CA: tls("ca.crt") } : {},
+      },
    };
 }
 

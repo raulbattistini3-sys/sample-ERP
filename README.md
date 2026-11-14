@@ -91,7 +91,9 @@ vault and billing itself (`API_CHILDREN`, see `api/.env.example`). Ctrl+C stops 
 children (SIGTERM, 20 s to finish), then the web app and the network. Whatever is still running after 30 s is
 killed with everything it started (on Windows the children also sit in a job object that dies with the
 supervisor). If the web app or the API exits, the rest is stopped too. `--no-web` / `--no-api` leave one out, and
-`DEV_API_CHILDREN=importer` (or empty) narrows what the API starts. Set `NETWORK_TOKEN` in the shell to have every
+`DEV_API_CHILDREN=importer` (or empty) narrows what the API starts. Every 5 minutes
+(`DEV_HEALTH_INTERVAL`) the network asks its registry whether the API and the web app are healthy; with no
+healthy API it stops everything. Set `NETWORK_TOKEN` in the shell to have every
 child join the network. The Windows launcher and Docker Compose don't use this: there the launcher or Docker
 supervises the services.
 
@@ -229,10 +231,13 @@ Each service that talks to Postgres has a required variable that decides how it 
 | Value | Connection |
 | --- | --- |
 | `production` | TLS. The server's certificate is verified against `DATABASE_CA_CERT`, or else `prod-ca-2021.crt` (Supabase's root CA, in the repo root), found by searching from the service's working directory upwards. |
-| `development` | Plain, unless `DATABASE_CA_CERT` is set, in which case it is verified like production. |
+| `development` | Plain, unless a CA is found: `DATABASE_CA_CERT`, or a `.crt` file in the repo root (the same upward search). Then it is verified like production. |
 
 The CA file is public, but it stays out of git (`.gitignore`): keep a copy in the repo root for local runs,
-where the services find it. The Docker images don't include it. A production host mounts it as a secret
+where the services find it. **A `.crt` on disk always means verified TLS**, in the API, the importer and
+billing, whatever the environment: with `prod-ca-2021.crt` (or any single `.crt`) in the repo root, a
+plain connection is never used. Several `.crt` files there are ambiguous, so the services stop and ask for
+`DATABASE_CA_CERT`. The vault's own database is not affected. The Docker images don't include it. A production host mounts it as a secret
 file and points `DATABASE_CA_CERT` at it (e.g. `/etc/secrets/prod-ca-2021.crt` on Render). Compose runs
 everything in `development`, so it needs no CA.
 
