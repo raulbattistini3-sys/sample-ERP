@@ -172,7 +172,7 @@ Startup order and environment follow `docker-compose.yml`:
 1. Postgres starts and migrations run. This replaces the db and migrate services.
 2. The importer and the API start, restarted after a back-off if they die (`restart: unless-stopped`).
 3. Billing starts only when `config/billing.env` exists (compose's `billing` profile).
-4. The gateway serves the web app, `/api` and `/billing` on port 8080. The browser opens once the API answers.
+4. The network service (`services/network.exe`) serves the web app, `/api` and `/billing` on port 8080. The browser opens once the API answers.
 
 Ctrl+C stops everything. Each service gets up to 20 s to finish its work, then Postgres shuts down.
 On Windows the launcher runs inside a job object, so closing the window or a crash never leaves
@@ -180,24 +180,31 @@ On Windows the launcher runs inside a job object, so closing the window or a cra
 
 ### One public port: the gateway
 
-`sample-erp.exe` is the gateway, so it adds no service. It replaces the nginx container and is the only
-port a browser or Stripe talks to:
+`services/network.exe` (the Go network service, `network/` in the repo) is the gateway. It replaces the
+nginx container and the gateway that used to be built into `sample-erp.exe`, and it is the only port a
+browser or Stripe talks to. It also runs the service registry on `127.0.0.1:ERP_NETWORK_PORT` (7070): the
+API, billing and the importer announce themselves there by name, and the gateway (and the services among
+themselves) find each other by name instead of by fixed address. The launcher writes the embedded web app
+to `data/web` and hands it over as `NETWORK_WEB_DIR`; `NETWORK_TOKEN` is generated into `data/secrets.env`.
 
 ```
-browser ──► sample-erp.exe :8080        (ERP_BIND, default 127.0.0.1; HTTPS with ERP_TLS_CERT/KEY)
-              ├─ /healthz      204, never rate limited
-              ├─ /api/*      → api      127.0.0.1:3333   (prefix stripped)
-              ├─ /billing/*  → billing  127.0.0.1:8081   (Stripe webhooks: /billing/webhooks/stripe)
-              └─ /*          → the embedded web app
-            importer: 127.0.0.1:50051, reached only by the API over gRPC
+browser ──► network.exe :8080           (ERP_BIND, default 127.0.0.1; HTTPS with ERP_TLS_CERT/KEY)
+              ├─ /api/*      → "api"      (registered at 127.0.0.1:3333; prefix stripped)
+              ├─ /billing/*  → "billing"  (registered at 127.0.0.1:8081; Stripe webhooks: /billing/webhooks/stripe)
+              └─ /*          → data/web (the embedded web app)
+            registry: 127.0.0.1:7070, signed calls only (HMAC with NETWORK_TOKEN)
+            importer: registered as "importer", reached only by the API over gRPC
 ```
+
+reCAPTCHA v3 on the login (and for clients that flood the gateway) turns on when `config/api.env` has
+`RECAPTCHA_SITE_KEY` and `RECAPTCHA_SECRET`; the launcher passes those to the gateway.
 
 The web app calls `/api` on its own origin, so there's no CORS setup and no API address baked into the
 bundle. The services and Postgres only listen on loopback. To serve other machines, set `ERP_BIND=0.0.0.0`
 with a certificate (`ERP_TLS_CERT`, `ERP_TLS_KEY`), or put a TLS-terminating proxy in front and set
 `ERP_TRUST_PROXY=true`.
 
-Every proxied request goes through these steps, taken from `order-api-with-mim-fixed`'s Go gateway (`src/gateway/`):
+Every proxied request goes through these steps (`network/gateway/`):
 
 1. **Rate limit per client IP.** A token bucket: `ERP_RATE` requests/s with bursts of `ERP_BURST`
    (defaults 20 and 40). Past it, 429 with `Retry-After`. `X-Forwarded-For` only counts with
@@ -205,7 +212,8 @@ Every proxied request goes through these steps, taken from `order-api-with-mim-f
 2. **Path policy.** `/api/internal/*`, billing's own authenticated channel to the API, is a 404 from
    outside. Billing reaches the API directly on loopback.
 3. **Body caps.** `ERP_MAX_BODY_MB` (1) for everything. The spreadsheet imports
-   (`POST /api/products/imports`, `/api/products/import`) get `ERP_MAX_IMPORT_MB` (16). Past the cap, 413.
+   (`/api/products/imports`, `/api/products/import`, `/api/clientes/importacoes`,
+   `/api/clientes/empresas/importacoes`) get `ERP_MAX_IMPORT_MB` (128). Past the cap, 413.
 4. **Idempotency keys.** Required on the POSTs that create records: products, the imports, categories, audits
    and users. Honoured on any other POST that sends one. Never applied to the session routes
    (`/api/user/login`, refresh, password changes), whose responses carry tokens. The web app sends a fresh
@@ -225,15 +233,17 @@ or altering traffic in transit.
 
 | File            | What                                                                                                  |
 | --------------- | ----------------------------------------------------------------------------------------------------- |
-| `launcher.env`  | Ports (`ERP_WEB_PORT`, `ERP_API_PORT`, `ERP_DB_PORT`=5433, ...), the gateway (`ERP_BIND`, `ERP_RATE`, `ERP_BURST`, `ERP_MAX_*_MB`, `ERP_TLS_*`, `ERP_TRUST_PROXY`) and `ERP_OPEN_BROWSER`. `ERP_*` env vars win over it. |
+| `launcher.env`  | Ports (`ERP_WEB_PORT`, `ERP_API_PORT`, `ERP_DB_PORT`=5433, `ERP_NETWORK_PORT`=7070, ...), the gateway (`ERP_BIND`, `ERP_RATE`, `ERP_BURST`, `ERP_MAX_*_MB`, `ERP_TLS_*`, `ERP_TRUST_PROXY`) and `ERP_OPEN_BROWSER`. `ERP_*` env vars win over it. |
 | `api.env`       | The API's optional secrets (Resend, Jira, HubSpot). A copy of `api/.env` works as is.                 |
 | `billing.env`   | The Stripe keys. Its presence turns billing on.                                                       |
 
 The launcher always sets the database URL, hosts, ports, CORS and the URLs the services use to reach
 each other, so a copied `.env` can never point the local stack at Supabase. `JWT_SECRET`,
-`BILLING_INTERNAL_TOKEN` and the Postgres password are random and generated on first launch, in
-`data/secrets.env`. The Postgres password is fixed when the cluster is created, so keep that file
-with `data/postgres`.
+`NETWORK_TOKEN`, `VAULT_TOKEN` and the Postgres password are random and generated on first
+launch, in `data/secrets.env`. The Postgres password is fixed when the cluster is created, so keep that
+file with `data/postgres`. The API serves HTTPS (TLS 1.3) behind the gateway and reaches the importer, the vault and billing over
+mutual TLS (billing calls back the same way; there is no shared billing token), with a private CA and
+certificates made then too, in `data/certs/` (rcgen, ECDSA P-256); delete that folder to issue new ones.
 
 ### How the pieces fit
 
@@ -253,11 +263,19 @@ with `data/postgres`.
 launcher/
   Cargo.toml          workspace
   .cargo/config.toml  the `cargo xtask` alias
-  sample-erp/         the runtime (src/main.rs: start and stop; gateway/: the public port; db.rs;
-                      services.rs; web.rs; config.rs)
+  sample-erp/         the runtime (src/main.rs: start and stop; db.rs; services.rs; web.rs: writes the
+                      embedded web app for network.exe; config.rs)
   xtask/              the build (`cargo xtask dist`)
   dist-config/        the *.env.example files and README.txt copied into bin/
 ```
 
 During development, `cargo run -p sample-erp` with `ERP_HOME` pointed at a built `bin/` uses that folder's
 services and data.
+
+## Vault
+
+The launcher also runs `services/vault.exe` on `127.0.0.1:8200` (`ERP_VAULT_PORT`), with its own database
+`sample_erp_vault` in the embedded cluster. Its keys are made on first launch in `data/vault-keys/` as DPAPI
+blobs bound to the current Windows user: copying `data/` to another machine or account leaves the vault's
+records unreadable, so back up `data/` and restore it as the same user. The API reaches it over mutual TLS
+(`data/certs/vault.*`) with `VAULT_TOKEN` from `data/secrets.env`; the vault only receives its SHA-256.

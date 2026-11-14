@@ -3,6 +3,8 @@
 //!   web      vite build (bun) → web/dist, embedded into the launcher
 //!   api      bun build --compile → services/api.exe, Bun runtime included
 //!   importer go build → services/importer.exe
+//!   network  go build → services/network.exe (registry + public gateway)
+//!   vault    go build → services/vault.exe (encrypted CPF / birth dates; keys under DPAPI)
 //!   billing  mvnw package + jlink → services/billing/{billing.jar, runtime/} (a trimmed JRE)
 //!   launcher cargo build --release → sample-erp.exe, with the web app, SQL and migrations inside
 //!
@@ -84,6 +86,22 @@ fn dist(repo: &Path, out: &Path, billing: bool) -> Result<()> {
         .args(["build", "-trimpath", "-ldflags=-s -w", "-o"])
         .arg(services.join(format!("importer{EXE}")))
         .arg("./importer/cmd/importer")
+        .env("CGO_ENABLED", "0")
+        .current_dir(repo))?;
+
+    step("vault: go build");
+    run(Command::new(tool("go"))
+        .args(["build", "-trimpath", "-ldflags=-s -w", "-o"])
+        .arg(services.join(format!("vault{EXE}")))
+        .arg("./vault/cmd/vault")
+        .env("CGO_ENABLED", "0")
+        .current_dir(repo))?;
+
+    step("network: go build");
+    run(Command::new(tool("go"))
+        .args(["build", "-trimpath", "-ldflags=-s -w", "-o"])
+        .arg(services.join(format!("network{EXE}")))
+        .arg("./network/cmd/network")
         .env("CGO_ENABLED", "0")
         .current_dir(repo))?;
 

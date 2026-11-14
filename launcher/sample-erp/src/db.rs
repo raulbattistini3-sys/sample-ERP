@@ -11,6 +11,8 @@ use sqlx::{Connection, PgConnection, Row};
 use std::{collections::HashMap, time::Duration};
 
 const DATABASE: &str = "sample_erp";
+/// The vault's database, beside sample_erp in the same cluster; the vault creates its own tables.
+pub const VAULT_DATABASE: &str = "sample_erp_vault";
 const RELEASES_URL: &str = "https://github.com/theseus-rs/postgresql-binaries";
 
 /// docker/postgres/init: the schema and seed rows the postgres image runs on an empty volume
@@ -121,6 +123,10 @@ pub async fn prepare(pg: &PostgreSQL, cfg: &Config) -> Result<()> {
             return Err(e);
         }
         crate::log("postgres", "created sample_erp from docker/postgres/init");
+    }
+    if !pg.database_exists(VAULT_DATABASE).await? {
+        pg.create_database(VAULT_DATABASE).await?;
+        crate::log("postgres", "created sample_erp_vault (the vault makes its tables on its first start)");
     }
     migrate(cfg).await
 }

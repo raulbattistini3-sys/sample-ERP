@@ -1,13 +1,13 @@
 //! sample-erp: the whole stack without Docker.
 //!
-//!   sample-erp                 start Postgres, the importer, the API, billing (if configured) and the web app
+//!   sample-erp                 start Postgres, the network service, the importer, the vault, the API, billing (if configured)
 //!   sample-erp promote EMAIL   give an account the SU permission
 //!
 //! It mirrors docker-compose.yml: same start order, same environment, same database bootstrap.
 
+mod certs;
 mod config;
 mod db;
-mod gateway;
 mod services;
 mod web;
 #[cfg(windows)]
@@ -33,7 +33,7 @@ pub fn log(source: &str, line: &str) {
 #[tokio::main]
 async fn main() -> ExitCode {
     // One TLS crypto provider for the whole process, before any HTTP client exists. postgresql_archive
-    // turns on reqwest's rustls-no-provider, and that applies to the gateway's client too: without this,
+    // turns on reqwest's rustls-no-provider: without this,
     // building it panics on every launch that doesn't download Postgres first (the download installs one).
     // ring rather than aws-lc-rs, which needs cmake and NASM to build on Windows.
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -66,7 +66,12 @@ async fn run(paths: &Paths, cfg: Config) -> Result<()> {
     #[cfg(windows)]
     windows::kill_children_with_launcher();
 
-    for (bin, what) in [(paths.api(), "the API"), (paths.importer(), "the importer")] {
+    for (bin, what) in [
+        (paths.api(), "the API"),
+        (paths.importer(), "the importer"),
+        (paths.network(), "the network service"),
+        (paths.vault(), "the vault"),
+    ] {
         if !bin.exists() {
             bail!("{} is missing ({what}): build the bin folder with `cargo xtask dist`", bin.display());
         }
@@ -85,6 +90,8 @@ async fn run(paths: &Paths, cfg: Config) -> Result<()> {
         ("ERP_DB_PORT", cfg.db_port),
         ("ERP_IMPORTER_PORT", cfg.importer_port),
         ("ERP_API_PORT", cfg.api_port),
+        ("ERP_NETWORK_PORT", cfg.network_port),
+        ("ERP_VAULT_PORT", cfg.vault_port),
     ];
     if billing {
         ports.push(("ERP_BILLING_PORT", cfg.billing_port));
@@ -94,15 +101,15 @@ async fn run(paths: &Paths, cfg: Config) -> Result<()> {
             bail!("port {port} is taken (is another copy, or docker compose, running?); set {key} in config/launcher.env");
         }
     }
-    // the gateway: the only public port. Bound now and handed to axum later, so it can't be taken in between
-    let web_listener = StdListener::bind((cfg.gateway.bind, cfg.web_port)).with_context(|| {
+    // the gateway (network.exe): the only public port
+    drop(StdListener::bind((cfg.gateway.bind, cfg.web_port)).with_context(|| {
         format!("port {} is taken on {}; set ERP_WEB_PORT in config/launcher.env", cfg.web_port, cfg.gateway.bind)
-    })?;
-    web_listener.set_nonblocking(true)?;
+    })?);
 
     std::fs::create_dir_all(&paths.data)?;
+    web::extract(&paths.data.join("web"))?;
     let pg = db::start(paths, &cfg).await?;
-    let result = run_stack(paths, &cfg, billing, web_listener, &pg).await;
+    let result = run_stack(paths, &cfg, billing, &pg).await;
     log("postgres", "stopping");
     if let Err(e) = pg.stop().await {
         // Ctrl+C reaches Postgres too, so it may already be down
@@ -115,7 +122,6 @@ async fn run_stack(
     paths: &Paths,
     cfg: &Config,
     billing: bool,
-    web_listener: StdListener,
     pg: &postgresql_embedded::PostgreSQL,
 ) -> Result<()> {
     db::prepare(pg, cfg).await?;
@@ -128,6 +134,57 @@ async fn run_stack(
         pairs.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()
     };
 
+    // the internal certificates (data/certs, made on first launch): mutual TLS between the API and the
+    // importer, the vault and billing, and the API's HTTPS behind the gateway
+    let tls = certs::load_or_create(&paths.data)?;
+    let path = |p: &std::path::Path| p.to_string_lossy().into_owned();
+
+    // network: the registry every service below announces itself on (by name, at the port it bound), and
+    // the public gateway that routes /api, /billing and the web app to whatever is registered
+    let network_url = format!("http://127.0.0.1:{}", cfg.network_port);
+    let g = &cfg.gateway;
+    let mut network_env = owned(&[
+        ("NETWORK_ADDR", std::net::SocketAddr::new(g.bind, cfg.web_port).to_string()),
+        ("NETWORK_CONTROL_ADDR", format!("127.0.0.1:{}", cfg.network_port)),
+        ("NETWORK_TOKEN", secrets.network_token.clone()),
+        // production: the public port never moves, it's the one printed below and given to Stripe
+        ("NETWORK_ENV", "production".into()),
+        ("NETWORK_WEB_DIR", paths.data.join("web").to_string_lossy().into_owned()),
+        ("NETWORK_RATE", g.rate.to_string()),
+        ("NETWORK_BURST", g.burst.to_string()),
+        ("NETWORK_TRUST_PROXY", g.trust_proxy.to_string()),
+        ("NETWORK_MAX_BODY_MB", g.max_body_mb.to_string()),
+        ("NETWORK_MAX_IMPORT_MB", g.max_import_mb.to_string()),
+        ("LOG_FORMAT", "text".into()),
+        // the API and billing announce https:// addresses signed by the internal CA
+        ("NETWORK_UPSTREAM_CA", path(&tls.ca)),
+    ]);
+    if let Some((cert, key)) = &g.tls {
+        network_env.extend(owned(&[
+            ("NETWORK_TLS_CERT", cert.to_string_lossy().into_owned()),
+            ("NETWORK_TLS_KEY", key.to_string_lossy().into_owned()),
+        ]));
+    }
+    // reCAPTCHA keys, when config/api.env has them, go to the gateway (it checks them, not the API)
+    for (k, v) in config::read_env_file(&paths.config.join("api.env"))? {
+        if k.starts_with("RECAPTCHA_") {
+            network_env.push((k, v));
+        }
+    }
+    tasks.spawn(services::supervise(
+        Spec { name: "network", program: paths.network(), args: vec![], env: network_env, cwd: cwd.clone() },
+        state_rx.clone(),
+    ));
+    let joins = |name: &str| -> Vec<(String, String)> {
+        owned(&[
+            ("NETWORK_URL", network_url.clone()),
+            ("NETWORK_TOKEN", secrets.network_token.clone()),
+            ("NETWORK_ADVERTISE_HOST", "127.0.0.1".into()),
+            ("NETWORK_INSTANCE_ID", format!("{name}-launcher")),
+        ])
+    };
+
+
     // importer: reads, validates and saves product spreadsheets queued in the importacoes table
     tasks.spawn(services::supervise(
         Spec {
@@ -136,12 +193,53 @@ async fn run_stack(
             args: vec![],
             env: owned(&[
                 ("DATABASE_URL", cfg.database_url()),
-                // loopback only: it has no auth of its own and trusts its caller
+                // loopback, and only a client with a certificate from data/certs/ca.crt gets past the
+                // handshake: the API
                 ("GRPC_HOST", "127.0.0.1".into()),
                 ("GRPC_PORT", cfg.importer_port.to_string()),
+                ("GRPC_TLS_CERT", path(&tls.importer_cert)),
+                ("GRPC_TLS_KEY", path(&tls.importer_key)),
+                ("GRPC_TLS_CLIENT_CA", path(&tls.ca)),
                 ("IMPORT_WORKERS", cfg.import_workers.clone()),
                 // the embedded Postgres has no TLS
                 ("IMPORTER_ENV", "development".into()),
+            ])
+            .into_iter()
+            .chain(joins("importer"))
+            .collect(),
+            cwd: cwd.clone(),
+        },
+        state_rx.clone(),
+    ));
+
+    // vault: the usuarios' CPF and birth dates, AES-256-GCM under keys in data/vault-keys. On Windows the
+    // keys are DPAPI blobs bound to this Windows account: the folder copied to another machine or user
+    // won't open, so back up data/ and restore it as the same user. Loopback + mutual TLS; the API's token
+    // is checked against its SHA-256
+    let vault_url = format!("https://127.0.0.1:{}", cfg.vault_port);
+    let token_sha256 = {
+        use sha2::{Digest, Sha256};
+        Sha256::digest(secrets.vault_token.as_bytes()).iter().map(|b| format!("{b:02x}")).collect::<String>()
+    };
+    tasks.spawn(services::supervise(
+        Spec {
+            name: "vault",
+            program: paths.vault(),
+            args: vec!["serve".into()],
+            env: owned(&[
+                ("VAULT_HOST", "127.0.0.1".into()),
+                ("VAULT_PORT", cfg.vault_port.to_string()),
+                ("VAULT_DATABASE_URL", cfg.vault_database_url()),
+                ("VAULT_KEY_DIR", path(&paths.data.join("vault-keys"))),
+                // the first launch makes the KEK and the CPF index key
+                ("VAULT_KEY_CREATE", "true".into()),
+                ("VAULT_KEY_PROTECTION", if cfg!(windows) { "dpapi" } else { "file" }.into()),
+                ("VAULT_TOKEN_SHA256", token_sha256),
+                ("VAULT_TLS_CERT", path(&tls.vault_cert)),
+                ("VAULT_TLS_KEY", path(&tls.vault_key)),
+                ("VAULT_TLS_CLIENT_CA", path(&tls.ca)),
+                // the embedded Postgres has no TLS
+                ("VAULT_ENV", "development".into()),
             ]),
             cwd: cwd.clone(),
         },
@@ -153,7 +251,7 @@ async fn run_stack(
     let mut api_env = owned(&[
         ("NODE_ENV", "production".into()),
         // Stripe status and cobranças go through billing; without it the pages say it isn't running
-        ("BILLING_URL", if billing { format!("http://127.0.0.1:{}", cfg.billing_port) } else { String::new() }),
+        ("BILLING_URL", if billing { format!("https://127.0.0.1:{}", cfg.billing_port) } else { String::new() }),
         ("JWT_SECRET", secrets.jwt_secret.clone()),
         // the web's search timings and the API's snapshot builds, one NDJSON file per day (pkg/telemetry)
         ("TELEMETRY_DIR", paths.data.join("telemetry").to_string_lossy().into_owned()),
@@ -177,8 +275,24 @@ async fn run_stack(
         // with this set the API hands imports to the Go importer instead of forking worker processes,
         // which a single compiled executable can't do
         ("IMPORTER_GRPC_URL", format!("127.0.0.1:{}", cfg.importer_port)),
-        ("BILLING_INTERNAL_TOKEN", secrets.billing_token.clone()),
+        ("IMPORTER_TLS_CA", path(&tls.ca)),
+        ("IMPORTER_TLS_CERT", path(&tls.api_cert)),
+        ("IMPORTER_TLS_KEY", path(&tls.api_key)),
+        ("IMPORTER_TLS_SERVER_NAME", "importer".into()),
+        ("VAULT_URL", vault_url.clone()),
+        ("VAULT_TOKEN", secrets.vault_token.clone()),
+        ("VAULT_TLS_CA", path(&tls.ca)),
+        ("VAULT_TLS_CERT", path(&tls.api_cert)),
+        ("VAULT_TLS_KEY", path(&tls.api_key)),
+        ("VAULT_TLS_SERVER_NAME", "vault".into()),
+        // HTTPS, TLS 1.3 only (the gateway reaches it with NETWORK_UPSTREAM_CA); also the client
+        // certificate towards billing, whose own certificate API_TLS_CA checks
+        ("API_TLS_CERT", path(&tls.api_cert)),
+        ("API_TLS_KEY", path(&tls.api_key)),
+        ("API_TLS_CA", path(&tls.ca)),
+        ("BILLING_TLS_SERVER_NAME", "billing".into()),
     ]));
+    api_env.extend(joins("api"));
     tasks.spawn(services::supervise(
         Spec { name: "api", program: paths.api(), args: vec![], env: api_env, cwd: cwd.clone() },
         state_rx.clone(),
@@ -195,14 +309,18 @@ async fn run_stack(
                     cfg.db_port, secrets.db_password
                 ),
             ),
-            ("ERP_API_URL", format!("http://127.0.0.1:{}", cfg.api_port)),
-            ("BILLING_INTERNAL_TOKEN", secrets.billing_token.clone()),
+            ("ERP_API_URL", format!("https://127.0.0.1:{}", cfg.api_port)),
+            // mutual TLS with the API, both ways; no shared token
+            ("BILLING_TLS_CERT", path(&tls.billing_cert)),
+            ("BILLING_TLS_KEY", path(&tls.billing_key)),
+            ("BILLING_TLS_CA", path(&tls.ca)),
             ("BILLING_PORT", cfg.billing_port.to_string()),
             ("BILLING_ENV", "development".into()),
             ("SERVER_ADDRESS", "127.0.0.1".into()),
             // served under /billing by the gateway: honour its X-Forwarded-Prefix in links and redirects
             ("SERVER_FORWARD_HEADERS_STRATEGY", "framework".into()),
         ]));
+        env.extend(joins("billing"));
         tasks.spawn(services::supervise(
             Spec {
                 name: "billing",
@@ -214,26 +332,6 @@ async fn run_stack(
             state_rx.clone(),
         ));
     }
-
-    // the gateway: web app, /api and /billing on one port; the services stay on loopback
-    let mut upstreams = vec![gateway::Upstream { prefix: "/api", base: format!("http://127.0.0.1:{}", cfg.api_port) }];
-    if billing {
-        upstreams.push(gateway::Upstream { prefix: "/billing", base: format!("http://127.0.0.1:{}", cfg.billing_port) });
-    }
-    let g = &cfg.gateway;
-    let settings = gateway::Settings {
-        upstreams,
-        rate: g.rate,
-        burst: g.burst,
-        trust_proxy: g.trust_proxy,
-        max_body: g.max_body_mb * 1024 * 1024,
-        max_import: g.max_import_mb * 1024 * 1024,
-        https: g.tls.is_some(),
-    };
-    let mut web_state = state_rx.clone();
-    let mut web = tokio::spawn(gateway::serve(web_listener, settings, g.tls.clone(), async move {
-        let _ = web_state.wait_for(|s| *s != State::Running).await;
-    }));
 
     let banner = {
         let api = cfg.api_port;
@@ -267,22 +365,19 @@ async fn run_stack(
         })
     };
 
-    let outcome = tokio::select! {
-        _ = tokio::signal::ctrl_c() => {
+    let outcome = match tokio::signal::ctrl_c().await {
+        Ok(()) => {
             log("launcher", "stopping (Ctrl+C)");
             State::Interrupted
         }
-        result = &mut web => {
-            log("launcher", &format!("the web server stopped: {result:?}"));
+        Err(e) => {
+            log("launcher", &format!("cannot wait for Ctrl+C ({e}); stopping"));
             State::Aborted
         }
     };
     banner.abort();
     let _ = state_tx.send(outcome);
     while tasks.join_next().await.is_some() {}
-    if !web.is_finished() {
-        let _ = web.await;
-    }
     Ok(())
 }
 
