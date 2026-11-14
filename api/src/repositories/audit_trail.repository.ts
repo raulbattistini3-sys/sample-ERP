@@ -3,8 +3,11 @@ import { sql } from "drizzle-orm";
 import { DrizzleDB } from "../db/client";
 import { enqueueForCategoria, enqueueForLote, enqueueForProducts } from "./integracao_envios.repository";
 
-// Automatic "Alteracao" auditorias for product and categoria changes. Every function runs on the
-// caller's transaction, so a change is never saved without its auditoria (or a claimed manual one).
+// Automatic "Alteracao" auditorias for product and categoria changes. The record* functions run on the
+// caller's transaction, so a change is never saved without either a claimed manual auditoria or a row in
+// alteracoes_pendentes (drizzle/0026), which consolidarPendentes turns into auditorias on a schedule
+// (AuditoriaConsolidacaoWorker, every 5 minutes by default): one lote per user and action, so the
+// integrations get one issue/ticket per categoria instead of one per edit.
 //
 // A manual auditoria covers a change when it's an unused (vinculada_em IS NULL) "Alteracao" created
 // in the last 24 hours (criada_em) that matches it:
@@ -73,29 +76,6 @@ export async function insertLinkedAuditoria(tx: DrizzleDB, a: LinkedAuditoria): 
   return auditoriaId;
 }
 
-const createAutomaticAuditoria = (
-  tx: DrizzleDB,
-  usuarioId: string,
-  nome: string,
-  valorAnterior: string,
-  valorAtual: string,
-  changes: FieldChange[],
-  produtoIds: string[],
-  categoriaId: string | null,
-): Promise<string> =>
-  insertLinkedAuditoria(tx, {
-    acao: "Alteracao",
-    dataDeAudicao: null,
-    usuarioId,
-    nome,
-    valorAnterior,
-    valorAtual,
-    observacoes: observacoes(changes),
-    changes,
-    produtoIds,
-    categoriaId,
-  });
-
 export async function recordProductChange(
   tx: DrizzleDB,
   change: {
@@ -134,10 +114,34 @@ export async function recordProductChange(
   );
   if (claimed) return { auditoriaId: claimed, automatica: false };
 
-  const auditoriaId = await createAutomaticAuditoria(
-    tx, change.usuarioId, change.nomeProduto, antes, depois, change.changes, [change.produtoId], null,
-  );
-  return { auditoriaId, automatica: true };
+  await enfileirar(tx, change.usuarioId, GRUPO_EDICAO, [
+    { produtoId: change.produtoId, nomeProduto: change.nomeProduto, antes, depois, changes: change.changes },
+  ]);
+  return null;
+}
+
+// ---- queue (alteracoes_pendentes) ----------------------------------------------------------------
+
+// single edits of a user share one lote per sweep; a bulk action is a lote of its own
+const GRUPO_EDICAO = "edicao";
+const GRUPO_CATEGORIA = "categoria";
+const grupoDeLote = () => `lote:${randomUUID()}`;
+
+type Pendente = { produtoId: string; nomeProduto: string; antes: string; depois: string; changes: FieldChange[] };
+
+async function enfileirar(tx: DrizzleDB, usuarioId: string, grupo: string, itens: Pendente[]): Promise<void> {
+  for (const lote of emLotes(itens)) {
+    await tx.execute(sql`
+      insert into alteracoes_pendentes (usuario_id, grupo, produto_id, nome, venda_antes, venda_depois, alteracoes)
+      select ${usuarioId}::uuid, ${grupo}, produto, nome, antes, depois, alteracoes::jsonb
+      from unnest(
+        ${arrayParam(lote.map((n) => n.produtoId))}::uuid[],
+        ${arrayParam(lote.map((n) => n.nomeProduto))}::text[],
+        ${arrayParam(lote.map((n) => n.antes))}::numeric[],
+        ${arrayParam(lote.map((n) => n.depois))}::numeric[],
+        ${arrayParam(lote.map((n) => JSON.stringify(n.changes)))}::text[]
+      ) as v(produto, nome, antes, depois, alteracoes)`);
+  }
 }
 
 // rows per statement of a bulk write: one array parameter per column, so only the statement's size is at stake
@@ -185,17 +189,25 @@ export async function recordProductChanges(tx: DrizzleDB, usuarioId: string, ite
   }
 
   const reivindicadas = new Set<string>();
-  const novas: ((typeof changed)[number] & { auditoriaId: string; detalhamentoId: string })[] = [];
+  const novas: Pendente[] = [];
   for (const item of changed) {
     const opcoes = porChave.get(`${item.produtoId}|${item.antes}|${item.depois}`) ?? [];
     const manual = opcoes.find((id) => !reivindicadas.has(id));
     if (manual) reivindicadas.add(manual);
-    else novas.push({ ...item, auditoriaId: randomUUID(), detalhamentoId: randomUUID() });
+    else novas.push(item);
   }
 
   if (reivindicadas.size > 0) {
     await tx.execute(sql`update auditorias set vinculada_em = now() where id = any(${arrayParam([...reivindicadas])}::uuid[])`);
   }
+  // all of this action's products in one group: the sweep makes them one lote
+  if (novas.length > 0) await enfileirar(tx, usuarioId, novas.length > 1 ? grupoDeLote() : GRUPO_EDICAO, novas);
+}
+
+// A lote of product auditorias, in a few statements however many there are, then one integration
+// issue/ticket per categoria (enqueueForLote). Returns how many auditorias were created.
+async function inserirLote(tx: DrizzleDB, usuarioId: string, dataDeAudicao: Date, itens: Pendente[]): Promise<number> {
+  const novas = itens.map((item) => ({ ...item, auditoriaId: randomUUID(), detalhamentoId: randomUUID() }));
   const loteId = randomUUID();
   for (const lote of emLotes(novas)) {
     await tx.execute(sql`
@@ -211,7 +223,7 @@ export async function recordProductChanges(tx: DrizzleDB, usuarioId: string, ite
       ) as v(id, nome, antes, depois, obs, alteracoes)`);
     await tx.execute(sql`
       insert into auditorias (id, acao_efetuada, data_de_audicao, usuario_id, detalhamento_auditoria_id, vinculada_em, lote_id)
-      select id, 'Alteracao', now(), ${usuarioId}, detalhamento, now(), ${loteId}::uuid
+      select id, 'Alteracao', ${dataDeAudicao.toISOString()}::timestamptz, ${usuarioId}, detalhamento, now(), ${loteId}::uuid
       from unnest(
         ${arrayParam(lote.map((n) => n.auditoriaId))}::uuid[],
         ${arrayParam(lote.map((n) => n.detalhamentoId))}::uuid[]
@@ -224,6 +236,7 @@ export async function recordProductChanges(tx: DrizzleDB, usuarioId: string, ite
       )`);
   }
   if (novas.length > 0) await enqueueForLote(tx, loteId);
+  return novas.length;
 }
 
 export async function recordCategoriaChange(
@@ -259,14 +272,116 @@ export async function recordCategoriaChange(
   );
   if (claimed) return { auditoriaId: claimed, automatica: false };
 
-  // the categoria's products, so the auditoria shows up for each of them
-  const produtos = await tx.execute(sql`select id from produtos where categoria_id = ${change.categoriaId}`);
-  const auditoriaId = await createAutomaticAuditoria(
-    tx, change.usuarioId, `Categoria: ${change.nomeDepois}`, "0.00", "0.00", change.changes,
-    (produtos.rows as { id: string }[]).map((p) => p.id),
-    change.categoriaId,
+  await tx.execute(sql`
+    insert into alteracoes_pendentes (usuario_id, grupo, categoria_id, nome, alteracoes)
+    values (${change.usuarioId}, ${GRUPO_CATEGORIA}, ${change.categoriaId}, ${`Categoria: ${change.nomeDepois}`}, ${JSON.stringify(change.changes)}::jsonb)`);
+  return null;
+}
+
+// ---- consolidation -------------------------------------------------------------------------------
+
+type LinhaPendente = {
+  usuario_id: string;
+  grupo: string;
+  produto_id: string | null;
+  categoria_id: string | null;
+  nome: string;
+  venda_antes: string;
+  venda_depois: string;
+  alteracoes: FieldChange[];
+  criada_em: Date | string;
+};
+
+// Several edits of the same field in the window: the first "antes" and the last "depois". A field that
+// came back to its value drops out, and so does an edit that undid itself entirely.
+export function juntarAlteracoes(listas: FieldChange[][]): FieldChange[] {
+  const porCampo = new Map<string, FieldChange>();
+  for (const lista of listas) {
+    for (const { campo, antes, depois } of lista) {
+      const atual = porCampo.get(campo);
+      porCampo.set(campo, { campo, antes: atual ? atual.antes : antes, depois });
+    }
+  }
+  return [...porCampo.values()].filter(({ antes, depois }) => antes !== depois);
+}
+
+export type Consolidacao = { pendentes: number; auditorias: number; lotes: number };
+
+const agrupar = <T>(itens: T[], chave: (item: T) => string) => {
+  const grupos = new Map<string, T[]>();
+  for (const item of itens) {
+    const k = chave(item);
+    const grupo = grupos.get(k);
+    if (grupo) grupo.push(item);
+    else grupos.set(k, [item]);
+  }
+  return grupos;
+};
+
+// Turns up to `limite` queued changes (oldest first) into auditorias, on the caller's transaction: the
+// rows are taken FOR UPDATE SKIP LOCKED and deleted, so two API instances never consolidate one change.
+export async function consolidarPendentes(tx: DrizzleDB, limite: number): Promise<Consolidacao> {
+  const { rows } = await tx.execute(sql`
+    delete from alteracoes_pendentes
+    where id in (select id from alteracoes_pendentes order by criada_em limit ${limite} for update skip locked)
+    returning usuario_id::text, grupo, produto_id::text, categoria_id::text, nome, venda_antes::text,
+              venda_depois::text, alteracoes, criada_em`);
+  const linhas = (rows as LinhaPendente[]).sort((a, b) => +new Date(a.criada_em) - +new Date(b.criada_em));
+  const resultado: Consolidacao = { pendentes: linhas.length, auditorias: 0, lotes: 0 };
+
+  const grupos = agrupar(linhas, (l) =>
+    l.categoria_id ? `${l.usuario_id}|categoria|${l.categoria_id}` : `${l.usuario_id}|${l.grupo}`,
   );
-  return { auditoriaId, automatica: true };
+  for (const grupo of grupos.values()) {
+    const { usuario_id: usuarioId, categoria_id: categoriaId } = grupo[0];
+    const dataDeAudicao = new Date(grupo[0].criada_em);
+    const ultima = grupo[grupo.length - 1];
+
+    if (categoriaId) {
+      const changes = juntarAlteracoes(grupo.map((l) => l.alteracoes));
+      if (changes.length === 0) continue;
+      // the categoria's products, so the auditoria shows up for each of them
+      const produtos = await tx.execute(sql`select id from produtos where categoria_id = ${categoriaId}`);
+      await insertLinkedAuditoria(tx, {
+        acao: "Alteracao",
+        dataDeAudicao,
+        usuarioId,
+        nome: ultima.nome,
+        valorAnterior: "0.00",
+        valorAtual: "0.00",
+        observacoes: observacoes(changes),
+        changes,
+        produtoIds: (produtos.rows as { id: string }[]).map((p) => p.id),
+        categoriaId,
+      });
+      resultado.auditorias += 1;
+      resultado.lotes += 1;
+      continue;
+    }
+
+    const itens: Pendente[] = [];
+    for (const [produtoId, edicoes] of agrupar(grupo, (l) => l.produto_id!)) {
+      const changes = juntarAlteracoes(edicoes.map((l) => l.alteracoes));
+      if (changes.length === 0) continue;
+      itens.push({
+        produtoId,
+        nomeProduto: edicoes[edicoes.length - 1].nome,
+        antes: edicoes[0].venda_antes,
+        depois: edicoes[edicoes.length - 1].venda_depois,
+        changes,
+      });
+    }
+    if (itens.length === 0) continue;
+    resultado.auditorias += await inserirLote(tx, usuarioId, dataDeAudicao, itens);
+    resultado.lotes += 1;
+  }
+  return resultado;
+}
+
+export async function contarPendentes(db: DrizzleDB): Promise<{ total: number; desde: string | null }> {
+  const { rows } = await db.execute(sql`select count(*)::int as total, min(criada_em) as desde from alteracoes_pendentes`);
+  const [linha] = rows as { total: number; desde: Date | string | null }[];
+  return { total: linha?.total ?? 0, desde: linha?.desde ? new Date(linha.desde).toISOString() : null };
 }
 
 // ---- diffs ---------------------------------------------------------------------------------------
