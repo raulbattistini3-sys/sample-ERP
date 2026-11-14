@@ -11,17 +11,17 @@ import org.springframework.security.web.authentication.AnonymousAuthenticationFi
 @Configuration
 public class SecurityConfig {
 
-	// No sessions or cookies, so no CSRF. Stripe's signature protects the webhook; /internal/** takes the
-	// Node API's BILLING_INTERNAL_TOKEN (InternalTokenFilter); everything else stays closed.
+	// No sessions or cookies, so no CSRF. Stripe's signature protects the webhook; /internal/** needs the
+	// Node API's client certificate, CN=api (ClientCertificateFilter); everything else stays closed.
 	@Bean
-	SecurityFilterChain securityFilterChain(HttpSecurity http, ErpProperties erp) throws Exception {
+	SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 		return http
 				.csrf(AbstractHttpConfigurer::disable)
 				.sessionManagement((session) -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-				.addFilterBefore(new InternalTokenFilter(erp.internalToken()), AnonymousAuthenticationFilter.class)
+				.addFilterBefore(new ClientCertificateFilter("api"), AnonymousAuthenticationFilter.class)
 				.authorizeHttpRequests((requests) -> requests
 						.requestMatchers("/webhooks/stripe", "/actuator/health", "/docs", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
-						.requestMatchers(InternalTokenFilter.PREFIX + "**").permitAll()
+						.requestMatchers(ClientCertificateFilter.PREFIX + "**").permitAll()
 						.anyRequest().denyAll())
 				.build();
 	}
