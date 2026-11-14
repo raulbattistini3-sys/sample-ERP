@@ -7,11 +7,11 @@ COPY web/package.json web/bun.lock ./
 RUN bun install --frozen-lockfile
 COPY web/ ./
 COPY pkg /app/pkg
-ARG VITE_API_URL=http://localhost:3333
+ARG VITE_API_URL=https://localhost:3333
 ENV VITE_API_URL=$VITE_API_URL
 RUN bun run build
 
 FROM nginx:1.27-alpine
 COPY web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/web/dist /usr/share/nginx/html
-EXPOSE 80
+EXPOSE 443

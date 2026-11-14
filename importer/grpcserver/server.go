@@ -47,7 +47,14 @@ func (s *Server) IniciarImportacao(ctx context.Context, req *importadorv1.Inicia
 		return nil, status.Error(codes.InvalidArgument, planilha.ErrFormato.Error())
 	}
 
-	imp, err := s.repo.Criar(ctx, req.GetUsuarioId(), nome, req.GetPlanilha())
+	tipo := postgres.TipoProdutos
+	switch req.GetTipo() {
+	case importadorv1.TipoImportacao_TIPO_IMPORTACAO_CLIENTES:
+		tipo = postgres.TipoClientes
+	case importadorv1.TipoImportacao_TIPO_IMPORTACAO_EMPRESAS:
+		tipo = postgres.TipoEmpresas
+	}
+	imp, err := s.repo.Criar(ctx, tipo, req.GetUsuarioId(), nome, req.GetPlanilha())
 	switch {
 	case errors.Is(err, postgres.ErrUsuarioNaoEncontrado):
 		return nil, status.Error(codes.NotFound, "Usuário não encontrado.")
@@ -75,6 +82,33 @@ func (s *Server) ObterImportacao(ctx context.Context, req *importadorv1.ObterImp
 	return &importadorv1.ObterImportacaoResponse{Importacao: toProto(imp)}, nil
 }
 
+// ListarErros pages through a client import's errors by seq: the web keeps what it has and asks only for
+// what came after the last one it saw.
+func (s *Server) ListarErros(ctx context.Context, req *importadorv1.ListarErrosRequest) (*importadorv1.ListarErrosResponse, error) {
+	limite := req.GetLimite()
+	switch {
+	case limite <= 0:
+		limite = 500
+	case limite > 5000:
+		limite = 5000
+	}
+	erros, err := s.repo.ListarErros(ctx, req.GetId(), max(req.GetDepoisDe(), 0), limite)
+	switch {
+	case errors.Is(err, postgres.ErrNaoEncontrada):
+		return nil, status.Error(codes.NotFound, "Importação não encontrada.")
+	case errors.Is(err, postgres.ErrIDInvalido):
+		return nil, status.Error(codes.InvalidArgument, "id não é um UUID válido.")
+	case err != nil:
+		slog.Error("listing importacao errors", "id", req.GetId(), "err", err)
+		return nil, status.Error(codes.Internal, "Não foi possível consultar os erros da importação.")
+	}
+	out := make([]*importadorv1.ErroImportacao, len(erros))
+	for i, e := range erros {
+		out[i] = &importadorv1.ErroImportacao{Seq: e.Seq, Linha: e.Linha, Campo: e.Campo, Email: e.Email, Mensagem: e.Mensagem}
+	}
+	return &importadorv1.ListarErrosResponse{Erros: out}, nil
+}
+
 var statusProto = map[postgres.Status]importadorv1.StatusImportacao{
 	postgres.StatusPendente:    importadorv1.StatusImportacao_STATUS_IMPORTACAO_PENDENTE,
 	postgres.StatusProcessando: importadorv1.StatusImportacao_STATUS_IMPORTACAO_PROCESSANDO,
@@ -88,7 +122,18 @@ func toProto(imp postgres.Importacao) *importadorv1.Importacao {
 	for i, e := range imp.Erros {
 		erros[i] = &importadorv1.ErroLinha{Linha: e.Linha, Campo: e.Campo, Mensagem: e.Mensagem}
 	}
+	tipo := importadorv1.TipoImportacao_TIPO_IMPORTACAO_PRODUTOS
+	switch imp.Tipo {
+	case postgres.TipoClientes:
+		tipo = importadorv1.TipoImportacao_TIPO_IMPORTACAO_CLIENTES
+	case postgres.TipoEmpresas:
+		tipo = importadorv1.TipoImportacao_TIPO_IMPORTACAO_EMPRESAS
+	}
 	return &importadorv1.Importacao{
+		Tipo:              tipo,
+		LinhasProcessadas: imp.LinhasProcessadas,
+		LinhasFalharam:    imp.LinhasFalharam,
+		EmpresasCriadas:   imp.EmpresasCriadas,
 		Id:                imp.ID,
 		Status:            statusProto[imp.Status],
 		NomeArquivo:       imp.NomeArquivo,

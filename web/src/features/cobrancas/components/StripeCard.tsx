@@ -14,11 +14,11 @@ export function StripeCard() {
   const problema = !data
     ? null
     : !data.configurado
-      ? "O ERP não sabe onde está o serviço de cobranças: defina BILLING_URL (e BILLING_INTERNAL_TOKEN) na API. O launcher faz isso sozinho quando config/billing.env existe."
+      ? "O ERP não sabe onde está o serviço de cobranças: defina BILLING_URL (https) e API_TLS_* na API. O launcher faz isso sozinho quando config/billing.env existe."
       : !data.alcancavel
         ? // the API says what happened; the card only adds what to do about it
           `${data.erro ?? "O serviço de cobranças está fora do ar."} ${
-            data.erro?.includes("HTTP 401") ? "Confira se o BILLING_INTERNAL_TOKEN é o mesmo na API e no billing." : "Inicie o billing e clique em Conectar."
+            data.erro?.includes("HTTP 401") ? "Confira os certificados mTLS: o da API (CN=api) e o do billing precisam ser da mesma CA interna." : "Inicie o billing e clique em Conectar."
           }`
         : !status?.conectado
           ? `${status?.erro ?? "O Stripe recusou a conexão."} Confira SANDBOX_STRIPE_API_KEY em billing/.env (ou config/billing.env no launcher).`
@@ -75,7 +75,17 @@ export function StripeCard() {
             <ul className="mt-2 max-h-72 divide-y divide-border overflow-y-auto text-sm" aria-label="Eventos do Stripe">
               {data.eventos.map((e) => (
                 <li key={e.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 py-1.5">
-                  <span className="font-mono text-xs text-ink">{e.tipo}</span>
+                  {/* opens the event in the Stripe Dashboard (Workbench), in the mode the event came from */}
+                  <a
+                    href={`https://dashboard.stripe.com/${e.producao ? "" : "test/"}workbench/events/${e.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Abrir o evento no Stripe"
+                    className="inline-flex items-center gap-1 font-mono text-xs text-ink hover:text-accent hover:underline"
+                  >
+                    {e.tipo}
+                    <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                  </a>
                   <span className="text-xs text-muted">{formatDateTime(e.criadoEm)}</span>
                   {e.resumo && <span className="w-full text-xs text-muted">{e.resumo}</span>}
                 </li>

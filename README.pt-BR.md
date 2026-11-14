@@ -187,7 +187,7 @@ Todo serviço confere a configuração antes de fazer qualquer coisa. Se houver 
 | --- | --- | --- |
 | API | `API_ENV`, `DATABASE_URL`, `JWT_SECRET` | `CORS_ORIGINS`, `WEB_URL`, uma CA legível |
 | Importador | `IMPORTER_ENV`, `DATABASE_URL` | uma CA legível |
-| Billing | `BILLING_ENV`, `JDBC_DATABASE_URL`, `SANDBOX_STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET`, `ERP_API_URL`, `BILLING_INTERNAL_TOKEN` | uma CA legível |
+| Billing | `BILLING_ENV`, `JDBC_DATABASE_URL`, `SANDBOX_STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET`, `ERP_API_URL`, `BILLING_TLS_CERT`, `BILLING_TLS_KEY`, `BILLING_TLS_CA` | uma CA legível |
 | Web (`vite`, `vite build`) | `VITE_API_URL`, uma URL http(s) | |
 
 Em produção, `sslmode=disable` (ou qualquer outro modo que não verifique o certificado) na URL do banco também
@@ -211,15 +211,15 @@ Crie o `billing/.env` a partir do `billing/.env.example`:
 | `STRIPE_WEBHOOK_SECRET` | `whsec_...`, impresso pelo `stripe listen` |
 | `JDBC_DATABASE_URL` | O banco, com as credenciais na URL. No Supabase use o **session pooler (porta 5432)**: o serviço se recusa a subir no transaction pooler (6543) |
 | `ERP_API_URL` | A API, com um IP e não `localhost` |
-| `BILLING_INTERNAL_TOKEN` | O mesmo valor do `api/.env`. Sem ele a API responde 401 |
+| `BILLING_TLS_CERT`, `BILLING_TLS_KEY`, `BILLING_TLS_CA` | Certificado do billing e a CA interna (`secrets/tls/`). API e billing conversam por **TLS mútuo (TLS 1.3)** nos dois sentidos: o `/internal/**` do billing só aceita o certificado da API (CN `api`) e o `/internal/billing` da API só o do billing (CN `billing`). Não há token compartilhado |
 
-Com Docker, `JDBC_DATABASE_URL`, `ERP_API_URL` e `BILLING_INTERNAL_TOKEN` vêm do `docker-compose.yml`, então só os valores da Stripe importam:
+Com Docker, `JDBC_DATABASE_URL`, `ERP_API_URL` e os certificados vêm do `docker-compose.yml`, então só os valores da Stripe importam:
 
 ```bash
 docker compose --profile billing up --build
 ```
 
-Sem Docker, defina `BILLING_INTERNAL_TOKEN` também no `api/.env`, reinicie a API (mudanças no `.env` não recarregam sozinhas) e suba o serviço pela pasta dele, que é onde ele procura o `.env`:
+Sem Docker, defina `API_TLS_*` no `api/.env` (veja `api/.env.example`), reinicie a API (mudanças no `.env` não recarregam sozinhas) e suba o serviço pela pasta dele, que é onde ele procura o `.env`:
 
 ```bash
 cd billing
@@ -322,7 +322,8 @@ O `api/.env.example` documenta todas as variáveis. Estas são as que importam p
 | `RESEND_API_KEY`, `EMAIL_FROM` | não | E-mails de "Esqueceu a senha?" pelo [Resend](https://resend.com) |
 | `INTEGRATIONS_ENCRYPTION_KEY`, `API_PUBLIC_URL`, `JIRA_*`, `HUBSPOT_*` | não | Integrações com Jira / HubSpot |
 | `IMPORTER_GRPC_URL` | não | Endereço do importador de planilhas em Go (`host:porta`). Vazio: a própria API roda a importação de produtos |
-| `BILLING_INTERNAL_TOKEN` | não | Permite que o [serviço de billing](#serviço-de-billing-stripe) chame `/internal/billing`. Sem ele, toda chamada recebe 401 |
+| `API_TLS_CERT`, `API_TLS_KEY`, `API_TLS_CA` | em produção | HTTPS só com TLS 1.3 (`secrets/tls/api.*`); também o certificado de cliente para o importer, o vault e o billing. Sem eles: HTTP simples e sem billing |
+| `API_CHILDREN` | não | Desenvolvimento: `importer,vault,billing` (qualquer subconjunto) rodam como processos filhos da API; `go run ./network/cmd/network dev` sobe tudo num terminal só |
 | `VITE_API_URL` (`web/.env`) | sim | Endereço da API como o navegador a acessa |
 
 ## Migrations do banco

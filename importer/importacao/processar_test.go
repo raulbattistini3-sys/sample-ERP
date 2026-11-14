@@ -80,7 +80,7 @@ var cabecalho = []any{"SKU", "Nome", "Categoria", "Valor de custo (R$)", "ICMS (
 func (a *ambiente) processar(t *testing.T, nome string, dados []byte) postgres.Importacao {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := a.repo.Criar(ctx, a.usuarioID, nome, dados); err != nil {
+	if _, err := a.repo.Criar(ctx, postgres.TipoProdutos, a.usuarioID, nome, dados); err != nil {
 		t.Fatal(err)
 	}
 	job, err := a.repo.Reivindicar(ctx)
@@ -306,7 +306,7 @@ func TestWorkerAcordaComNotificacao(t *testing.T) {
 	go func() { done <- w.Run(ctx) }()
 	time.Sleep(500 * time.Millisecond) // let it LISTEN and drain the (empty) queue
 
-	criada, err := a.repo.Criar(ctx, a.usuarioID, "produtos.csv", []byte(fmt.Sprintf("SKU;Nome;Categoria;Custo;ICMS;Venda;Estoque\n%sCSV;Cabo;INFORMATICA;10;;;1\n", a.prefixo)))
+	criada, err := a.repo.Criar(ctx, postgres.TipoProdutos, a.usuarioID, "produtos.csv", []byte(fmt.Sprintf("SKU;Nome;Categoria;Custo;ICMS;Venda;Estoque\n%sCSV;Cabo;INFORMATICA;10;;;1\n", a.prefixo)))
 	if err != nil {
 		t.Fatal(err)
 	}

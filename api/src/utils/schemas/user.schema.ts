@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isCpfValido, isDataNascimentoValida } from "../../validators/cpf.validator";
 import permissoesUsuarioEnum, {
     PermissoesUsuarioEnum,
 } from "../../enums/usuarios_permissoes.enum";
@@ -22,6 +23,20 @@ const UserSchema = z.object({
     email: z.string().nonempty("É necessário prover um email."),
     senha: z.string().nonempty("É necessário prover uma senha."),
     ativo: z.boolean().default(true),
+    // efetivo: a permanent employee (vs. temporary/contractor)
+    efetivo: z.boolean().default(false),
+    // kept in the vault, not in usuarios (owner_type "usuario", owner_id = usuarios.id); null clears it
+    cpf: z
+        .string()
+        .refine(isCpfValido, { message: "CPF inválido." })
+        .nullable()
+        .optional(),
+    // YYYY-MM-DD; also kept in the vault
+    dataNascimento: z
+        .string()
+        .refine(isDataNascimentoValida, { message: "A data de nascimento deve ser uma data válida no formato AAAA-MM-DD." })
+        .nullable()
+        .optional(),
 });
 
 // POST /user/register (public): permissoes/ativo in the body are ignored, the service
@@ -38,6 +53,7 @@ export const CreateUserSchema = UserSchema.omit({ id: true }).extend({
 // PUT /user/:id (ADM): id comes from the URL; senha only when it's being changed
 export const UpdateUserSchema = UserSchema.omit({ id: true, senha: true }).extend({
     ativo: z.boolean().optional(),
+    efetivo: z.boolean().optional(),
     senha: z.string().nonempty("A nova senha não pode ser vazia.").optional(),
 });
 

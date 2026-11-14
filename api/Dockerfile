@@ -34,6 +34,10 @@ COPY --from=build /app/api/dist ./dist
 COPY api/package.json ./
 # The database CA is not baked in: API_ENV=production reads it from DATABASE_CA_CERT, a secret file the
 # host mounts (e.g. /etc/secrets/prod-ca-2021.crt on Render).
+# Secrets aren't baked in either: JWT_SECRET and the service tokens come from secrets/secrets.env (env_file),
+# the mTLS certificates for the importer and the vault from /run/secrets (docker-compose.yml).
 USER node
 EXPOSE 3333
+# a TCP connect to the API's port (no curl in this image)
+HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=6   CMD ["node", "-e", "require('net').connect(process.env.PORT||3333,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
 CMD ["node", "dist/api/src/index.js"]

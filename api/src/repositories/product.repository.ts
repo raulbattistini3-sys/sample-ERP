@@ -235,6 +235,24 @@ class ProductRepository implements IProductRepository {
     }
   }
 
+  // Activates or deactivates many products in one transaction, audited like the one-by-one action. Returns
+  // the ids that exist (an id that doesn't is left out, not an error: someone may have deleted it).
+  async setAtivoEmLote(ids: string[], ativo: boolean, usuarioId: string): Promise<Either<BaseAppError, string[]>> {
+    try {
+      const existentes = await this.db.transaction(async (tx: DrizzleDB) => {
+        const rows: { id: string }[] = await tx
+          .select({ id: produtos.id })
+          .from(produtos)
+          .where(sql`${produtos.id} = any(${sql.param(ids)}::uuid[])`);
+        await this.updateAuditedBulk(tx, rows.map(({ id }) => ({ id, values: { ativo } })), usuarioId);
+        return rows.map(({ id }) => id);
+      });
+      return right(existentes);
+    } catch (error) {
+      return left(new RepositoryError("500", error));
+    }
+  }
+
   // Locks the product row, applies `values` and records the change in the same transaction: an
   // automatic "Alteracao" auditoria, unless a manual one already covers it (see audit_trail.repository).
   // Nothing is recorded when no field actually changed. false = no such product (or inactive and

@@ -4,9 +4,9 @@ package importador.v1;
 
 import "google/protobuf/timestamp.proto";
 
-// Imports products from a spreadsheet (the Sample_Spreadsheet_AddProducts.xlsx layout).
-// The API uploads the file and gets an importacao back right away; the rows are parsed,
-// validated and written in the background, and the caller polls ObterImportacao for the outcome.
+// Imports a spreadsheet of products (the Sample_Spreadsheet_AddProducts.xlsx layout) or of clients
+// (written to HubSpot). The API uploads the file and gets an importacao back right away; the rows are
+// parsed, validated and written in the background, and the caller polls ObterImportacao for the outcome.
 service ImportadorService {
   // Queues a .xlsx or .csv and returns the import with status PENDENTE, without waiting for it to run.
   // INVALID_ARGUMENT: empty file, missing nome_arquivo or usuario_id, unsupported format or invalid UUID.
@@ -15,6 +15,26 @@ service ImportadorService {
   // Returns an import's current state. Poll it until the status is CONCLUIDA, REJEITADA or FALHOU.
   // INVALID_ARGUMENT: id isn't a UUID. NOT_FOUND: no such import.
   rpc ObterImportacao(ObterImportacaoRequest) returns (ObterImportacaoResponse);
+  // A page of a client import's row errors, in the order they were found, after the seq depois_de (0 for
+  // the first page). A caller that already shows some keeps them and asks only for the ones after its last
+  // seq. Product imports keep theirs in Importacao.erros instead.
+  // INVALID_ARGUMENT: id isn't a UUID. NOT_FOUND: no such import.
+  rpc ListarErros(ListarErrosRequest) returns (ListarErrosResponse);
+}
+
+// What a spreadsheet holds, which decides how it is read and where it is written.
+enum TipoImportacao {
+  // read as PRODUTOS, for callers from before clients could be imported
+  TIPO_IMPORTACAO_UNSPECIFIED = 0;
+  // products, written to the database in one transaction: all rows or none
+  TIPO_IMPORTACAO_PRODUTOS = 1;
+  // clients (Nome, Sobrenome, E-mail, Telefone, Empresa, Cargo, Senioridade, Decisor), created or updated
+  // in HubSpot by e-mail in batches of 100; a row that fails is reported and the others go on
+  TIPO_IMPORTACAO_CLIENTES = 2;
+  // companies (Nome, Domínio, Setor, Telefone, Site, Cidade, Estado, País, Descrição, E-mail SAC), found in
+  // HubSpot by name (the oldest with it) and updated, or created; in batches like CLIENTES. The SAC e-mail
+  // is kept in the ERP (empresa_contatos_erp), not in HubSpot
+  TIPO_IMPORTACAO_EMPRESAS = 3;
 }
 
 // Where an import is. CONCLUIDA, REJEITADA and FALHOU are final.
@@ -24,7 +44,7 @@ enum StatusImportacao {
   STATUS_IMPORTACAO_PENDENTE = 1;
   // a worker holds it
   STATUS_IMPORTACAO_PROCESSANDO = 2;
-  // every row was imported
+  // every row was imported; for CLIENTES and EMPRESAS, every row was gone through (see linhas_falharam)
   STATUS_IMPORTACAO_CONCLUIDA = 3;
   // at least one row was rejected; nothing is written when any row fails, as in POST /products/import
   STATUS_IMPORTACAO_REJEITADA = 4;
@@ -34,12 +54,13 @@ enum StatusImportacao {
 
 // An upload to queue.
 message IniciarImportacaoRequest {
-  // the .xlsx or .csv contents. The whole message must fit gRPC's 4 MB default, which the server doesn't raise
+  // the .xlsx or .csv contents. The server and the API both accept messages up to 128 MB
   bytes planilha = 1;
   // original name; its extension decides how the file is read
   string nome_arquivo = 2;
   // who uploaded it, for the auditoria
   string usuario_id = 3;
+  TipoImportacao tipo = 4;
 }
 
 message IniciarImportacaoResponse {
@@ -52,6 +73,32 @@ message ObterImportacaoRequest {
 
 message ObterImportacaoResponse {
   Importacao importacao = 1;
+}
+
+message ListarErrosRequest {
+  string id = 1;
+  // the last seq the caller already has; 0 for the first page
+  int64 depois_de = 2;
+  // 1 to 5000; 0 means 500
+  int32 limite = 3;
+}
+
+message ListarErrosResponse {
+  repeated ErroImportacao erros = 1;
+}
+
+// One row's problem in a client import.
+message ErroImportacao {
+  // increasing within an import; page with ListarErrosRequest.depois_de
+  int64 seq = 1;
+  // spreadsheet row number, header included
+  int32 linha = 2;
+  // column, when the problem is one field
+  string campo = 3;
+  // the row's e-mail when it had one (CLIENTES), or the company's name (EMPRESAS), so the user finds the row
+  // without opening the sheet
+  string email = 4;
+  string mensagem = 5;
 }
 
 // One import and how it went.
@@ -73,6 +120,13 @@ message Importacao {
   // of linhas_importadas, how many created products and how many updated existing ones
   int32 linhas_criadas = 10;
   int32 linhas_atualizadas = 11;
+  TipoImportacao tipo = 12;
+  // CLIENTES and EMPRESAS: rows gone through so far (they move while PROCESSANDO), and of those how many failed
+  int32 linhas_processadas = 13;
+  int32 linhas_falharam = 14;
+  // CLIENTES: companies created in HubSpot because a row named one it didn't have. EMPRESAS: 0 (the
+  // companies created are linhas_criadas)
+  int32 empresas_criadas = 15;
 }
 
 // One problem with one row; a row can have several (one per field)

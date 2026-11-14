@@ -9,9 +9,13 @@ Inventory and audit ERP: products, categorias, usuarios and auditorias, with opt
 | `api/` | REST API: Express 5, TypeScript, PostgreSQL (`pg` + drizzle), pg-boss job queue |
 | `web/` | Web app: React 18, Vite, Tailwind, TanStack Query |
 | `importer/` | Spreadsheet importer: Go, gRPC. Reads `.xlsx`/`.csv` product spreadsheets and saves them in the background, with its job queue in Postgres |
+| `vault/` | Vault: Go. Keeps sensitive data (usuarios' CPF and birth date) encrypted with AES-256-GCM in its own database, reached only by the API over mutual TLS |
+| `secrets/` | `generate.ts`: makes the shared secrets, certificates and vault keys (gitignored output) |
 | `billing/` | Stripe service: Spring Boot, Java 21. Receives Stripe's webhooks and tells the API about paid and failed invoices |
 | `proto/` | gRPC contract between the API and the importer; `buf generate` writes the Go and TypeScript code from it |
 | `docker/postgres/init/` | SQL that creates the database from scratch: `01_schema.sql` (tables, types, indexes) and `02_seed.sql` (categorias + drizzle's migration log) |
+
+See [docs/architecture.md](docs/architecture.md) for a diagram of how the services connect.
 
 Choose how to run it:
 
@@ -32,28 +36,81 @@ cd sample-ERP
 
 ## 1. Docker Compose (raw Postgres)
 
+The services share secrets (JWT key, internal tokens, mutual TLS certificates, the vault's keys) that are
+never committed. Generate them once, then start the stack:
+
 ```bash
-docker compose up --build
+cd secrets && bun install && bun generate.ts && cd ..   # writes secrets/secrets.env, secrets/tls/, secrets/vault/
+docker compose up --build -d
 ```
+
+Only two ports are published on your machine; every other service is reachable only inside the compose network:
 
 | Service | Address |
 | --- | --- |
 | Web | http://localhost:8080 |
 | API | http://localhost:3333 |
-| Postgres | `localhost:5432`, user `postgres`, password `postgres`, database `sample_erp` |
-| Importer (gRPC) | `localhost:50051`, for local tools only (the API reaches it at `importer:50051`) |
-| Billing (optional) | http://localhost:8081, with `--profile billing` |
+| Postgres, importer, vault, vault-db, network, billing | internal only (`db:5432`, `importer:50051`, `vault:8200`, ...) |
 
-On its first start, Postgres runs the scripts in `docker/postgres/init/`, so the database comes up with every table and the categorias already created. Data is kept in the `db-data` volume.
+To look into the database, use the container: `docker compose exec db psql -U postgres sample_erp`.
 
-- Is port 5432 already in use? Start it with `DB_PORT=5433 docker compose up --build`.
-- Optional settings (Resend emails, Jira / HubSpot OAuth) are read from `api/.env` when that file exists. See [Environment variables](#environment-variables).
-- Start over with an empty database: `docker compose down -v`. The init scripts run again on the next `up`.
+On its first start, Postgres runs the scripts in `docker/postgres/init/`, so the database comes up with every table and the categorias already created. Data is kept in the `db-data` volume (ERP) and `vault-data` (vault).
+
+> **Keep your data: don't run `docker compose down`.** Stop and start the stack with `docker compose stop` /
+> `docker compose start` (or `up -d` after a change). `down -v` deletes the `db-data` and `vault-data`
+> volumes, which drops the whole database, and even a plain `down` removes the containers. If you do want a
+> clean start, back up first: `docker compose exec db pg_dump -U postgres sample_erp > backup.sql`.
+> Keep `secrets/vault/` too: without `kek-1.key` the vault's records can't be decrypted.
+
+- Optional settings (Resend emails, Jira / HubSpot OAuth) are read from `api/.env` when that file exists. See [Environment variables](#environment-variables). The secrets from `secrets/secrets.env` always win over it.
 - The init scripts only run on an empty volume, so on every `up` the one-shot `migrate` service applies any [migrations](#database-migrations) the database hasn't seen before the API and the importer start. A `db-data` volume from an older checkout catches up by itself; if a migration fails (for example 0012 finding repeated SKUs), its log says why and the API and importer wait for it.
-- Port 50051 already in use? Start it with `IMPORTER_PORT=50052 docker compose up --build`.
-- Port 8081 already in use? Start billing with `BILLING_HOST_PORT=8082 docker compose --profile billing up --build`.
+- Billing and a Stripe CLI that forwards webhooks to it start with `docker compose --profile billing up --build -d` (set `SANDBOX_STRIPE_API_KEY` in `billing/.env`).
+- After `bun generate.ts --rotate ...`, recreate the services that read it: `docker compose up -d --force-recreate api importer vault`.
 
 Then [create the first user](#create-the-first-user).
+
+## Whole stack in one terminal (development)
+
+After the database and the `.env` files below are set up, one command starts everything as child processes of
+one terminal, every line prefixed with the service's name:
+
+```bash
+go run ./network/cmd/network dev
+```
+
+```text
+network ── web       bun run dev                    (web/)
+        └─ api       bun run dev                    (api/)
+             ├─ importer  go run ./cmd/importer     (importer/)
+             ├─ vault     go run ./cmd/vault serve  (vault/)
+             └─ billing   ./mvnw spring-boot:run -e (billing/)
+```
+
+The network service runs in that process. It starts the web app and the API, and the API starts the importer, the
+vault and billing itself (`API_CHILDREN`, see `api/.env.example`). Ctrl+C stops the API first, which stops its own
+children (SIGTERM, 20 s to finish), then the web app and the network. Whatever is still running after 30 s is
+killed with everything it started (on Windows the children also sit in a job object that dies with the
+supervisor). If the web app or the API exits, the rest is stopped too. `--no-web` / `--no-api` leave one out, and
+`DEV_API_CHILDREN=importer` (or empty) narrows what the API starts. Set `NETWORK_TOKEN` in the shell to have every
+child join the network. The Windows launcher and Docker Compose don't use this: there the launcher or Docker
+supervises the services.
+
+### Trusting the local CA
+
+The web app and the API serve HTTPS with TLS 1.3 only, with certificates from `secrets/tls/` (signed by
+`secrets/tls/ca.crt`). Import that CA once so the browser trusts `https://localhost:5173`, `https://localhost:8080`
+and `https://localhost:3333`:
+
+```bash
+# Windows (current user; Chrome and Edge use it)
+certutil -user -addstore Root secrets\tls\ca.crt
+# macOS
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain secrets/tls/ca.crt
+# Linux (Debian/Ubuntu); Firefox: Settings > Certificates > Import
+sudo cp secrets/tls/ca.crt /usr/local/share/ca-certificates/sample-erp.crt && sudo update-ca-certificates
+```
+
+The CA key stays in `secrets/tls/ca.key` on your machine. Remove the CA from the store when you no longer need it.
 
 ## 2. Local with raw Postgres
 
@@ -78,13 +135,19 @@ cp .env.example .env
 bun install
 ```
 
+Generate the shared secrets once (see [Shared secrets](#shared-secrets)):
+
+```bash
+cd secrets && bun install && bun generate.ts && cd ..
+```
+
 Edit `api/.env`:
 
 ```dotenv
 # development: a plain connection (a local Postgres has no TLS); see "Database TLS" below
 API_ENV=development
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/sample_erp
-JWT_SECRET=<any long random string>
+JWT_SECRET=<from secrets/secrets.env, see "Shared secrets">
 ```
 
 ```bash
@@ -154,7 +217,7 @@ Follow [2.2](#22-api) and [2.3](#23-web), but in `api/.env` use the Supabase con
 ```dotenv
 API_ENV=production
 DATABASE_URL=postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
-JWT_SECRET=<any long random string>
+JWT_SECRET=<from secrets/secrets.env, see "Shared secrets">
 ```
 
 #### Database TLS
@@ -185,9 +248,9 @@ missing or invalid variable and exits with status 1.
 
 | Service | Always required | Also required in production |
 | --- | --- | --- |
-| API | `API_ENV`, `DATABASE_URL`, `JWT_SECRET` | `CORS_ORIGINS`, `WEB_URL`, a readable CA |
+| API | `API_ENV`, `DATABASE_URL`, `JWT_SECRET` | `CORS_ORIGINS`, `WEB_URL`, `API_TLS_*`, a readable CA |
 | Importer | `IMPORTER_ENV`, `DATABASE_URL` | a readable CA |
-| Billing | `BILLING_ENV`, `JDBC_DATABASE_URL`, `SANDBOX_STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET`, `ERP_API_URL`, `BILLING_INTERNAL_TOKEN` | a readable CA |
+| Billing | `BILLING_ENV`, `JDBC_DATABASE_URL`, `SANDBOX_STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET`, `ERP_API_URL`, `BILLING_TLS_CERT`, `BILLING_TLS_KEY`, `BILLING_TLS_CA` | a readable CA |
 | Web (`vite`, `vite build`) | `VITE_API_URL`, an http(s) URL | |
 
 In production, `sslmode=disable` (or any other mode that doesn't verify the certificate) in the database URL is
@@ -211,15 +274,15 @@ Create `billing/.env` from `billing/.env.example`:
 | `STRIPE_WEBHOOK_SECRET` | `whsec_...`, printed by `stripe listen` |
 | `JDBC_DATABASE_URL` | The database, with credentials in the URL. On Supabase use the **session pooler (port 5432)**: the service refuses to start on the transaction pooler (6543) |
 | `ERP_API_URL` | The API, using an IP and not `localhost` |
-| `BILLING_INTERNAL_TOKEN` | The same value as in `api/.env`. Without it the API answers 401 |
+| `BILLING_TLS_CERT`, `BILLING_TLS_KEY`, `BILLING_TLS_CA` | Billing's certificate and the internal CA (`secrets/tls/`). API and billing talk over **mutual TLS, TLS 1.3**, both ways: `/internal/**` on billing answers only the API's certificate (CN `api`), `/internal/billing` on the API only billing's (CN `billing`). No shared token |
 
-With Docker, `JDBC_DATABASE_URL`, `ERP_API_URL` and `BILLING_INTERNAL_TOKEN` come from `docker-compose.yml`, so only the Stripe values matter:
+With Docker, `JDBC_DATABASE_URL`, `ERP_API_URL` and the certificates come from `docker-compose.yml`, so only the Stripe values matter:
 
 ```bash
 docker compose --profile billing up --build
 ```
 
-Without Docker, set `BILLING_INTERNAL_TOKEN` in `api/.env` too, restart the API (`.env` changes don't trigger a reload), and start the service from its folder, because that's where it looks for `.env`:
+Without Docker, set `API_TLS_*` in `api/.env` (see `api/.env.example`), restart the API (`.env` changes don't trigger a reload), and start the service from its folder, because that's where it looks for `.env` (or let the API start it, see [Whole stack in one terminal](#whole-stack-in-one-terminal-development)):
 
 ```bash
 cd billing
@@ -232,8 +295,8 @@ Then forward Stripe's events, on your machine in both cases:
 npm install -g @stripe/cli
 stripe login
 stripe listen --thin-events "v1.invoice.paid,v1.invoice.payment_failed" \
-  --forward-thin-to localhost:8081/webhooks/stripe \
-  --forward-thin-connect-to localhost:8081/webhooks/stripe
+  --forward-thin-to https://localhost:8081/webhooks/stripe \
+  --forward-thin-connect-to https://localhost:8081/webhooks/stripe --skip-verify
 stripe trigger invoice.paid --override customer:email=delivered@resend.dev
 ```
 
@@ -266,11 +329,13 @@ To add a dependency, declare it as a `private final` field. To add a collaborato
 | From | To | Docker | On your machine |
 | --- | --- | --- | --- |
 | Browser | API | `http://localhost:3333` | `VITE_API_URL` |
-| API | Importer (gRPC) | `importer:50051` | `IMPORTER_GRPC_URL`, for example `127.0.0.1:50051` |
+| API | Importer (gRPC, mTLS) | `importer:50051` | `IMPORTER_GRPC_URL`, for example `127.0.0.1:50051` |
+| API | Vault (HTTPS, mTLS) | `https://vault:8200` | `VAULT_URL`, for example `https://127.0.0.1:8200` |
+| Vault | its Postgres | `vault-db:5432` | `VAULT_DATABASE_URL` |
 | API, importer | Postgres | `db:5432` | `DATABASE_URL` |
 | Billing | API | `http://api:3333` | `ERP_API_URL`, for example `http://127.0.0.1:3333` |
 | Billing | Postgres | `db:5432` | `JDBC_DATABASE_URL` |
-| Stripe CLI | Billing | `localhost:8081` | `localhost:8081` |
+| Stripe CLI | Billing | `billing:8081` (the `stripe` service) | `localhost:8081` |
 
 - Inside Docker, `localhost` is the container itself, so services use each other's names. Each service binds `0.0.0.0`.
 - On your machine, use IPs between services. `APP_HOST=localhost` can bind the API to IPv6 `::1` only, while Java resolves `localhost` to `127.0.0.1` and fails with a connection error. Keep `APP_HOST=127.0.0.1`, or set `ERP_API_URL=http://[::1]:<port>` if you keep `localhost`.
@@ -323,7 +388,7 @@ In the API docs, call `POST /user/login`, then paste the token under **Authorize
 | `API_ENV` | yes | `production` (verified TLS) or `development` (plain). See [Database TLS](#database-tls) |
 | `DATABASE_URL` | yes | Postgres connection string |
 | `DATABASE_CA_CERT` | no | CA certificate for the database's TLS (default: `prod-ca-2021.crt` from the repo root, in production) |
-| `JWT_SECRET` | yes | Signs login tokens |
+| `JWT_SECRET` | yes | HS256 key that signs login tokens (jose, `iss` sample-erp-api, `aud` sample-erp-web); 32+ characters, from `secrets/secrets.env` |
 | `PORT` | no | API port (default `10000`; `.env.example` uses `3333`) |
 | `APP_HOST` | no | Bind address (default `0.0.0.0`; ignored on Render). See [Hosts and ports](#hosts-and-ports) |
 | `CORS_ORIGINS` | no | Web origins allowed to call the API, comma-separated (default `http://localhost:5173`) |
@@ -331,8 +396,44 @@ In the API docs, call `POST /user/login`, then paste the token under **Authorize
 | `RESEND_API_KEY`, `EMAIL_FROM` | no | "Forgot password" emails through [Resend](https://resend.com) |
 | `INTEGRATIONS_ENCRYPTION_KEY`, `API_PUBLIC_URL`, `JIRA_*`, `HUBSPOT_*` | no | Jira / HubSpot integrations |
 | `IMPORTER_GRPC_URL` | no | Go spreadsheet importer address (`host:port`). Empty: the API runs product imports itself |
-| `BILLING_INTERNAL_TOKEN` | no | Lets the [billing service](#billing-service-stripe) call `/internal/billing`. Unset: every call gets 401 |
+| `IMPORTER_TLS_CA`, `IMPORTER_TLS_CERT`, `IMPORTER_TLS_KEY` | in production | Mutual TLS to the importer: the CA, and the API's client certificate and key (`secrets/tls/`). `IMPORTER_TLS_SERVER_NAME` (default `importer`) is the name the importer's certificate must hold |
+| `API_TLS_CERT`, `API_TLS_KEY`, `API_TLS_CA` | in production | HTTPS with TLS 1.3 only (`secrets/tls/api.*`); also the client certificate towards the importer, the vault and billing, and the CA that checks billing's certificate. Unset: plain HTTP and no billing |
+| `API_CHILDREN` | no | Development: `importer,vault,billing` (any subset) run as the API's child processes |
 | `VITE_API_URL` (`web/.env`) | yes | API address as the browser reaches it |
+
+## Shared secrets
+
+`secrets/generate.ts` (Bun, [jose](https://github.com/panva/jose) and `@peculiar/x509`) writes every secret the services share, each one random and used for one boundary only:
+
+| File | Used as |
+| --- | --- |
+| `secrets/jwt_secret` | `JWT_SECRET`: an HS256 key (256 bits) for the login tokens |
+| `secrets/network_token` | `NETWORK_TOKEN`, in every service ([format](#network_token-format)) |
+| `secrets/vault_token`, `vault_admin_token` | `VAULT_TOKEN` for the API; the vault only gets their SHA-256 (`VAULT_TOKEN_SHA256`, `VAULT_ADMIN_TOKEN_SHA256`) |
+| `secrets/vault_db_password` | `VAULT_DB_PASSWORD`, the vault database's password |
+| `secrets/vault/` | `kek-1.key` (key-encryption key) and `index.key` (CPF blind index), mounted read-only into the vault; made once, never rotated by the script. Back them up |
+| `secrets/secrets.env` | all of the above as `KEY=value`; docker compose loads it into each service |
+| `secrets/tls/` | `ca.crt`, `importer.{crt,key}`, `vault.{crt,key}` (servers, names `importer`/`vault`, `localhost`, `127.0.0.1`) `api.{crt,key}` (server + client, names `api`, `localhost`, `127.0.0.1`), `billing.{crt,key}` (server + client) and `web.{crt,key}` (the Vite dev server and nginx). TLS 1.3 for browser -> web and browser -> api; mutual TLS for api -> importer, api -> vault and api <-> billing |
+
+```bash
+cd secrets
+bun install
+bun generate.ts                        # writes what's missing, keeps the rest
+bun generate.ts --rotate jwt,tls       # new values for some (jwt, network, vault, tls)
+bun generate.ts --force                # new values for all
+```
+
+Everything in `secrets/` except the script is gitignored. Rotating `jwt` signs everyone out; after rotating `network` or `tls`, restart every service that uses it.
+
+### NETWORK_TOKEN format
+
+`NETWORK_TOKEN` is 64 lowercase hex characters: the SHA-256 of 32 random bytes, the same value in every service (the network service rejects anything under 32 characters). To make one, or check one you have:
+
+```bash
+cd secrets
+bun run network-token                     # prints NETWORK_TOKEN=<64 hex> and where to paste it
+bun run network-token --check <value>     # says whether a value has the expected format
+``` Passwords are hashed with Argon2id (19 MiB, 2 passes); bcrypt hashes from before still sign in and are rehashed on that sign-in.
 
 ## Database migrations
 

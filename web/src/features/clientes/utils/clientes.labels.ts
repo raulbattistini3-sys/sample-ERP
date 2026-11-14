@@ -25,3 +25,6 @@ const senioridades: Record<string, string> = {
 
 export const papelLabel = (papel: string) => papeis[papel] ?? papel;
 export const senioridadeLabel = (senioridade: string | null) => (senioridade ? (senioridades[senioridade] ?? senioridade) : "—");
+
+// highest first, as the form's options
+export const SENIORIDADE_OPCOES = Object.entries(senioridades).map(([value, label]) => ({ value, label }));

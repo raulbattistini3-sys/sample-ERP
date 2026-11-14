@@ -19,9 +19,9 @@
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import bcrypt from "bcrypt";
 import { Pool, PoolClient } from "pg";
 import { databaseConnection } from "../src/configs/database_connection";
+import { hashPassword } from "../src/utils/helpers/password.util";
 import {
    DIA, EMAIL_DOMAIN, ICMS_PADRAO, SENHA_DEMO, SKU_PREFIX, centavos, criarGerador, precoDeVitrine,
 } from "../src/fake_data/gerador";
@@ -109,7 +109,7 @@ async function semear(client: PoolClient) {
    await client.query("begin");
 
    // usuarios
-   const hash = await bcrypt.hash(SENHA_DEMO, 10); // one hash for all: they share the demo password
+   const hash = await hashPassword(SENHA_DEMO); // one hash for all: they share the demo password
    const usuarios = Array.from({ length: USUARIOS }, (_, i) => {
       const u = g.usuario(i + 1, `s${SEED}`);
       return [randomUUID(), u.nome, u.permissoes, u.email, hash, u.ativo];

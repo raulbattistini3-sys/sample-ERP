@@ -1,0 +1,7 @@
+# For vault/Dockerfile only (context = repo root): go.mod, go.sum and vault/, nothing else.
+*
+!go.mod
+!go.sum
+!vault/
+vault/.env
+vault/**/*_test.go

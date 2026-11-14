@@ -2,11 +2,12 @@
 //!
 //! bin/
 //!   sample-erp.exe              this launcher, with the web app, SQL scripts and migrations embedded
-//!   services/                   importer.exe, api.exe, billing/ (runtime/ + billing.jar)
+//!   services/                   network.exe, importer.exe, api.exe, billing/ (runtime/ + billing.jar)
 //!   config/launcher.env         ports and options (optional, see launcher.env.example)
 //!   config/api.env              the API's optional secrets: Resend, Jira/HubSpot OAuth, ... (optional)
 //!   config/billing.env          Stripe keys; billing only starts when this file exists
-//!   data/                       created on first launch: Postgres, generated secrets
+//!   data/                       created on first launch: Postgres, generated secrets (secrets.env),
+//!                               the api <-> importer mTLS certificates (certs/)
 
 use anyhow::{Context, Result, bail};
 use rand::{Rng, distr::Alphanumeric};
@@ -48,6 +49,16 @@ impl Paths {
         self.services.join(format!("api{EXE}"))
     }
 
+    /// The network service (network/, Go): service registry plus the public gateway.
+    pub fn network(&self) -> PathBuf {
+        self.services.join(format!("network{EXE}"))
+    }
+
+    /// The vault (vault/, Go): the encrypted CPF and birth dates, in its own database.
+    pub fn vault(&self) -> PathBuf {
+        self.services.join(format!("vault{EXE}"))
+    }
+
     pub fn importer(&self) -> PathBuf {
         self.services.join(format!("importer{EXE}"))
     }
@@ -70,7 +81,10 @@ impl Paths {
 pub struct Secrets {
     pub db_password: String,
     pub jwt_secret: String,
-    pub billing_token: String,
+    /// Signs the services' calls to the network registry (NETWORK_TOKEN).
+    pub network_token: String,
+    /// The API's bearer token for the vault (VAULT_TOKEN); the vault is given only its SHA-256.
+    pub vault_token: String,
 }
 
 pub struct Config {
@@ -79,6 +93,10 @@ pub struct Config {
     pub db_port: u16,
     pub importer_port: u16,
     pub billing_port: u16,
+    /// The network registry (control) port, loopback only.
+    pub network_port: u16,
+    /// The vault's HTTPS port, loopback only.
+    pub vault_port: u16,
     pub import_workers: String,
     pub open_browser: bool,
     pub gateway: GatewayConfig,
@@ -126,6 +144,8 @@ impl Config {
             db_port: port("ERP_DB_PORT", 5433)?,
             importer_port: port("ERP_IMPORTER_PORT", 50051)?,
             billing_port: port("ERP_BILLING_PORT", 8081)?,
+            network_port: port("ERP_NETWORK_PORT", 7070)?,
+            vault_port: port("ERP_VAULT_PORT", 8200)?,
             import_workers: vars.get("ERP_IMPORT_WORKERS").cloned().unwrap_or_else(|| "2".into()),
             open_browser: flag(&vars, "ERP_OPEN_BROWSER", true),
             gateway: GatewayConfig {
@@ -137,8 +157,8 @@ impl Config {
                 burst: number(&vars, "ERP_BURST", 40.0)? as u32,
                 trust_proxy: flag(&vars, "ERP_TRUST_PROXY", false),
                 max_body_mb: number(&vars, "ERP_MAX_BODY_MB", 1.0)? as usize,
-                // the API takes spreadsheets up to 15 MB (api/src/middlewares/upload.middleware.ts)
-                max_import_mb: number(&vars, "ERP_MAX_IMPORT_MB", 16.0)? as usize,
+                // product spreadsheets up to 15 MB, clientes/empresas up to 120 MB (api/src/middlewares/upload.middleware.ts)
+                max_import_mb: number(&vars, "ERP_MAX_IMPORT_MB", 128.0)? as usize,
                 tls: match (vars.get("ERP_TLS_CERT"), vars.get("ERP_TLS_KEY")) {
                     (Some(c), Some(k)) if !c.is_empty() && !k.is_empty() => Some((PathBuf::from(c), PathBuf::from(k))),
                     (None, None) => None,
@@ -159,6 +179,16 @@ impl Config {
         format!(
             "postgresql://postgres:{}@127.0.0.1:{}/sample_erp?sslmode=disable",
             self.secrets.db_password, self.db_port
+        )
+    }
+
+    /// The vault's own database, in the same embedded cluster (created on first launch)
+    pub fn vault_database_url(&self) -> String {
+        format!(
+            "postgresql://postgres:{}@127.0.0.1:{}/{}?sslmode=disable",
+            self.secrets.db_password,
+            self.db_port,
+            crate::db::VAULT_DATABASE
         )
     }
 
@@ -195,11 +225,14 @@ pub fn read_env_file(path: &Path) -> Result<HashMap<String, String>> {
         .collect()
 }
 
+// BILLING_INTERNAL_TOKEN is gone: api <-> billing is mutual TLS (data/certs); an old line is ignored
+const SECRET_KEYS: [&str; 4] = ["POSTGRES_PASSWORD", "JWT_SECRET", "NETWORK_TOKEN", "VAULT_TOKEN"];
+
 fn load_secrets(data: &Path) -> Result<Secrets> {
     let path = data.join("secrets.env");
     let mut vars = read_env_file(&path)?;
     let mut changed = false;
-    for key in ["POSTGRES_PASSWORD", "JWT_SECRET", "BILLING_INTERNAL_TOKEN"] {
+    for key in SECRET_KEYS {
         if !vars.contains_key(key) {
             if key == "POSTGRES_PASSWORD" && data.join("postgres").join("data").exists() {
                 bail!(
@@ -214,7 +247,7 @@ fn load_secrets(data: &Path) -> Result<Secrets> {
     }
     if changed {
         fs::create_dir_all(data)?;
-        let body: String = ["POSTGRES_PASSWORD", "JWT_SECRET", "BILLING_INTERNAL_TOKEN"]
+        let body: String = SECRET_KEYS
             .iter()
             .map(|k| format!("{k}={}\n", vars[*k]))
             .collect();
@@ -225,10 +258,13 @@ fn load_secrets(data: &Path) -> Result<Secrets> {
     Ok(Secrets {
         db_password: vars.remove("POSTGRES_PASSWORD").unwrap(),
         jwt_secret: vars.remove("JWT_SECRET").unwrap(),
-        billing_token: vars.remove("BILLING_INTERNAL_TOKEN").unwrap(),
+        network_token: vars.remove("NETWORK_TOKEN").unwrap(),
+        vault_token: vars.remove("VAULT_TOKEN").unwrap(),
     })
 }
 
+/// 43 alphanumeric characters: about 256 bits, the size of an HS256 key (what secrets/generate.ts makes
+/// for docker compose), and safe unquoted in a .env file or a connection string.
 fn random_secret() -> String {
-    rand::rng().sample_iter(&Alphanumeric).take(40).map(char::from).collect()
+    rand::rng().sample_iter(&Alphanumeric).take(43).map(char::from).collect()
 }

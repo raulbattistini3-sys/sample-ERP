@@ -22,7 +22,7 @@ class UsuarioController extends BaseController {
   };
 
   getById = async (req: Request, res: Response, next: NextFunction) => {
-    const result = await this.usuarioService.findUserById(req.params.id as string);
+    const result = await this.usuarioService.findUserById(req.params.id as string, req.user);
     if (result.isLeft()) {
       return this.fail(req, next, result.value);
     }
@@ -36,7 +36,7 @@ class UsuarioController extends BaseController {
     if (filters.isLeft()) {
       return this.fail(req, next, filters.value);
     }
-    const result = await this.usuarioService.getUsers(page, amount, filters.value);
+    const result = await this.usuarioService.getUsers(page, amount, filters.value, req.user);
     if (result.isLeft()) {
       return this.fail(req, next, result.value);
     }
@@ -68,8 +68,8 @@ class UsuarioController extends BaseController {
   };
 
   // behind AuthMiddleware.authenticate, so req.user is the freshly loaded, active usuario
-  refreshToken = (req: Request, res: Response) => {
-    return res.status(200).json(this.usuarioService.refreshToken(req.user!, req.sessaoVersao!));
+  refreshToken = async (req: Request, res: Response) => {
+    return res.status(200).json(await this.usuarioService.refreshToken(req.user!, req.sessaoVersao!));
   };
 
   changePassword = async (req: Request, res: Response, next: NextFunction) => {

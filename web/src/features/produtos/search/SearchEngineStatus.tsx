@@ -1,14 +1,12 @@
 import type { LocalRun } from "./useLocalProducts";
+import { SHOW_SEARCH_TIMINGS } from "../../../lib/ambiente";
 
 type Props = {
   mode: "server" | "loading" | "local";
   run: LocalRun | null;
 };
 
-// VITE_SEARCH_TIMINGS=true|false; unset: on with the dev server (`vite`), off in builds (`vite build`)
-const flag = import.meta.env.VITE_SEARCH_TIMINGS?.trim().toLowerCase();
-const SHOW_SEARCH_TIMINGS = flag === "true" ? true : flag === "false" ? false : import.meta.env.DEV;
-
+// SHOW_SEARCH_TIMINGS: VITE_SEARCH_TIMINGS=true|false, unset: on in a dev.* environment (lib/ambiente.ts)
 const count = new Intl.NumberFormat("pt-BR");
 const ms = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
 const PLACE = { main: "nesta aba", worker: "em segundo plano" } as const;

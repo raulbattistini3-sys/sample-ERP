@@ -33,7 +33,8 @@ export type ResultadoImportacao = {
 
 // planilha is left out on purpose: only reivindicar needs the bytes
 const COLUNAS = sql.raw(`id, status, nome_arquivo, total_linhas, linhas_importadas, linhas_criadas,
-  linhas_atualizadas, erros, coalesce(mensagem, '') as mensagem, criada_em, finalizada_em`);
+  linhas_atualizadas, erros, coalesce(mensagem, '') as mensagem, criada_em, finalizada_em, tipo,
+  linhas_processadas, linhas_falharam, empresas_criadas`);
 
 const iso = (value: string | Date | null) => (value === null ? null : new Date(value).toISOString());
 
@@ -49,6 +50,10 @@ const toDto = (r: any): ImportacaoDto => ({
   mensagem: r.mensagem,
   criada_em: iso(r.criada_em),
   finalizada_em: iso(r.finalizada_em),
+  tipo: r.tipo ?? "produtos",
+  linhas_processadas: r.linhas_processadas ?? 0,
+  linhas_falharam: r.linhas_falharam ?? 0,
+  empresas_criadas: r.empresas_criadas ?? 0,
 });
 
 class ImportacaoRepository {
@@ -74,7 +79,8 @@ class ImportacaoRepository {
       set status = 'processando', iniciada_em = now(), tentativas = tentativas + 1
       where id = (
         select id from importacoes
-        where status = 'pendente'
+        -- client spreadsheets need the Go importer (it writes them to HubSpot); this worker only does products
+        where status = 'pendente' and tipo = 'produtos'
         order by criada_em
         for update skip locked
         limit 1
@@ -115,7 +121,7 @@ class ImportacaoRepository {
           iniciada_em = case when tentativas >= ${maxTentativas} then iniciada_em end,
           finalizada_em = case when tentativas >= ${maxTentativas} then now() end,
           planilha = case when tentativas >= ${maxTentativas} then null else planilha end
-        where status = 'processando' and iniciada_em < now() - make_interval(secs => ${prazoSeconds})
+        where status = 'processando' and tipo = 'produtos' and iniciada_em < now() - make_interval(secs => ${prazoSeconds})
         returning status
       )
       select count(*) filter (where status = 'pendente')::int as devolvidas from travadas`);

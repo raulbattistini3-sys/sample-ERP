@@ -155,6 +155,48 @@
       "when": 1792650822121,
       "tag": "0021_produtos_trgm_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1792660822121,
+      "tag": "0022_clientes_erp",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794571200000,
+      "tag": "0023_empresas_marcacoes_cc",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794657600000,
+      "tag": "0024_importacao_clientes",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794744000000,
+      "tag": "0025_importacao_empresas",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794830400000,
+      "tag": "0026_auditorias_agendadas_envios_externos",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1794916800000,
+      "tag": "0027_usuarios_efetivo",
+      "breakpoints": true
     }
   ]
 }

@@ -16,7 +16,7 @@ export type StripeConexao = {
   erro: string | null;
 };
 
-export type NovaCobranca = { clienteIds: string[]; descricao: string; valor: number; vencimentoDias: number };
+export type NovaCobranca = { clienteIds: string[]; descricao: string; valor: number; vencimentoDias: number; cc: string[]; cco: string[] };
 
 export type ResultadoCobranca = {
   clienteId: string;
@@ -28,6 +28,24 @@ export type ResultadoCobranca = {
   vencimento: string | null;
   erro: string | null;
   emailEnviado: boolean;
+  semCopias?: boolean; // the e-mail went to the client but the provider refused the CC/CCO (e.g. Resend test mode)
+  notaNoHubspot?: boolean; // the note on the client's HubSpot timeline
+  whatsapp?: WhatsappStatus | null;
+};
+
+export type WhatsappStatus = "enviado" | "ja_enviado" | "sem_telefone" | "desligado" | "falhou";
+
+// the backfill of HubSpot timeline notes for invoices billed before the notes existed
+export type LinhaDoTempo = {
+  rodando: boolean;
+  iniciadaEm: string | null;
+  terminadaEm: string | null;
+  faturas: number;
+  notas: number;
+  pagas: number;
+  semCliente: number;
+  erros: string[];
+  whatsappConfigurado: boolean;
 };
 
 export type CobrancaEmitida = { resultados: ResultadoCobranca[]; emissorNotificado: boolean; erroEmailEmissor: string | null };
@@ -44,11 +62,37 @@ export type FaturaRecente = {
   vencimento: string | null;
   url: string | null;
   emissor: string | null;
+  descricao?: string | null;
+  // when Stripe recorded the payment (or the webhook reported it, for one paid a moment ago)
+  pagaEm?: string | null;
+};
+
+export type PaginaDeFaturas = { faturas: FaturaRecente[]; proxima: string | null };
+
+// what GET /cobrancas/eventos sends when the billing webhook reports a payment
+export type FaturaPagaEvento = {
+  faturaId: string;
+  numero: string | null;
+  valorCentavos: number;
+  email: string;
+  nome: string | null;
+  url: string | null;
+  pagaEm: string;
 };
 
 export const getStripeConexao = () => apiClient.get<StripeConexao>("/integracoes/stripe").then((r) => r.data);
 
 export const emitirCobranca = (payload: NovaCobranca) =>
   apiClient.post<{ data: CobrancaEmitida }>("/cobrancas", payload).then((r) => r.data.data);
+
+export const getLinhaDoTempo = () => apiClient.get<{ data: LinhaDoTempo }>("/cobrancas/linha-do-tempo").then((r) => r.data.data);
+
+export const sincronizarLinhaDoTempo = () =>
+  apiClient.post<{ data: LinhaDoTempo }>("/cobrancas/linha-do-tempo/sincronizar").then((r) => r.data.data);
+
+export const getCobrancasPagas = (pagina: string | null, limite = 50) =>
+  apiClient
+    .get<{ data: PaginaDeFaturas }>("/cobrancas/pagas", { params: { limite, ...(pagina ? { pagina } : {}) } })
+    .then((r) => r.data.data);
 
 export const getCobrancasRecentes = () => apiClient.get<{ data: FaturaRecente[] }>("/cobrancas").then((r) => r.data.data);

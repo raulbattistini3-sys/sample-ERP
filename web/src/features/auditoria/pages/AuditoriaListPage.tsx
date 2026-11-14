@@ -11,6 +11,7 @@ import { FakeDataButton } from "../../../components/FakeDataButton";
 import { useListPage } from "../../../hooks/useListPage";
 import { getApiErrorMessage } from "../../../lib/api-client";
 import { AuditoriaRow, auditoriaColumns } from "../components/columns";
+import { AlteracoesPendentes } from "../components/AlteracoesPendentes";
 import { useAuditorias } from "../hooks/useAuditoria";
 import { useAuditorNames } from "../hooks/useAuditorNames";
 
@@ -50,6 +51,7 @@ export const AuditoriaListPage = () => {
           </>
         }
       />
+      <AlteracoesPendentes />
       <FilterBar active={active} onClear={clear}>
         <MultiSelectFilter label="Ação" options={ACAO_OPTIONS} selected={filters.acao} onChange={(v) => setFilter("acao", v)} />
         {auditorOptions.length > 0 && <MultiSelectFilter label="Auditor" options={auditorOptions} selected={filters.auditor} onChange={(v) => setFilter("auditor", v)} />}

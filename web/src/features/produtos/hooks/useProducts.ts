@@ -1,6 +1,6 @@
 import { ListFilterParams } from "../../../hooks/useListFilters";
 import { useSingleFlightMutation } from "../../../hooks/useSingleFlightMutation";
-import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LAZY_PAGE_SIZE, LIST_PAGE_SIZE } from "../../../lib/pagination";
 import { downloadTextFile } from "../../../lib/csv";
 import { fetchProductsForDownload, productsFileName, productsToCsv } from "../utils/productsSpreadsheet";
@@ -16,6 +16,9 @@ import {
   startProductImport,
   getProductImport,
   isProductImportFinished,
+  executarEmLote,
+  getMarcacoes,
+  AcaoEmLote,
 } from "../api/product.api";
 
 const IMPORT_POLL_MS = 1000;
@@ -56,6 +59,28 @@ export const useUpdateProduct = () => {
   return useSingleFlightMutation({
     mutationFn: updateProduct,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["products"] }),
+  });
+};
+
+export const useMarcacoes = () => useQuery({ queryKey: ["products", "marcacoes"], queryFn: getMarcacoes, staleTime: 60_000 });
+
+// the products of a favourites / "para depois" view, by id (a user's own list, so a few dozen at most)
+export const MAX_MARCADOS = 200;
+export const useProdutosPorIds = (ids: string[]) =>
+  useQueries({
+    queries: ids.slice(0, MAX_MARCADOS).map((id) => ({ queryKey: ["products", id], queryFn: () => getProductById(id), staleTime: 30_000 })),
+  });
+
+export const useProdutoLote = () => {
+  const queryClient = useQueryClient();
+  return useSingleFlightMutation({
+    mutationFn: ({ acao, ids }: { acao: AcaoEmLote; ids: string[] }) => executarEmLote(acao, ids),
+    // inativar/ativar change the list and the local engine's snapshot (both under ["products"]);
+    // marks only change ["products","marcacoes"], but one invalidation keeps it simple
+    onSuccess: (_r, { acao }) =>
+      acao === "inativar" || acao === "ativar"
+        ? queryClient.invalidateQueries({ queryKey: ["products"] })
+        : queryClient.invalidateQueries({ queryKey: ["products", "marcacoes"] }),
   });
 };
 

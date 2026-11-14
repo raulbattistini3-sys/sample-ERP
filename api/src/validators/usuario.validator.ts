@@ -13,6 +13,7 @@ import {
    UpdateUserSchema,
 } from "../utils/schemas/user.schema";
 import BaseValidator from "./base.validator";
+import { isCpfValido, isDataNascimentoValida } from "./cpf.validator";
 
 class UsuarioValidator extends BaseValidator implements IUsuarioValidator {
    constructor() {
@@ -45,6 +46,20 @@ class UsuarioValidator extends BaseValidator implements IUsuarioValidator {
 
    validateLoginPayload(payload: unknown): Either<BaseAppError, void> {
       return this.validateWith(LoginUserSchema, payload);
+   }
+
+   // a CPF with valid check digits (punctuation allowed)
+   validateCpf(cpf: unknown): Either<BaseAppError, void> {
+      if (typeof cpf === "string" && isCpfValido(cpf)) return right(undefined);
+      return left(new BaseAppError("400", ZodErrorStatusEnum.Values.error, false, "CPF inválido."));
+   }
+
+   // a birth date as YYYY-MM-DD, a real date and not in the future
+   validateDataNascimento(data: unknown): Either<BaseAppError, void> {
+      if (typeof data === "string" && isDataNascimentoValida(data)) return right(undefined);
+      return left(
+         new BaseAppError("400", ZodErrorStatusEnum.Values.error, false, "A data de nascimento deve estar no formato AAAA-MM-DD."),
+      );
    }
 
    private validateWith(schema: ZodTypeAny, payload: unknown): Either<BaseAppError, void> {

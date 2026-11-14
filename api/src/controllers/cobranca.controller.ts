@@ -44,6 +44,15 @@ class CobrancaController extends BaseController {
     return res.status(201).json({ data: result.value });
   };
 
+  // GET /cobrancas/pagas?pagina=&limite= (1–100, default 50)
+  pagas = async (req: Request, res: Response, next: NextFunction) => {
+    const pagina = typeof req.query.pagina === "string" && req.query.pagina.length <= 500 ? req.query.pagina : null;
+    const limite = Math.min(100, Math.max(1, Number(req.query.limite) || 50));
+    const result = await this.service.pagas(pagina, limite);
+    if (result.isLeft()) return this.fail(req, next, result.value);
+    return res.status(200).json({ data: result.value });
+  };
+
   recentes = async (req: Request, res: Response, next: NextFunction) => {
     const result = await this.service.recentes();
     if (result.isLeft()) return this.fail(req, next, result.value);

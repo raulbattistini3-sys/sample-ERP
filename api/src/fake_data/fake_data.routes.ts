@@ -11,6 +11,9 @@ import CategoriaValidator from "../validators/categoria.validator";
 import { ValidationError } from "../errors/client_errors/four_xx.error";
 import { authMiddleware } from "../routes/auth_middleware.instance";
 import FakeDataService from "./fake_data.service";
+import { gerarClientes } from "./fake_clientes";
+import { hubspotService } from "../routes/integracao.routes";
+import { clienteService } from "../routes/cliente.routes";
 
 // /dev/fake-data: the web's "Gerar dados fictícios" buttons. routes/index.ts mounts it only with
 // API_ENV=development, so a production API answers 404 here and the web hides the buttons.
@@ -20,6 +23,8 @@ import FakeDataService from "./fake_data.service";
 //   POST /dev/fake-data/usuarios     { quantidade?: 1-200, default 5 }  password senha123
 //   POST /dev/fake-data/categorias   creates whichever of the ten fixed categorias are missing
 //   POST /dev/fake-data/auditorias   { quantidade?: 1-200, default 10 } edits N products and restores them
+//   POST /dev/fake-data/clientes     { quantidade?: 1-200, default 20 } contacts + ~1 company per 4, written
+//                                    to the connected HubSpot (fake_clientes.ts)
 
 const db = Config.getInstance().getDb();
 const productRepository = new ProductRepository(db);
@@ -65,5 +70,6 @@ fakeDataRoutes.post("/produtos", handle((req) => service.produtos(lerQuantidade(
 fakeDataRoutes.post("/usuarios", handle((req) => service.usuarios(lerQuantidade(req, 5, 200))));
 fakeDataRoutes.post("/categorias", handle(() => service.categorias()));
 fakeDataRoutes.post("/auditorias", handle((req) => service.auditorias(lerQuantidade(req, 10, 200), req.user!.id)));
+fakeDataRoutes.post("/clientes", handle((req) => gerarClientes(hubspotService, clienteService, lerQuantidade(req, 20, 200))));
 
 export { fakeDataRoutes };

@@ -21,15 +21,16 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	ImportadorService_IniciarImportacao_FullMethodName = "/importador.v1.ImportadorService/IniciarImportacao"
 	ImportadorService_ObterImportacao_FullMethodName   = "/importador.v1.ImportadorService/ObterImportacao"
+	ImportadorService_ListarErros_FullMethodName       = "/importador.v1.ImportadorService/ListarErros"
 )
 
 // ImportadorServiceClient is the client API for ImportadorService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Imports products from a spreadsheet (the Sample_Spreadsheet_AddProducts.xlsx layout).
-// The API uploads the file and gets an importacao back right away; the rows are parsed,
-// validated and written in the background, and the caller polls ObterImportacao for the outcome.
+// Imports a spreadsheet of products (the Sample_Spreadsheet_AddProducts.xlsx layout) or of clients
+// (written to HubSpot). The API uploads the file and gets an importacao back right away; the rows are
+// parsed, validated and written in the background, and the caller polls ObterImportacao for the outcome.
 type ImportadorServiceClient interface {
 	// Queues a .xlsx or .csv and returns the import with status PENDENTE, without waiting for it to run.
 	// INVALID_ARGUMENT: empty file, missing nome_arquivo or usuario_id, unsupported format or invalid UUID.
@@ -38,6 +39,11 @@ type ImportadorServiceClient interface {
 	// Returns an import's current state. Poll it until the status is CONCLUIDA, REJEITADA or FALHOU.
 	// INVALID_ARGUMENT: id isn't a UUID. NOT_FOUND: no such import.
 	ObterImportacao(ctx context.Context, in *ObterImportacaoRequest, opts ...grpc.CallOption) (*ObterImportacaoResponse, error)
+	// A page of a client import's row errors, in the order they were found, after the seq depois_de (0 for
+	// the first page). A caller that already shows some keeps them and asks only for the ones after its last
+	// seq. Product imports keep theirs in Importacao.erros instead.
+	// INVALID_ARGUMENT: id isn't a UUID. NOT_FOUND: no such import.
+	ListarErros(ctx context.Context, in *ListarErrosRequest, opts ...grpc.CallOption) (*ListarErrosResponse, error)
 }
 
 type importadorServiceClient struct {
@@ -68,13 +74,23 @@ func (c *importadorServiceClient) ObterImportacao(ctx context.Context, in *Obter
 	return out, nil
 }
 
+func (c *importadorServiceClient) ListarErros(ctx context.Context, in *ListarErrosRequest, opts ...grpc.CallOption) (*ListarErrosResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListarErrosResponse)
+	err := c.cc.Invoke(ctx, ImportadorService_ListarErros_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ImportadorServiceServer is the server API for ImportadorService service.
 // All implementations must embed UnimplementedImportadorServiceServer
 // for forward compatibility.
 //
-// Imports products from a spreadsheet (the Sample_Spreadsheet_AddProducts.xlsx layout).
-// The API uploads the file and gets an importacao back right away; the rows are parsed,
-// validated and written in the background, and the caller polls ObterImportacao for the outcome.
+// Imports a spreadsheet of products (the Sample_Spreadsheet_AddProducts.xlsx layout) or of clients
+// (written to HubSpot). The API uploads the file and gets an importacao back right away; the rows are
+// parsed, validated and written in the background, and the caller polls ObterImportacao for the outcome.
 type ImportadorServiceServer interface {
 	// Queues a .xlsx or .csv and returns the import with status PENDENTE, without waiting for it to run.
 	// INVALID_ARGUMENT: empty file, missing nome_arquivo or usuario_id, unsupported format or invalid UUID.
@@ -83,6 +99,11 @@ type ImportadorServiceServer interface {
 	// Returns an import's current state. Poll it until the status is CONCLUIDA, REJEITADA or FALHOU.
 	// INVALID_ARGUMENT: id isn't a UUID. NOT_FOUND: no such import.
 	ObterImportacao(context.Context, *ObterImportacaoRequest) (*ObterImportacaoResponse, error)
+	// A page of a client import's row errors, in the order they were found, after the seq depois_de (0 for
+	// the first page). A caller that already shows some keeps them and asks only for the ones after its last
+	// seq. Product imports keep theirs in Importacao.erros instead.
+	// INVALID_ARGUMENT: id isn't a UUID. NOT_FOUND: no such import.
+	ListarErros(context.Context, *ListarErrosRequest) (*ListarErrosResponse, error)
 	mustEmbedUnimplementedImportadorServiceServer()
 }
 
@@ -98,6 +119,9 @@ func (UnimplementedImportadorServiceServer) IniciarImportacao(context.Context, *
 }
 func (UnimplementedImportadorServiceServer) ObterImportacao(context.Context, *ObterImportacaoRequest) (*ObterImportacaoResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ObterImportacao not implemented")
+}
+func (UnimplementedImportadorServiceServer) ListarErros(context.Context, *ListarErrosRequest) (*ListarErrosResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListarErros not implemented")
 }
 func (UnimplementedImportadorServiceServer) mustEmbedUnimplementedImportadorServiceServer() {}
 func (UnimplementedImportadorServiceServer) testEmbeddedByValue()                           {}
@@ -156,6 +180,24 @@ func _ImportadorService_ObterImportacao_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ImportadorService_ListarErros_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListarErrosRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ImportadorServiceServer).ListarErros(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ImportadorService_ListarErros_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ImportadorServiceServer).ListarErros(ctx, req.(*ListarErrosRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ImportadorService_ServiceDesc is the grpc.ServiceDesc for ImportadorService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -170,6 +212,10 @@ var ImportadorService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ObterImportacao",
 			Handler:    _ImportadorService_ObterImportacao_Handler,
+		},
+		{
+			MethodName: "ListarErros",
+			Handler:    _ImportadorService_ListarErros_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

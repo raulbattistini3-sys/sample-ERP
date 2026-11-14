@@ -7,7 +7,8 @@ creates the database and opens http://localhost:8080. Ctrl+C stops everything.
 
   services/      importer.exe, api.exe, billing/ (a trimmed Java runtime + billing.jar)
   config/        copy a *.env.example to *.env to set ports, API secrets or Stripe keys
-  data/          the database and generated secrets; delete it to start over
+  data/          the database, generated secrets (secrets.env) and the certificates of the api <->
+                 importer mutual TLS (certs/); delete it to start over
 
 Everything is on one port, 8080: the web app, /api and /billing. Only 127.0.0.1 is listened on, so
 nothing is reachable from other machines (see ERP_BIND in config/launcher.env.example).

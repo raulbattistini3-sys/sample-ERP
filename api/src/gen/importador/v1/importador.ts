@@ -24,6 +24,63 @@ export const protobufPackage = "importador.v1";
 
 export const protobufFileName = "importador/v1/importador.proto";
 
+/** What a spreadsheet holds, which decides how it is read and where it is written. */
+export enum TipoImportacao {
+  /** TIPO_IMPORTACAO_UNSPECIFIED - read as PRODUTOS, for callers from before clients could be imported */
+  TIPO_IMPORTACAO_UNSPECIFIED = 0,
+  /** TIPO_IMPORTACAO_PRODUTOS - products, written to the database in one transaction: all rows or none */
+  TIPO_IMPORTACAO_PRODUTOS = 1,
+  /**
+   * TIPO_IMPORTACAO_CLIENTES - clients (Nome, Sobrenome, E-mail, Telefone, Empresa, Cargo, Senioridade, Decisor), created or updated
+   * in HubSpot by e-mail in batches of 100; a row that fails is reported and the others go on
+   */
+  TIPO_IMPORTACAO_CLIENTES = 2,
+  /**
+   * TIPO_IMPORTACAO_EMPRESAS - companies (Nome, Domínio, Setor, Telefone, Site, Cidade, Estado, País, Descrição, E-mail SAC), found in
+   * HubSpot by name (the oldest with it) and updated, or created; in batches like CLIENTES. The SAC e-mail
+   * is kept in the ERP (empresa_contatos_erp), not in HubSpot
+   */
+  TIPO_IMPORTACAO_EMPRESAS = 3,
+  UNRECOGNIZED = -1,
+}
+
+export function tipoImportacaoFromJSON(object: any): TipoImportacao {
+  switch (object) {
+    case 0:
+    case "TIPO_IMPORTACAO_UNSPECIFIED":
+      return TipoImportacao.TIPO_IMPORTACAO_UNSPECIFIED;
+    case 1:
+    case "TIPO_IMPORTACAO_PRODUTOS":
+      return TipoImportacao.TIPO_IMPORTACAO_PRODUTOS;
+    case 2:
+    case "TIPO_IMPORTACAO_CLIENTES":
+      return TipoImportacao.TIPO_IMPORTACAO_CLIENTES;
+    case 3:
+    case "TIPO_IMPORTACAO_EMPRESAS":
+      return TipoImportacao.TIPO_IMPORTACAO_EMPRESAS;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return TipoImportacao.UNRECOGNIZED;
+  }
+}
+
+export function tipoImportacaoToJSON(object: TipoImportacao): string {
+  switch (object) {
+    case TipoImportacao.TIPO_IMPORTACAO_UNSPECIFIED:
+      return "TIPO_IMPORTACAO_UNSPECIFIED";
+    case TipoImportacao.TIPO_IMPORTACAO_PRODUTOS:
+      return "TIPO_IMPORTACAO_PRODUTOS";
+    case TipoImportacao.TIPO_IMPORTACAO_CLIENTES:
+      return "TIPO_IMPORTACAO_CLIENTES";
+    case TipoImportacao.TIPO_IMPORTACAO_EMPRESAS:
+      return "TIPO_IMPORTACAO_EMPRESAS";
+    case TipoImportacao.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+
 /** Where an import is. CONCLUIDA, REJEITADA and FALHOU are final. */
 export enum StatusImportacao {
   STATUS_IMPORTACAO_UNSPECIFIED = 0,
@@ -31,7 +88,7 @@ export enum StatusImportacao {
   STATUS_IMPORTACAO_PENDENTE = 1,
   /** STATUS_IMPORTACAO_PROCESSANDO - a worker holds it */
   STATUS_IMPORTACAO_PROCESSANDO = 2,
-  /** STATUS_IMPORTACAO_CONCLUIDA - every row was imported */
+  /** STATUS_IMPORTACAO_CONCLUIDA - every row was imported; for CLIENTES and EMPRESAS, every row was gone through (see linhas_falharam) */
   STATUS_IMPORTACAO_CONCLUIDA = 3,
   /** STATUS_IMPORTACAO_REJEITADA - at least one row was rejected; nothing is written when any row fails, as in POST /products/import */
   STATUS_IMPORTACAO_REJEITADA = 4,
@@ -89,12 +146,13 @@ export function statusImportacaoToJSON(object: StatusImportacao): string {
 
 /** An upload to queue. */
 export interface IniciarImportacaoRequest {
-  /** the .xlsx or .csv contents. The whole message must fit gRPC's 4 MB default, which the server doesn't raise */
+  /** the .xlsx or .csv contents. The server and the API both accept messages up to 128 MB */
   planilha: Buffer;
   /** original name; its extension decides how the file is read */
   nomeArquivo: string;
   /** who uploaded it, for the auditoria */
   usuarioId: string;
+  tipo: TipoImportacao;
 }
 
 export interface IniciarImportacaoResponse {
@@ -107,6 +165,34 @@ export interface ObterImportacaoRequest {
 
 export interface ObterImportacaoResponse {
   importacao: Importacao | undefined;
+}
+
+export interface ListarErrosRequest {
+  id: string;
+  /** the last seq the caller already has; 0 for the first page */
+  depoisDe: number;
+  /** 1 to 5000; 0 means 500 */
+  limite: number;
+}
+
+export interface ListarErrosResponse {
+  erros: ErroImportacao[];
+}
+
+/** One row's problem in a client import. */
+export interface ErroImportacao {
+  /** increasing within an import; page with ListarErrosRequest.depois_de */
+  seq: number;
+  /** spreadsheet row number, header included */
+  linha: number;
+  /** column, when the problem is one field */
+  campo: string;
+  /**
+   * the row's e-mail when it had one (CLIENTES), or the company's name (EMPRESAS), so the user finds the row
+   * without opening the sheet
+   */
+  email: string;
+  mensagem: string;
 }
 
 /** One import and how it went. */
@@ -130,6 +216,15 @@ export interface Importacao {
   /** of linhas_importadas, how many created products and how many updated existing ones */
   linhasCriadas: number;
   linhasAtualizadas: number;
+  tipo: TipoImportacao;
+  /** CLIENTES and EMPRESAS: rows gone through so far (they move while PROCESSANDO), and of those how many failed */
+  linhasProcessadas: number;
+  linhasFalharam: number;
+  /**
+   * CLIENTES: companies created in HubSpot because a row named one it didn't have. EMPRESAS: 0 (the
+   * companies created are linhas_criadas)
+   */
+  empresasCriadas: number;
 }
 
 /** One problem with one row; a row can have several (one per field) */
@@ -142,7 +237,7 @@ export interface ErroLinha {
 }
 
 function createBaseIniciarImportacaoRequest(): IniciarImportacaoRequest {
-  return { planilha: Buffer.alloc(0), nomeArquivo: "", usuarioId: "" };
+  return { planilha: Buffer.alloc(0), nomeArquivo: "", usuarioId: "", tipo: 0 };
 }
 
 export const IniciarImportacaoRequest: MessageFns<IniciarImportacaoRequest> = {
@@ -155,6 +250,9 @@ export const IniciarImportacaoRequest: MessageFns<IniciarImportacaoRequest> = {
     }
     if (message.usuarioId !== "") {
       writer.uint32(26).string(message.usuarioId);
+    }
+    if (message.tipo !== 0) {
+      writer.uint32(32).int32(message.tipo);
     }
     return writer;
   },
@@ -196,6 +294,14 @@ export const IniciarImportacaoRequest: MessageFns<IniciarImportacaoRequest> = {
             message.usuarioId = reader.string();
             continue;
           }
+          case 4: {
+            if (tag !== 32) {
+              break;
+            }
+
+            message.tipo = reader.int32() as any;
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -221,6 +327,7 @@ export const IniciarImportacaoRequest: MessageFns<IniciarImportacaoRequest> = {
         : isSet(object.usuario_id)
         ? globalThis.String(object.usuario_id)
         : "",
+      tipo: isSet(object.tipo) ? tipoImportacaoFromJSON(object.tipo) : 0,
     };
   },
 
@@ -235,6 +342,9 @@ export const IniciarImportacaoRequest: MessageFns<IniciarImportacaoRequest> = {
     if (message.usuarioId !== "") {
       obj.usuarioId = message.usuarioId;
     }
+    if (message.tipo !== 0) {
+      obj.tipo = tipoImportacaoToJSON(message.tipo);
+    }
     return obj;
   },
 
@@ -246,6 +356,7 @@ export const IniciarImportacaoRequest: MessageFns<IniciarImportacaoRequest> = {
     message.planilha = object.planilha ?? Buffer.alloc(0);
     message.nomeArquivo = object.nomeArquivo ?? "";
     message.usuarioId = object.usuarioId ?? "";
+    message.tipo = object.tipo ?? 0;
     return message;
   },
 };
@@ -455,6 +566,313 @@ export const ObterImportacaoResponse: MessageFns<ObterImportacaoResponse> = {
   },
 };
 
+function createBaseListarErrosRequest(): ListarErrosRequest {
+  return { id: "", depoisDe: 0, limite: 0 };
+}
+
+export const ListarErrosRequest: MessageFns<ListarErrosRequest> = {
+  encode(message: ListarErrosRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.id !== "") {
+      writer.uint32(10).string(message.id);
+    }
+    if (message.depoisDe !== 0) {
+      writer.uint32(16).int64(message.depoisDe);
+    }
+    if (message.limite !== 0) {
+      writer.uint32(24).int32(message.limite);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ListarErrosRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseListarErrosRequest();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.id = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 16) {
+              break;
+            }
+
+            message.depoisDe = longToNumber(reader.int64());
+            continue;
+          }
+          case 3: {
+            if (tag !== 24) {
+              break;
+            }
+
+            message.limite = reader.int32();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): ListarErrosRequest {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      depoisDe: isSet(object.depoisDe)
+        ? globalThis.Number(object.depoisDe)
+        : isSet(object.depois_de)
+        ? globalThis.Number(object.depois_de)
+        : 0,
+      limite: isSet(object.limite) ? globalThis.Number(object.limite) : 0,
+    };
+  },
+
+  toJSON(message: ListarErrosRequest): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.depoisDe !== 0) {
+      obj.depoisDe = Math.round(message.depoisDe);
+    }
+    if (message.limite !== 0) {
+      obj.limite = Math.round(message.limite);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListarErrosRequest>, I>>(base?: I): ListarErrosRequest {
+    return ListarErrosRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListarErrosRequest>, I>>(object: I): ListarErrosRequest {
+    const message = createBaseListarErrosRequest();
+    message.id = object.id ?? "";
+    message.depoisDe = object.depoisDe ?? 0;
+    message.limite = object.limite ?? 0;
+    return message;
+  },
+};
+
+function createBaseListarErrosResponse(): ListarErrosResponse {
+  return { erros: [] };
+}
+
+export const ListarErrosResponse: MessageFns<ListarErrosResponse> = {
+  encode(message: ListarErrosResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.erros) {
+      ErroImportacao.encode(v!, writer.uint32(10).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ListarErrosResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseListarErrosResponse();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.erros.push(ErroImportacao.decode(reader, reader.uint32()));
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): ListarErrosResponse {
+    return {
+      erros: globalThis.Array.isArray(object?.erros) ? object.erros.map((e: any) => ErroImportacao.fromJSON(e)) : [],
+    };
+  },
+
+  toJSON(message: ListarErrosResponse): unknown {
+    const obj: any = {};
+    if (message.erros?.length) {
+      obj.erros = message.erros.map((e) => ErroImportacao.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListarErrosResponse>, I>>(base?: I): ListarErrosResponse {
+    return ListarErrosResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListarErrosResponse>, I>>(object: I): ListarErrosResponse {
+    const message = createBaseListarErrosResponse();
+    message.erros = object.erros?.map((e) => ErroImportacao.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseErroImportacao(): ErroImportacao {
+  return { seq: 0, linha: 0, campo: "", email: "", mensagem: "" };
+}
+
+export const ErroImportacao: MessageFns<ErroImportacao> = {
+  encode(message: ErroImportacao, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.seq !== 0) {
+      writer.uint32(8).int64(message.seq);
+    }
+    if (message.linha !== 0) {
+      writer.uint32(16).int32(message.linha);
+    }
+    if (message.campo !== "") {
+      writer.uint32(26).string(message.campo);
+    }
+    if (message.email !== "") {
+      writer.uint32(34).string(message.email);
+    }
+    if (message.mensagem !== "") {
+      writer.uint32(42).string(message.mensagem);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ErroImportacao {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseErroImportacao();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 8) {
+              break;
+            }
+
+            message.seq = longToNumber(reader.int64());
+            continue;
+          }
+          case 2: {
+            if (tag !== 16) {
+              break;
+            }
+
+            message.linha = reader.int32();
+            continue;
+          }
+          case 3: {
+            if (tag !== 26) {
+              break;
+            }
+
+            message.campo = reader.string();
+            continue;
+          }
+          case 4: {
+            if (tag !== 34) {
+              break;
+            }
+
+            message.email = reader.string();
+            continue;
+          }
+          case 5: {
+            if (tag !== 42) {
+              break;
+            }
+
+            message.mensagem = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): ErroImportacao {
+    return {
+      seq: isSet(object.seq) ? globalThis.Number(object.seq) : 0,
+      linha: isSet(object.linha) ? globalThis.Number(object.linha) : 0,
+      campo: isSet(object.campo) ? globalThis.String(object.campo) : "",
+      email: isSet(object.email) ? globalThis.String(object.email) : "",
+      mensagem: isSet(object.mensagem) ? globalThis.String(object.mensagem) : "",
+    };
+  },
+
+  toJSON(message: ErroImportacao): unknown {
+    const obj: any = {};
+    if (message.seq !== 0) {
+      obj.seq = Math.round(message.seq);
+    }
+    if (message.linha !== 0) {
+      obj.linha = Math.round(message.linha);
+    }
+    if (message.campo !== "") {
+      obj.campo = message.campo;
+    }
+    if (message.email !== "") {
+      obj.email = message.email;
+    }
+    if (message.mensagem !== "") {
+      obj.mensagem = message.mensagem;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ErroImportacao>, I>>(base?: I): ErroImportacao {
+    return ErroImportacao.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ErroImportacao>, I>>(object: I): ErroImportacao {
+    const message = createBaseErroImportacao();
+    message.seq = object.seq ?? 0;
+    message.linha = object.linha ?? 0;
+    message.campo = object.campo ?? "";
+    message.email = object.email ?? "";
+    message.mensagem = object.mensagem ?? "";
+    return message;
+  },
+};
+
 function createBaseImportacao(): Importacao {
   return {
     id: "",
@@ -468,6 +886,10 @@ function createBaseImportacao(): Importacao {
     finalizadaEm: undefined,
     linhasCriadas: 0,
     linhasAtualizadas: 0,
+    tipo: 0,
+    linhasProcessadas: 0,
+    linhasFalharam: 0,
+    empresasCriadas: 0,
   };
 }
 
@@ -505,6 +927,18 @@ export const Importacao: MessageFns<Importacao> = {
     }
     if (message.linhasAtualizadas !== 0) {
       writer.uint32(88).int32(message.linhasAtualizadas);
+    }
+    if (message.tipo !== 0) {
+      writer.uint32(96).int32(message.tipo);
+    }
+    if (message.linhasProcessadas !== 0) {
+      writer.uint32(104).int32(message.linhasProcessadas);
+    }
+    if (message.linhasFalharam !== 0) {
+      writer.uint32(112).int32(message.linhasFalharam);
+    }
+    if (message.empresasCriadas !== 0) {
+      writer.uint32(120).int32(message.empresasCriadas);
     }
     return writer;
   },
@@ -610,6 +1044,38 @@ export const Importacao: MessageFns<Importacao> = {
             message.linhasAtualizadas = reader.int32();
             continue;
           }
+          case 12: {
+            if (tag !== 96) {
+              break;
+            }
+
+            message.tipo = reader.int32() as any;
+            continue;
+          }
+          case 13: {
+            if (tag !== 104) {
+              break;
+            }
+
+            message.linhasProcessadas = reader.int32();
+            continue;
+          }
+          case 14: {
+            if (tag !== 112) {
+              break;
+            }
+
+            message.linhasFalharam = reader.int32();
+            continue;
+          }
+          case 15: {
+            if (tag !== 120) {
+              break;
+            }
+
+            message.empresasCriadas = reader.int32();
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -665,6 +1131,22 @@ export const Importacao: MessageFns<Importacao> = {
         : isSet(object.linhas_atualizadas)
         ? globalThis.Number(object.linhas_atualizadas)
         : 0,
+      tipo: isSet(object.tipo) ? tipoImportacaoFromJSON(object.tipo) : 0,
+      linhasProcessadas: isSet(object.linhasProcessadas)
+        ? globalThis.Number(object.linhasProcessadas)
+        : isSet(object.linhas_processadas)
+        ? globalThis.Number(object.linhas_processadas)
+        : 0,
+      linhasFalharam: isSet(object.linhasFalharam)
+        ? globalThis.Number(object.linhasFalharam)
+        : isSet(object.linhas_falharam)
+        ? globalThis.Number(object.linhas_falharam)
+        : 0,
+      empresasCriadas: isSet(object.empresasCriadas)
+        ? globalThis.Number(object.empresasCriadas)
+        : isSet(object.empresas_criadas)
+        ? globalThis.Number(object.empresas_criadas)
+        : 0,
     };
   },
 
@@ -703,6 +1185,18 @@ export const Importacao: MessageFns<Importacao> = {
     if (message.linhasAtualizadas !== 0) {
       obj.linhasAtualizadas = Math.round(message.linhasAtualizadas);
     }
+    if (message.tipo !== 0) {
+      obj.tipo = tipoImportacaoToJSON(message.tipo);
+    }
+    if (message.linhasProcessadas !== 0) {
+      obj.linhasProcessadas = Math.round(message.linhasProcessadas);
+    }
+    if (message.linhasFalharam !== 0) {
+      obj.linhasFalharam = Math.round(message.linhasFalharam);
+    }
+    if (message.empresasCriadas !== 0) {
+      obj.empresasCriadas = Math.round(message.empresasCriadas);
+    }
     return obj;
   },
 
@@ -722,6 +1216,10 @@ export const Importacao: MessageFns<Importacao> = {
     message.finalizadaEm = object.finalizadaEm ?? undefined;
     message.linhasCriadas = object.linhasCriadas ?? 0;
     message.linhasAtualizadas = object.linhasAtualizadas ?? 0;
+    message.tipo = object.tipo ?? 0;
+    message.linhasProcessadas = object.linhasProcessadas ?? 0;
+    message.linhasFalharam = object.linhasFalharam ?? 0;
+    message.empresasCriadas = object.empresasCriadas ?? 0;
     return message;
   },
 };
@@ -828,9 +1326,9 @@ export const ErroLinha: MessageFns<ErroLinha> = {
 };
 
 /**
- * Imports products from a spreadsheet (the Sample_Spreadsheet_AddProducts.xlsx layout).
- * The API uploads the file and gets an importacao back right away; the rows are parsed,
- * validated and written in the background, and the caller polls ObterImportacao for the outcome.
+ * Imports a spreadsheet of products (the Sample_Spreadsheet_AddProducts.xlsx layout) or of clients
+ * (written to HubSpot). The API uploads the file and gets an importacao back right away; the rows are
+ * parsed, validated and written in the background, and the caller polls ObterImportacao for the outcome.
  */
 export type ImportadorServiceService = typeof ImportadorServiceService;
 export const ImportadorServiceService = {
@@ -865,6 +1363,21 @@ export const ImportadorServiceService = {
       Buffer.from(ObterImportacaoResponse.encode(value).finish()),
     responseDeserialize: (value: Buffer): ObterImportacaoResponse => ObterImportacaoResponse.decode(value),
   },
+  /**
+   * A page of a client import's row errors, in the order they were found, after the seq depois_de (0 for
+   * the first page). A caller that already shows some keeps them and asks only for the ones after its last
+   * seq. Product imports keep theirs in Importacao.erros instead.
+   * INVALID_ARGUMENT: id isn't a UUID. NOT_FOUND: no such import.
+   */
+  listarErros: {
+    path: "/importador.v1.ImportadorService/ListarErros" as const,
+    requestStream: false as const,
+    responseStream: false as const,
+    requestSerialize: (value: ListarErrosRequest): Buffer => Buffer.from(ListarErrosRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer): ListarErrosRequest => ListarErrosRequest.decode(value),
+    responseSerialize: (value: ListarErrosResponse): Buffer => Buffer.from(ListarErrosResponse.encode(value).finish()),
+    responseDeserialize: (value: Buffer): ListarErrosResponse => ListarErrosResponse.decode(value),
+  },
 } as const;
 
 export interface ImportadorServiceServer extends UntypedServiceImplementation {
@@ -879,6 +1392,13 @@ export interface ImportadorServiceServer extends UntypedServiceImplementation {
    * INVALID_ARGUMENT: id isn't a UUID. NOT_FOUND: no such import.
    */
   obterImportacao: handleUnaryCall<ObterImportacaoRequest, ObterImportacaoResponse>;
+  /**
+   * A page of a client import's row errors, in the order they were found, after the seq depois_de (0 for
+   * the first page). A caller that already shows some keeps them and asks only for the ones after its last
+   * seq. Product imports keep theirs in Importacao.erros instead.
+   * INVALID_ARGUMENT: id isn't a UUID. NOT_FOUND: no such import.
+   */
+  listarErros: handleUnaryCall<ListarErrosRequest, ListarErrosResponse>;
 }
 
 export interface ImportadorServiceClient extends Client {
@@ -920,6 +1440,27 @@ export interface ImportadorServiceClient extends Client {
     metadata: Metadata,
     options: Partial<CallOptions>,
     callback: (error: ServiceError | null, response: ObterImportacaoResponse) => void,
+  ): ClientUnaryCall;
+  /**
+   * A page of a client import's row errors, in the order they were found, after the seq depois_de (0 for
+   * the first page). A caller that already shows some keeps them and asks only for the ones after its last
+   * seq. Product imports keep theirs in Importacao.erros instead.
+   * INVALID_ARGUMENT: id isn't a UUID. NOT_FOUND: no such import.
+   */
+  listarErros(
+    request: ListarErrosRequest,
+    callback: (error: ServiceError | null, response: ListarErrosResponse) => void,
+  ): ClientUnaryCall;
+  listarErros(
+    request: ListarErrosRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: ListarErrosResponse) => void,
+  ): ClientUnaryCall;
+  listarErros(
+    request: ListarErrosRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: ListarErrosResponse) => void,
   ): ClientUnaryCall;
 }
 
@@ -975,6 +1516,17 @@ function fromJsonTimestamp(o: any): Date {
   } else {
     return fromTimestamp(Timestamp.fromJSON(o));
   }
+}
+
+function longToNumber(int64: { toString(): string }): number {
+  const num = globalThis.Number(int64.toString());
+  if (num > globalThis.Number.MAX_SAFE_INTEGER) {
+    throw new globalThis.Error("Value is larger than Number.MAX_SAFE_INTEGER");
+  }
+  if (num < globalThis.Number.MIN_SAFE_INTEGER) {
+    throw new globalThis.Error("Value is smaller than Number.MIN_SAFE_INTEGER");
+  }
+  return num;
 }
 
 function isSet(value: any): boolean {

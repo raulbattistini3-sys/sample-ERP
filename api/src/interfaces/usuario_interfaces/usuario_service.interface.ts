@@ -26,16 +26,19 @@ interface IUsuarioService {
       page: number,
       amount: number,
       filters?: UsuarioFilters,
+      actor?: UsuarioResponseDto,
    ) => Promise<Either<BaseAppError, ResponseGetUsuariosDto>>;
+   // actor decides whether cpf / dataNascimento come in full (self, ADM, SU) or masked
    findUserById: (
       id: string,
+      actor?: UsuarioResponseDto,
    ) => Promise<Either<BaseAppError, ResponseFindUsuarioByIdDto>>;
    // actor: the signed-in ADM/SU making the change
    createUsuario: (
       payload: PayloadCreateUsuario,
       actor: UsuarioResponseDto,
    ) => Promise<Either<BaseAppError, ResponseCreateUsuario>>;
-   refreshToken: (usuario: UsuarioResponseDto, sessaoVersao: number) => ResponseLoginUsuarioDto;
+   refreshToken: (usuario: UsuarioResponseDto, sessaoVersao: number) => Promise<ResponseLoginUsuarioDto>;
    // the signed-in usuario's own senha; returns a new session, since the old token stops working
    changePassword: (
       usuarioId: string,

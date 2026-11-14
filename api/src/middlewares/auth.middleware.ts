@@ -44,7 +44,7 @@ class AuthMiddleware {
       if (!token) {
          return { ok: false, message: "Token de autenticação ausente" };
       }
-      const claims = verifyToken(token);
+      const claims = await verifyToken(token);
       if (!claims) {
          return { ok: false, message: "Token inválido ou expirado" };
       }

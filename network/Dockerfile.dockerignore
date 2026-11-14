@@ -1,0 +1,6 @@
+# For network/Dockerfile only (its context is the repo root): send go.mod, go.sum and network/.
+*
+!go.mod
+!go.sum
+!network/
+network/**/*_test.go

@@ -4,6 +4,8 @@ import { ValidationError } from "../errors/client_errors/four_xx.error";
 import { Either, left, right } from "../globals/errors/left_right_either.error";
 import { IBaseValidator } from "../interfaces/general_interfaces/base_validator.interface";
 
+const HUBSPOT_ID = /^\d{1,20}$/;
+
 class BaseValidator implements IBaseValidator {
    constructor() {}
    private isValidUUID(uuid: string): boolean {
@@ -56,6 +58,18 @@ class BaseValidator implements IBaseValidator {
          return left(new ValidationError("400", "Invalid UUIDv4 format"));
       }
       return right(null);
+   }
+   // HubSpot record ids are numeric strings; `rotulo` names the record in the message ("id de empresa inválido")
+   validateHubspotId(id: string, rotulo: string): Either<ValidationError, null> {
+      if (!HUBSPOT_ID.test(id)) return left(new ValidationError("400", `id de ${rotulo} inválido`));
+      return right(null);
+   }
+
+   // runs a zod schema: the parsed payload (coerced, defaults applied), or a 400 with every message in order
+   protected parseWith<S extends z.ZodTypeAny>(schema: S, payload: unknown): Either<ValidationError, z.infer<S>> {
+      const result = schema.safeParse(payload);
+      if (!result.success) return left(new ValidationError("400", result.error.errors.map((e) => e.message).join(" ")));
+      return right(result.data);
    }
 }
 

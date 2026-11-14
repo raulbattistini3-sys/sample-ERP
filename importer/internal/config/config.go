@@ -2,6 +2,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -19,12 +20,23 @@ type Config struct {
 	GRPC     GRPCConfig
 	DB       DBConfig
 	Importer ImporterConfig
+	HubSpot  HubSpotConfig
 }
 
-// GRPCConfig is the address the gRPC server binds to.
+// HubSpotConfig is what client imports need to write to HubSpot: the same variables as the API's .env.
+type HubSpotConfig struct {
+	ServiceKey   string // HUBSPOT_SERVICE_KEY; empty: the OAuth connection stored in integracoes
+	ClientID     string // HUBSPOT_CLIENT_ID, to refresh that connection's token
+	ClientSecret string // HUBSPOT_CLIENT_SECRET
+	// INTEGRATIONS_ENCRYPTION_KEY decoded (32 bytes), to read and rewrite the stored tokens
+	ChaveCifra []byte
+}
+
+// GRPCConfig is the address the gRPC server binds to and its mutual TLS.
 type GRPCConfig struct {
 	Host string
 	Port int
+	TLS  TLSConfig
 }
 
 // Addr is the host:port the gRPC server listens on.
@@ -42,6 +54,12 @@ type DBConfig struct {
 type ImporterConfig struct {
 	// same cap as the API's MAX_IMPORT_ROWS (api/src/utils/schemas/produto.schema.ts)
 	MaxRows int
+	// MAX_CLIENTES_IMPORT_ROWS: clients go in batches with a checkpoint, so this can be far higher
+	MaxClientesRows int
+	// batches of a clients/companies import sent to HubSpot at the same time (they share one rate limiter)
+	HubspotWorkers int
+	// MAX_IMPORT_FILE_MB: the largest spreadsheet the gRPC server accepts (it is the message size limit)
+	MaxFileMB int
 	// imports processed at the same time by this instance
 	Workers int
 	// how long a claimed import may stay processando before DevolverTravadas hands it back; also the
@@ -68,17 +86,34 @@ func Load() (*Config, error) {
 		GRPC: GRPCConfig{
 			Host: getString("GRPC_HOST", "0.0.0.0"),
 			Port: getInt("GRPC_PORT", 50051, &errs),
+			TLS:  loadTLSConfig(env, &errs),
 		},
 		DB: DBConfig{
 			URL: databaseURL(getRequired("DATABASE_URL", &errs), env, &errs),
 		},
 		Importer: ImporterConfig{
-			MaxRows:      getInt("MAX_IMPORT_ROWS", 5000, &errs),
-			Workers:      getInt("IMPORT_WORKERS", 2, &errs),
-			Lease:        getDuration("IMPORT_LEASE", 5*time.Minute, &errs),
-			MaxAttempts:  getInt("IMPORT_MAX_ATTEMPTS", 3, &errs),
-			PollInterval: getDuration("IMPORT_POLL_INTERVAL", 30*time.Second, &errs),
+			MaxRows:         getInt("MAX_IMPORT_ROWS", 5000, &errs),
+			MaxClientesRows: getInt("MAX_CLIENTES_IMPORT_ROWS", 500000, &errs),
+			HubspotWorkers:  getInt("IMPORT_HUBSPOT_WORKERS", 4, &errs),
+			MaxFileMB:       getInt("MAX_IMPORT_FILE_MB", 128, &errs),
+			Workers:         getInt("IMPORT_WORKERS", 2, &errs),
+			Lease:           getDuration("IMPORT_LEASE", 5*time.Minute, &errs),
+			MaxAttempts:     getInt("IMPORT_MAX_ATTEMPTS", 3, &errs),
+			PollInterval:    getDuration("IMPORT_POLL_INTERVAL", 30*time.Second, &errs),
 		},
+	}
+	cfg.HubSpot = HubSpotConfig{
+		ServiceKey:   os.Getenv("HUBSPOT_SERVICE_KEY"),
+		ClientID:     os.Getenv("HUBSPOT_CLIENT_ID"),
+		ClientSecret: os.Getenv("HUBSPOT_CLIENT_SECRET"),
+	}
+	if raw := os.Getenv("INTEGRATIONS_ENCRYPTION_KEY"); raw != "" {
+		chave, err := base64.StdEncoding.DecodeString(raw)
+		if err != nil || len(chave) != 32 {
+			errs = append(errs, fmt.Errorf("config: INTEGRATIONS_ENCRYPTION_KEY must be 32 bytes in base64"))
+		} else {
+			cfg.HubSpot.ChaveCifra = chave
+		}
 	}
 	if cfg.Importer.Workers < 1 {
 		errs = append(errs, fmt.Errorf("config: IMPORT_WORKERS must be at least 1"))

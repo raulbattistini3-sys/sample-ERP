@@ -1,11 +1,27 @@
-# Local stack: raw Postgres + API + web + the Go spreadsheet importer. Pending api/drizzle migrations
-# are applied by the one-shot "migrate" service before the API and the importer start.
-#   docker compose up --build                     web on http://localhost:8080, API on http://localhost:3333
-#   docker compose --profile billing up --build   also the Stripe service on http://localhost:8081
-#   docker compose down -v                        also wipes the database volume (the init scripts run again next up)
-# Services reach each other by service name (api:3333, importer:50051, db:5432), never localhost.
+# Local stack: Postgres + API + web + the Go spreadsheet importer + the vault (with its own Postgres).
+# Pending api/drizzle migrations are applied by the one-shot "migrate" service before the API and the
+# importer start.
+#   docker compose up -d --build                    web on https://localhost:8080, API on https://localhost:3333
+#   docker compose --profile billing up -d --build  also the Stripe service (webhooks via the stripe service)
+#   docker compose stop / docker compose start      stop and resume, keeping everything
+#
+# DON'T run `docker compose down -v`: it deletes the db-data and vault-data volumes, that is the whole ERP
+# database and every encrypted CPF and birth date. Plain `down` keeps the volumes but removes containers
+# and the network; prefer `stop` / `start`. See README.md, "Docker compose (local)".
+#
+# Only the API (3333) and the web app (8080) are published on the host. db, vault-db, vault, the importer,
+# billing and the network service are reached only inside the compose network, by service name (db:5432,
+# vault:8200, importer:50051, billing:8081, network:7070), never localhost. To look into a database:
+#   docker compose exec db psql -U postgres sample_erp
+#
 # Optional secrets (Resend, Jira/HubSpot OAuth, ...) come from api/.env when it exists; the database,
 # host/port and CORS settings below always win over it.
+# The shared secrets come from secrets/ and are required: run `cd secrets && bun install && bun generate.ts`
+# once before the first `up`. secrets/secrets.env (JWT_SECRET, NETWORK_TOKEN,
+# VAULT_TOKEN, VAULT_TOKEN_SHA256, VAULT_ADMIN_TOKEN_SHA256, VAULT_DB_PASSWORD) is loaded after api/.env and
+# billing/.env, so it wins over them; secrets/tls/ holds the TLS certificates (browser -> web and
+# browser -> api over TLS 1.3; mutual TLS for api <-> importer, vault and billing), mounted under /run/secrets.
+# Browsers trust them once secrets/tls/ca.crt is imported (README, "Trusting the local CA"); secrets/vault/ holds the vault's keys, mounted read-only.
 
 services:
   db:
@@ -14,8 +30,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: sample_erp
-    ports:
-      - "${DB_PORT:-5432}:5432"
+    # no published port: only the compose network reaches it
     volumes:
       - db-data:/var/lib/postgresql/data
       # run once, on an empty volume: schema, then categorias + drizzle's migration log
@@ -25,6 +40,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
 
   # Applies the migrations the database hasn't seen, then exits. A fresh volume already has them all
   # (the init scripts record them), so this matters for a db-data volume created by an older checkout.
@@ -50,22 +66,44 @@ services:
     env_file:
       - path: ./api/.env
         required: false
+      - path: ./secrets/secrets.env
+        required: true
+    secrets: [internal_ca, api_tls_cert, api_tls_key]
     environment:
       # development: a plain connection, since this Postgres has no TLS (production verifies it)
       API_ENV: development
       DATABASE_URL: postgresql://postgres:postgres@db:5432/sample_erp?sslmode=disable
       APP_HOST: 0.0.0.0
       PORT: 3333
-      CORS_ORIGINS: http://localhost:8080,http://localhost:5173
-      WEB_URL: http://localhost:8080
-      API_PUBLIC_URL: http://localhost:3333
-      JWT_SECRET: ${JWT_SECRET:-local-docker-only-change-me}
-      # POST /products/imports hands uploaded spreadsheets to the importer over the compose network
+      CORS_ORIGINS: https://localhost:8080,https://localhost:5173
+      WEB_URL: https://localhost:8080
+      API_PUBLIC_URL: https://localhost:3333
+      # HTTPS, TLS 1.3 only; the same certificate is the API's client certificate towards the importer,
+      # the vault and billing, and API_TLS_CA checks billing's when it calls /internal/billing
+      API_TLS_CERT: /run/secrets/api_tls_cert
+      API_TLS_KEY: /run/secrets/api_tls_key
+      API_TLS_CA: /run/secrets/internal_ca
+      # POST /products/imports hands uploaded spreadsheets to the importer over the compose network,
+      # over mutual TLS: the importer's certificate must chain to the CA and name "importer", and the
+      # API presents its own
       IMPORTER_GRPC_URL: importer:50051
+      IMPORTER_TLS_CA: /run/secrets/internal_ca
+      IMPORTER_TLS_CERT: /run/secrets/api_tls_cert
+      IMPORTER_TLS_KEY: /run/secrets/api_tls_key
+      # the vault keeps usuarios' CPF and birth date; the same CA and client certificate as the importer
+      # link, plus VAULT_TOKEN from secrets/secrets.env
+      VAULT_URL: https://vault:8200
+      VAULT_TLS_CA: /run/secrets/internal_ca
+      VAULT_TLS_CERT: /run/secrets/api_tls_cert
+      VAULT_TLS_KEY: /run/secrets/api_tls_key
       # Stripe status and cobranças (only with --profile billing; otherwise the pages say it isn't running)
-      BILLING_URL: http://billing:8081
-      # the billing service sends its notifications with this token, and the API calls it with the same
-      BILLING_INTERNAL_TOKEN: ${BILLING_INTERNAL_TOKEN:-local-docker-only-change-me}
+      # mutual TLS both ways: billing's certificate must name "billing", the API's says CN=api
+      BILLING_URL: https://billing:8081
+      # announce itself on the network service; billing and the importer are then found by name (the URLs
+      # above stay as the fallback while the network service is down)
+      # (NETWORK_TOKEN comes from secrets/secrets.env)
+      NETWORK_URL: http://network:7070
+      NETWORK_ADVERTISE_HOST: api
       # the first superuser, created while the database has no active SU; the web app makes it choose
       # a new password at first sign-in
       BOOTSTRAP_SU_NAME: ${BOOTSTRAP_SU_NAME:-John Doe}
@@ -80,26 +118,40 @@ services:
       # through POST /products/import instead, so the API never waits on it
       importer:
         condition: service_started
+      vault:
+        condition: service_healthy
     restart: unless-stopped
 
-  # Reads, validates and saves product spreadsheets in the background (importer/, proto/importador/v1),
-  # taking jobs from the importacoes table in the same database.
+  # Reads, validates and saves product and client spreadsheets in the background (importer/,
+  # proto/importador/v1), taking jobs from the importacoes table in the same database. Client imports
+  # write to HubSpot with the API's credentials: HUBSPOT_SERVICE_KEY, or HUBSPOT_CLIENT_ID/SECRET plus
+  # INTEGRATIONS_ENCRYPTION_KEY to use (and refresh) the token saved by Integrações, all read from api/.env.
   importer:
     build:
       context: .
       dockerfile: importer/Dockerfile
+    env_file:
+      - path: ./api/.env
+        required: false
+      - path: ./secrets/secrets.env
+        required: true
+    secrets: [internal_ca, importer_tls_cert, importer_tls_key]
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/sample_erp?sslmode=disable
       # plain Postgres, no TLS; production verifies the database's certificate
       IMPORTER_ENV: development
-      # all IPv4 interfaces, so the API reaches it across the compose network
+      # all IPv4 interfaces of the container, so the API reaches it across the compose network
       GRPC_HOST: 0.0.0.0
       GRPC_PORT: 50051
+      # mutual TLS: only a client with a certificate from secrets/tls/ca.crt (the API's) gets through
+      GRPC_TLS_CERT: /run/secrets/importer_tls_cert
+      GRPC_TLS_KEY: /run/secrets/importer_tls_key
+      GRPC_TLS_CLIENT_CA: /run/secrets/internal_ca
       IMPORT_WORKERS: ${IMPORT_WORKERS:-2}
-    # published for local tools (grpcurl -plaintext localhost:50051 list, or an API run with bun run dev);
-    # it has no auth of its own and trusts its caller, so never expose it beyond your machine
-    ports:
-      - "${IMPORTER_PORT:-50051}:50051"
+      NETWORK_URL: http://network:7070
+      NETWORK_ADVERTISE_HOST: importer
+    # not published: only the API calls it. For an API run with `bun run dev`, run the importer with
+    # `go run ./importer/cmd/importer` too, or publish it in a docker-compose.override.yml
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -114,16 +166,22 @@ services:
     env_file:
       - path: ./billing/.env
         required: false
+      - path: ./secrets/secrets.env
+        required: true
     environment:
       # plain Postgres, no TLS; production verifies the database's certificate
       BILLING_ENV: development
       JDBC_DATABASE_URL: jdbc:postgresql://db:5432/sample_erp?user=postgres&password=postgres
-      ERP_API_URL: http://api:3333
-      BILLING_INTERNAL_TOKEN: ${BILLING_INTERNAL_TOKEN:-local-docker-only-change-me}
-      # the port inside the container; BILLING_HOST_PORT moves the published one
+      ERP_API_URL: https://api:3333
+      # TLS 1.3, mutual with the API (no shared token); NETWORK_TOKEN comes from secrets/secrets.env
+      BILLING_TLS_CERT: /run/secrets/billing_tls_cert
+      BILLING_TLS_KEY: /run/secrets/billing_tls_key
+      BILLING_TLS_CA: /run/secrets/internal_ca
       BILLING_PORT: 8081
-    ports:
-      - "${BILLING_HOST_PORT:-8081}:8081"
+      NETWORK_URL: http://network:7070
+      NETWORK_ADVERTISE_HOST: billing
+    secrets: [internal_ca, billing_tls_cert, billing_tls_key]
+    # not published: the API calls billing:8081, and Stripe's webhooks come in through the stripe service
     depends_on:
       db:
         condition: service_healthy
@@ -132,17 +190,135 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  # Forwards the Stripe sandbox's webhooks to billing inside the compose network, so billing needs no
+  # published port. On start it logs the webhook signing secret (whsec_...): put it in billing/.env as
+  # STRIPE_WEBHOOK_SECRET, then `docker compose --profile billing restart billing`.
+  stripe:
+    image: stripe/stripe-cli:v1.30.0
+    profiles: [billing]
+    env_file:
+      - path: ./billing/.env
+        required: false
+    entrypoint: ["/bin/sh", "-c", "exec stripe listen --api-key \"$$SANDBOX_STRIPE_API_KEY\" --forward-to https://billing:8081/webhooks/stripe --skip-verify"]
+    depends_on:
+      - billing
+    restart: unless-stopped
+
   web:
     build:
       context: .
       dockerfile: web/Dockerfile
       args:
-        # the browser calls the API, so this is the host-mapped address, not http://api:3333
-        VITE_API_URL: http://localhost:3333
+        # the browser calls the API, so this is the host-mapped address, not https://api:3333
+        VITE_API_URL: https://localhost:3333
+    # nginx serves HTTPS only, TLS 1.3 (web/nginx.conf), with secrets/tls/web.crt
+    secrets: [web_tls_cert, web_tls_key]
     ports:
-      - "8080:80"
+      - "8080:443"
     depends_on:
       - api
+    restart: unless-stopped
 
+  # The network service (network/): the registry api, billing and the importer announce themselves on, and
+  # a gateway in front of them (/api, /billing; rate limits, double-click dedupe, reCAPTCHA when RECAPTCHA_*
+  # are in api/.env). Internal only: the browser talks to the API on 3333.
+  network:
+    build:
+      context: .
+      dockerfile: network/Dockerfile
+    env_file:
+      - path: ./api/.env
+        required: false
+      - path: ./secrets/secrets.env
+        required: true
+    environment:
+      NETWORK_ADDR: ":8080"
+      NETWORK_CONTROL_ADDR: ":7070"
+      NETWORK_ENV: development
+      NETWORK_ROUTES: /api=api,/billing=billing
+      NETWORK_MAX_IMPORT_MB: 128
+      # the API and billing announce https:// addresses; their certificates chain to this CA
+      NETWORK_UPSTREAM_CA: /run/secrets/internal_ca
+    secrets: [internal_ca]
+    restart: unless-stopped
+
+  # The vault's own Postgres, apart from db: a dump of the ERP database holds no CPF, and the ciphertext
+  # never sits next to the rows it describes. No published port. Its password is VAULT_DB_PASSWORD.
+  vault-db:
+    image: postgres:17-alpine
+    env_file:
+      - path: ./secrets/secrets.env
+        required: true
+    environment:
+      POSTGRES_USER: vault
+      POSTGRES_DB: sample_erp_vault
+    entrypoint: ["/bin/sh", "-c", "export POSTGRES_PASSWORD=\"$$VAULT_DB_PASSWORD\"; exec docker-entrypoint.sh postgres"]
+    volumes:
+      - vault-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vault -d sample_erp_vault"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # The vault (vault/): AES-256-GCM envelope encryption of usuarios' CPF and birth date, keyed by owner type
+  # + the ERP row's id. Only the API talks to it, over mutual TLS plus VAULT_TOKEN (it keeps only the
+  # SHA-256). Its keys are the files in secrets/vault, never in the image or a database.
+  vault:
+    build:
+      context: .
+      dockerfile: vault/Dockerfile
+    env_file:
+      - path: ./secrets/secrets.env
+        required: true
+    secrets: [internal_ca, vault_tls_cert, vault_tls_key]
+    environment:
+      VAULT_ENV: development
+      # VAULT_DATABASE_URL is put together from these and VAULT_DB_PASSWORD (secrets.env)
+      VAULT_DB_HOST: vault-db
+      VAULT_DB_USER: vault
+      VAULT_DB_NAME: sample_erp_vault
+      VAULT_KEY_DIR: /keys
+      VAULT_KEY_PROTECTION: file
+      VAULT_TLS_CERT: /run/secrets/vault_tls_cert
+      VAULT_TLS_KEY: /run/secrets/vault_tls_key
+      VAULT_TLS_CLIENT_CA: /run/secrets/internal_ca
+    volumes:
+      - ./secrets/vault:/keys:ro
+    depends_on:
+      vault-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+# The data. `docker compose down -v` deletes both volumes. Back up with
+#   docker compose exec db pg_dump -U postgres sample_erp > erp.sql
+#   docker compose exec vault-db pg_dump -U vault sample_erp_vault > vault.sql   (and keep secrets/vault/)
 volumes:
   db-data:
+  vault-data:
+
+# written by secrets/generate.ts
+secrets:
+  internal_ca:
+    file: ./secrets/tls/ca.crt
+  importer_tls_cert:
+    file: ./secrets/tls/importer.crt
+  importer_tls_key:
+    file: ./secrets/tls/importer.key
+  vault_tls_cert:
+    file: ./secrets/tls/vault.crt
+  vault_tls_key:
+    file: ./secrets/tls/vault.key
+  api_tls_cert:
+    file: ./secrets/tls/api.crt
+  api_tls_key:
+    file: ./secrets/tls/api.key
+  billing_tls_cert:
+    file: ./secrets/tls/billing.crt
+  billing_tls_key:
+    file: ./secrets/tls/billing.key
+  web_tls_cert:
+    file: ./secrets/tls/web.crt
+  web_tls_key:
+    file: ./secrets/tls/web.key

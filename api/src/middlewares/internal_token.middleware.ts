@@ -1,13 +1,16 @@
-import { createHash, timingSafeEqual } from "crypto";
 import { Request, Response, NextFunction } from "express";
 
-const hash = (value: string) => createHash("sha256").update(value).digest();
+type PeerSocket = { authorized?: boolean; getPeerCertificate?: () => { subject?: { CN?: string } } | null };
 
-// for service-to-service routes, which have no usuario. Without a configured token nothing gets through.
-export const requireInternalToken = (expected: string | undefined) => (req: Request, res: Response, next: NextFunction) => {
-  const received = req.headers.authorization?.replace(/^Bearer /, "");
-  if (!expected || !received || !timingSafeEqual(hash(received), hash(expected))) {
-    return res.status(401).json({ message: "Token interno inválido", status: "error" });
+// For service-to-service routes, which have no usuario: the caller must have presented, in the TLS
+// handshake, a certificate signed by the internal CA (API_TLS_CA) whose CN is `cn` (billing, for
+// /internal/billing). Browsers present none, so these routes are closed to them; without HTTPS nothing
+// gets through at all.
+export const requireClientCert = (cn: string) => (req: Request, res: Response, next: NextFunction) => {
+  const socket = req.socket as unknown as PeerSocket;
+  const peer = socket.authorized && typeof socket.getPeerCertificate === "function" ? socket.getPeerCertificate() : null;
+  if (peer?.subject?.CN !== cn) {
+    return res.status(401).json({ message: `Certificado de cliente inválido (esperado CN=${cn})`, status: "error" });
   }
   return next();
 };

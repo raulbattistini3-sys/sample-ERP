@@ -7,7 +7,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest(properties = { "stripe.api-key=rk_test_unit", "stripe.webhook-secret=whsec_unit_test",
-		"erp.api-url=http://localhost:1", "erp.internal-token=unit" })
+		"erp.api-url=http://localhost:1" })
 @Testcontainers(disabledWithoutDocker = true)
 class BillingApplicationTests {
 

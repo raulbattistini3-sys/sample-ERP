@@ -56,7 +56,7 @@ func TestCriarObter(t *testing.T) {
 	repo, _, usuarioID := setup(t)
 	ctx := context.Background()
 
-	criada, err := repo.Criar(ctx, usuarioID, "produtos.xlsx", []byte("xlsx"))
+	criada, err := repo.Criar(ctx, TipoProdutos, usuarioID, "produtos.xlsx", []byte("xlsx"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestCriarObter(t *testing.T) {
 	if _, err := repo.Obter(ctx, "not-a-uuid"); !errors.Is(err, ErrIDInvalido) {
 		t.Errorf("Obter(not-a-uuid) err = %v, want ErrIDInvalido", err)
 	}
-	if _, err := repo.Criar(ctx, "00000000-0000-0000-0000-000000000000", "a.xlsx", []byte("x")); !errors.Is(err, ErrUsuarioNaoEncontrado) {
+	if _, err := repo.Criar(ctx, TipoProdutos, "00000000-0000-0000-0000-000000000000", "a.xlsx", []byte("x")); !errors.Is(err, ErrUsuarioNaoEncontrado) {
 		t.Errorf("Criar(unknown usuario) err = %v, want ErrUsuarioNaoEncontrado", err)
 	}
 }
@@ -97,7 +97,7 @@ func TestCriarNotificacao(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	criada, err := repo.Criar(ctx, usuarioID, "a.xlsx", []byte("x"))
+	criada, err := repo.Criar(ctx, TipoProdutos, usuarioID, "a.xlsx", []byte("x"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestReivindicarConcorrente(t *testing.T) {
 	planilhas := make(map[string][]byte, jobs)
 	for i := range jobs {
 		p := []byte(fmt.Sprintf("planilha %d", i))
-		imp, err := repo.Criar(ctx, usuarioID, fmt.Sprintf("%d.xlsx", i), p)
+		imp, err := repo.Criar(ctx, TipoProdutos, usuarioID, fmt.Sprintf("%d.xlsx", i), p)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -178,7 +178,7 @@ func TestFinalizar(t *testing.T) {
 	repo, pool, usuarioID := setup(t)
 	ctx := context.Background()
 
-	if _, err := repo.Criar(ctx, usuarioID, "a.xlsx", []byte("x")); err != nil {
+	if _, err := repo.Criar(ctx, TipoProdutos, usuarioID, "a.xlsx", []byte("x")); err != nil {
 		t.Fatal(err)
 	}
 	job, err := repo.Reivindicar(ctx)
@@ -229,7 +229,7 @@ func TestDevolverTravadas(t *testing.T) {
 	repo, _, usuarioID := setup(t)
 	ctx := context.Background()
 
-	criada, err := repo.Criar(ctx, usuarioID, "a.xlsx", []byte("x"))
+	criada, err := repo.Criar(ctx, TipoProdutos, usuarioID, "a.xlsx", []byte("x"))
 	if err != nil {
 		t.Fatal(err)
 	}

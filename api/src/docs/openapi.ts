@@ -12,6 +12,12 @@ import permissoesUsuarioEnum from "../enums/usuarios_permissoes.enum";
 import { CreateAuditoriaManualSchema, CreateAuditoriaSchema } from "../utils/schemas/auditoria.schema";
 import { CreateCategoriaSchema, UpdateCategoriaSchema } from "../utils/schemas/categoria.schema";
 import DetalhamentoAuditoriaSchema from "../utils/schemas/detalhamento_auditoria.schema";
+import { ClienteSchema, VinculoSchema } from "../utils/schemas/cliente.schema";
+import { AlteracaoSchema, PlanoSchema } from "../utils/schemas/pagamento_recorrente.schema";
+import { EmpresaSchema } from "../utils/schemas/empresa.schema";
+import { AtividadeSchema, EstagioSchema } from "../utils/schemas/atividade.schema";
+import { ESTAGIOS } from "../services/hubspot.service";
+import { AcaoEmLoteSchema } from "../utils/schemas/produto_lote.schema";
 import { CreateProdutoSchema, FilterProdutoSchema, ImportProdutosSchema, UpdateProdutoSchema } from "../utils/schemas/produto.schema";
 import {
   CreateUserSchema,
@@ -92,6 +98,10 @@ const Importacao = registry.register(
     mensagem: z.string(),
     criada_em: z.string().datetime().nullable(),
     finalizada_em: z.string().datetime().nullable(),
+    tipo: z.enum(["produtos", "clientes", "empresas"]),
+    linhas_processadas: z.number().int().openapi({ description: "clientes: rows gone through so far (progress)" }),
+    linhas_falharam: z.number().int().openapi({ description: "clientes: rows not saved; page them with /clientes/importacoes/{id}/erros" }),
+    empresas_criadas: z.number().int(),
   }),
 );
 const ImportacaoSincrona = registry.register(
@@ -114,7 +124,10 @@ const Cliente = registry.register(
     url: z.string().nullable(),
     cargo: z.string().nullable(),
     senioridade: z.string().nullable(),
+    senioridadeOrigem: z.enum(["erp", "hubspot"]).nullable().openapi({ description: "erp: kept in the ERP's database, overriding HubSpot's" }),
     papeis: z.array(z.string()),
+    primeiroNome: z.string().nullable(),
+    sobrenome: z.string().nullable(),
   }),
 );
 const Empresa = registry.register(
@@ -277,6 +290,9 @@ rota({ metodo: "patch", caminho: "/user/{id}/archive", tag: USUARIOS, resumo: "D
 const PRODUTOS = "Produtos";
 const FiltroProdutos = FilterProdutoSchema.merge(Paginacao);
 rota({ metodo: "get", caminho: "/products/scroll", tag: PRODUTOS, resumo: "List products for infinite scroll", descricao: "Keyset pagination in name order. Send nextCursor from the previous response as cursor. There is no total, and the first load is cached per session for 30 minutes.", query: z.object({ cursor: z.string().optional(), amount: z.coerce.number().int().min(1).default(30).optional(), categoria: multi(categoriasNomesEnum.options, "Categoria"), icms: z.array(z.number()).optional().openapi({ description: "ICMS rate; repeat for several" }), status: Status.openapi({ description: "ADM/SU only; others see active products whatever this says" }), busca: z.string().max(100).optional().openapi({ description: "Text found anywhere in the name, or in the SKU with busca_por=sku; case-insensitive" }), busca_por: z.enum(["nome", "sku"]).optional().openapi({ description: "Which field busca searches (default nome)" }), cadastro_desde: z.string().datetime({ offset: true }).optional().openapi({ description: "Registered at or after this instant (ISO 8601 with offset); the web sends the user's local midnight" }), cadastro_antes: z.string().datetime({ offset: true }).optional().openapi({ description: "Registered before this instant (exclusive); the web sends the local midnight after the last day" }) }), resposta: z.object({ data: z.array(Produto), pageSize: z.number().int(), nextCursor: z.string().nullable() }), erros: [400] });
+rota({ metodo: "get", caminho: "/products/snapshot", tag: PRODUTOS, resumo: "Every visible product as one binary file", descricao: "application/vnd.sample-erp.columnar: the TCC1 columnar format (pkg/tablecore), gzipped when the client accepts it, for the browser's local search engine. Send the ETag back in If-None-Match to get a 304 while nothing changed. X-Snapshot-Rows and X-Snapshot-Bytes describe the file.", status: 200 });
+rota({ metodo: "post", caminho: "/products/lote", tag: PRODUTOS, resumo: "Act on several selected products", descricao: "inativar/ativar change the products (ativar: ADM or SU only); favoritar, desfavoritar, salvar_depois and tirar_depois mark them for the signed-in usuario only. alterados counts the products that changed (the others already were that way).", status: 200, corpo: AcaoEmLoteSchema, resposta: um(z.object({ acao: AcaoEmLoteSchema.shape.acao, selecionados: z.number().int(), alterados: z.number().int() })), erros: [403] });
+rota({ metodo: "get", caminho: "/products/marcacoes", tag: PRODUTOS, resumo: "Your favourite and saved-for-later products", descricao: "Product ids, newest mark first.", resposta: um(z.object({ favorito: z.array(z.string().uuid()), depois: z.array(z.string().uuid()) })) });
 rota({ metodo: "get", caminho: "/products/filter", tag: PRODUTOS, resumo: "Filter products", descricao: "Filters combine with AND. name is a case-insensitive contains.", query: FiltroProdutos, resposta: pagina(Produto), erros: [400] });
 rota({ metodo: "get", caminho: "/products/download", tag: PRODUTOS, resumo: "Filtered products with totals, for the spreadsheet", query: FiltroProdutos, resposta: pagina(Produto).extend({ aggregated_value: z.record(z.number()).openapi({ description: "Sum of valor_de_venda per categoria, over every filtered product" }) }), erros: [400] });
 rota({ metodo: "post", caminho: "/products/imports", tag: PRODUTOS, resumo: "Queue a spreadsheet import", descricao: "Answers 202 at once. Poll GET /products/imports/{id} until the status is concluida, rejeitada or falhou.", admin: true, arquivo: true, status: 202, resposta: um(Importacao), erros: [503] });
@@ -303,6 +319,8 @@ const AUDITORIAS = "Auditorias";
 rota({ metodo: "post", caminho: "/auditoria", tag: AUDITORIAS, resumo: "Create an auditoria", descricao: "The auditor is the signed-in usuario; usuario_id in the body is replaced.", corpo: CreateAuditoriaSchema.omit({ usuario_id: true }), resposta: Auditoria });
 rota({ metodo: "post", caminho: "/auditoria/manual", tag: AUDITORIAS, resumo: "Create an auditoria that changes a product or categoria", descricao: "valores is the full record as it should end up. The server diffs it against the stored row, saves both and records every changed field, in one transaction.", corpo: CreateAuditoriaManualSchema.omit({ usuario_id: true }), resposta: Auditoria, erros: [404, 409] });
 rota({ metodo: "get", caminho: "/auditoria", tag: AUDITORIAS, resumo: "List auditorias, newest first", descricao: "The first unfiltered load of 30 is cached per session for 30 minutes.", query: Paginacao.extend({ acao: multi(["Criacao", "Alteracao", "Delecao"], "Ação"), auditor: z.array(z.string().uuid()).optional().openapi({ description: "Auditor (usuario id); repeat for several" }) }), resposta: pagina(Auditoria), erros: [400] });
+rota({ metodo: "get", caminho: "/auditoria/pendentes", tag: AUDITORIAS, resumo: "Changes waiting to become automatic auditorias", descricao: "Product and categoria changes are queued and consolidated every AUDITORIAS_INTERVALO_MINUTOS (default 5). ultima and proxima are the last and next sweep.", resposta: um(z.object({ total: z.number().int(), desde: z.string().nullable(), ultima: z.string().nullable(), proxima: z.string().nullable(), intervaloMinutos: z.number().int() })) });
+rota({ metodo: "post", caminho: "/auditoria/pendentes/consolidar", tag: AUDITORIAS, resumo: "Consolidate the pending changes now", descricao: "Runs the sweep without waiting for the timer (joins one already running).", status: 200, resposta: um(z.object({ pendentes: z.number().int(), auditorias: z.number().int(), lotes: z.number().int() })) });
 rota({ metodo: "get", caminho: "/auditoria/{id}", tag: AUDITORIAS, resumo: "Get an auditoria", params: PorId, resposta: um(Auditoria) });
 rota({ metodo: "put", caminho: "/auditoria/{id}", tag: AUDITORIAS, resumo: "Update an auditoria", descricao: "Changes acao_efetuada and data_de_audicao only. The whole body is still validated.", params: PorId, corpo: CreateAuditoriaSchema.omit({ usuario_id: true }) });
 rota({ metodo: "delete", caminho: "/auditoria/{id}", tag: AUDITORIAS, resumo: "Delete an auditoria", params: PorId });
@@ -320,6 +338,34 @@ const CLIENTES = "Clientes";
 const BuscaClientes = z.object({ page: Paginacao.shape.page, amount: z.coerce.number().int().min(1).max(100).default(20).optional(), busca: z.string().optional() });
 rota({ metodo: "get", caminho: "/clientes", tag: CLIENTES, resumo: "List HubSpot contacts", descricao: "Read live from HubSpot; the first load of 30 is cached per session for 30 minutes.", admin: true, query: BuscaClientes, resposta: pagina(Cliente), erros: [409, 503] });
 rota({ metodo: "get", caminho: "/clientes/empresas", tag: CLIENTES, resumo: "List HubSpot companies with their contacts ranked", descricao: "Decision makers first, then seniority, then name.", admin: true, query: BuscaClientes.extend({ decisores: z.enum(["true", "false"]).optional() }), resposta: pagina(Empresa).extend({ sem_empresa: z.number().int() }), erros: [409, 503] });
+const PorContato = z.object({ id: z.string().regex(/^\d+$/) });
+const ClienteSalvo = um(Cliente).extend({ aviso: z.string().nullable().openapi({ description: "Saved in HubSpot, but the ERP's senioridade wasn't" }) });
+rota({ metodo: "post", caminho: "/clientes/importacoes", tag: CLIENTES, resumo: "Queue a clients spreadsheet", descricao: "Up to 500,000 rows, done by the Go importer (contacts upserted in HubSpot by e-mail, in batches of 100). Answers 202; poll GET /clientes/importacoes/{id}.", admin: true, arquivo: true, status: 202, resposta: um(Importacao), erros: [503] });
+rota({ metodo: "get", caminho: "/clientes/importacoes/{id}", tag: CLIENTES, resumo: "Follow a clients import", admin: true, params: PorId, resposta: um(Importacao), erros: [503] });
+rota({ metodo: "get", caminho: "/clientes/importacoes/{id}/erros", tag: CLIENTES, resumo: "Failed rows of a clients import", descricao: "Ordered by seq; pass ?depois=<last seq you have> to get only the new ones. proximo is the seq to continue from, or null when there are no more.", admin: true, params: PorId, query: z.object({ depois: z.coerce.number().int().optional(), limite: z.coerce.number().int().max(5000).optional() }), resposta: z.object({ data: z.array(z.object({ seq: z.number().int(), linha: z.number().int(), campo: z.string(), email: z.string(), mensagem: z.string() })), proximo: z.number().int().nullable() }), erros: [503] });
+rota({ metodo: "post", caminho: "/clientes/empresas/importacoes", tag: CLIENTES, resumo: "Queue a companies spreadsheet", descricao: "Columns Nome (required), Domínio, Setor (HubSpot industry value or label), Telefone, Site, Cidade, Estado, País, Descrição, E-mail SAC. Done by the Go importer: each company is found in HubSpot by name and updated (empty cells keep what HubSpot has) or created; the SAC e-mail is kept in the ERP. Answers 202; poll GET /clientes/empresas/importacoes/{id}.", admin: true, arquivo: true, status: 202, resposta: um(Importacao), erros: [503] });
+rota({ metodo: "get", caminho: "/clientes/empresas/importacoes/{id}", tag: CLIENTES, resumo: "Follow a companies import", admin: true, params: PorId, resposta: um(Importacao), erros: [503] });
+rota({ metodo: "get", caminho: "/clientes/empresas/importacoes/{id}/erros", tag: CLIENTES, resumo: "Failed rows of a companies import (email holds the company name)", descricao: "Ordered by seq; pass ?depois=<last seq you have> to get only the new ones. proximo is the seq to continue from, or null when there are no more.", admin: true, params: PorId, query: z.object({ depois: z.coerce.number().int().optional(), limite: z.coerce.number().int().max(5000).optional() }), resposta: z.object({ data: z.array(z.object({ seq: z.number().int(), linha: z.number().int(), campo: z.string(), email: z.string(), mensagem: z.string() })), proximo: z.number().int().nullable() }), erros: [503] });
+const PorEmpresa = z.object({ id: z.string().regex(/^\d+$/) });
+const Estagio = z.enum(ESTAGIOS).openapi({ description: "Funil column (HubSpot lifecyclestage; subscriber/other/empty are nao_contatado)" });
+const EmpresaDetalhe = registry.register(
+  "EmpresaDetalhe",
+  z.object({ id: z.string(), nome: z.string(), dominio: z.string().nullable(), setor: z.string().nullable(), telefone: z.string().nullable(), cidade: z.string().nullable(), estado: z.string().nullable(), pais: z.string().nullable(), site: z.string().nullable(), descricao: z.string().nullable(), emailSac: z.string().nullable().openapi({ description: "Kept in the ERP: copied on the e-mails about a client's failed payment" }), responsavelId: z.string().nullable().openapi({ description: "HubSpot owner (hubspot_owner_id)" }), estagio: Estagio, url: z.string().nullable() }),
+);
+const EmpresaSalva = um(EmpresaDetalhe).extend({ aviso: z.string().nullable().openapi({ description: "Saved in HubSpot, but the ERP's SAC e-mail wasn't" }) });
+rota({ metodo: "get", caminho: "/clientes/empresas/setores", tag: CLIENTES, resumo: "HubSpot's industry options", descricao: "The values setor accepts; cached for an hour.", admin: true, resposta: lista(z.object({ value: z.string(), label: z.string() })), erros: [409, 503] });
+rota({ metodo: "get", caminho: "/clientes/empresas/responsaveis", tag: CLIENTES, resumo: "HubSpot users a company can be assigned to", descricao: "Cached for 5 minutes.", admin: true, resposta: lista(z.object({ id: z.string(), nome: z.string(), email: z.string().nullable() })), erros: [409, 503] });
+rota({ metodo: "post", caminho: "/clientes/empresas", tag: CLIENTES, resumo: "Create a company", descricao: "Created in HubSpot (409 when one with this name exists); emailSac is kept in the ERP.", admin: true, status: 201, corpo: EmpresaSchema, resposta: EmpresaSalva, erros: [409, 503] });
+rota({ metodo: "get", caminho: "/clientes/empresas/{id}", tag: CLIENTES, resumo: "Get a company", admin: true, params: PorEmpresa, resposta: um(EmpresaDetalhe), erros: [409, 503] });
+rota({ metodo: "put", caminho: "/clientes/empresas/{id}", tag: CLIENTES, resumo: "Edit a company", descricao: "Empty fields clear the HubSpot property; responsavelId absent keeps the owner, null clears it.", admin: true, params: PorEmpresa, corpo: EmpresaSchema, resposta: EmpresaSalva, erros: [409, 503] });
+rota({ metodo: "put", caminho: "/clientes/empresas/{id}/estagio", tag: CLIENTES, resumo: "Move a company to another Funil column", admin: true, params: PorEmpresa, corpo: EstagioSchema, erros: [409, 503] });
+rota({ metodo: "get", caminho: "/clientes/funil", tag: CLIENTES, resumo: "One Funil column", descricao: "The companies in one stage, newest change first, 25 per page; pass proxima back as after for the next page.", admin: true, query: z.object({ estagio: Estagio, after: z.string().optional(), busca: z.string().max(100).optional() }), resposta: z.object({ data: z.array(z.object({ id: z.string(), nome: z.string(), dominio: z.string().nullable(), cidade: z.string().nullable(), estado: z.string().nullable(), setor: z.string().nullable(), responsavelId: z.string().nullable(), estagio: Estagio })), total: z.number().int(), proxima: z.string().nullable(), estagios: z.array(Estagio) }), erros: [400, 409, 503] });
+rota({ metodo: "post", caminho: "/clientes/atividades", tag: CLIENTES, resumo: "Log a note, e-mail or meeting", descricao: "Goes to the HubSpot timeline of the client (and its company) or of the company. An e-mail goes to a client and, unless enviar is false, is also sent to them through Resend; emailEnviado and aviso say how that went.", admin: true, status: 201, corpo: AtividadeSchema, resposta: um(z.object({ id: z.string(), tipo: z.enum(["nota", "email", "reuniao"]), emailEnviado: z.boolean().nullable(), aviso: z.string().nullable() })), erros: [404, 409, 503] });
+rota({ metodo: "get", caminho: "/clientes/empresas/{id}/clientes", tag: CLIENTES, resumo: "List a company's clients", admin: true, params: PorEmpresa, resposta: z.object({ data: z.array(Cliente) }), erros: [409, 503] });
+rota({ metodo: "post", caminho: "/clientes/empresas/{id}/clientes", tag: CLIENTES, resumo: "Link existing clients to a company", descricao: "For clients registered before their company: each one leaves its other companies, is linked here (primary) and gets the company name. Up to 100 per call; per-client failures come back in falhas.", admin: true, params: PorEmpresa, corpo: VinculoSchema, resposta: z.object({ data: z.object({ vinculados: z.array(z.string()), falhas: z.array(z.object({ clienteId: z.string(), mensagem: z.string() })) }) }), erros: [404, 409, 503] });
+rota({ metodo: "get", caminho: "/clientes/{id}", tag: CLIENTES, resumo: "Get a HubSpot contact", admin: true, params: PorContato, resposta: um(Cliente), erros: [409, 503] });
+rota({ metodo: "post", caminho: "/clientes", tag: CLIENTES, resumo: "Create a client", descricao: "Created as a HubSpot contact; senioridade is kept in the ERP (null or absent: none).", admin: true, status: 201, corpo: ClienteSchema, resposta: ClienteSalvo, erros: [409, 503] });
+rota({ metodo: "put", caminho: "/clientes/{id}", tag: CLIENTES, resumo: "Edit a client", descricao: "Written to the HubSpot contact; senioridade: absent keeps the ERP's, null clears it (HubSpot's shows again).", admin: true, params: PorContato, corpo: ClienteSchema, resposta: ClienteSalvo, erros: [409, 503] });
 
 // ---- integracoes ----
 const INTEGRACOES = "Integrações";
@@ -340,8 +386,47 @@ rota({ metodo: "delete", caminho: "/integracoes/{provider}", tag: INTEGRACOES, r
 rota({ metodo: "get", caminho: "/integracoes/stripe", tag: INTEGRACOES, resumo: "Stripe connection and latest events", descricao: "Asked of Stripe live through the billing service (BILLING_URL). Always 200: configurado/alcancavel/status.conectado say what is missing.", admin: true, query: z.object({ limite: z.coerce.number().int().min(1).max(50).optional() }), resposta: z.object({ configurado: z.boolean(), alcancavel: z.boolean(), status: z.object({ conectado: z.boolean(), conta: z.object({ id: z.string(), nome: z.string().nullable(), pais: z.string().nullable(), moeda: z.string().nullable(), cobrancasAtivas: z.boolean() }).nullable(), modoTeste: z.boolean(), webhookConfigurado: z.boolean(), erro: z.string().nullable() }).nullable(), eventos: z.array(z.object({ id: z.string(), tipo: z.string(), criadoEm: z.string(), producao: z.boolean(), resumo: z.string().nullable() })), erro: z.string().nullable() }) });
 
 const COBRANCAS = "Cobranças";
-rota({ metodo: "post", caminho: "/cobrancas", tag: COBRANCAS, resumo: "Bill one or more HubSpot contacts", descricao: "One Stripe invoice per contact (read live from HubSpot), its payment link e-mailed to the contact through Resend, and a summary to the issuer. The Idempotency-Key makes a retry bill and mail nobody twice.", admin: true, status: 201, corpo: z.object({ clienteIds: z.array(z.string()).min(1).max(50), descricao: z.string().max(200), valor: z.number().min(1), vencimentoDias: z.number().int().min(1).max(60).optional() }), resposta: um(z.object({ resultados: z.array(z.object({ clienteId: z.string(), nome: z.string(), email: z.string().nullable(), ok: z.boolean(), numero: z.string().nullable(), url: z.string().nullable(), vencimento: z.string().nullable(), erro: z.string().nullable(), emailEnviado: z.boolean() })), emissorNotificado: z.boolean(), erroEmailEmissor: z.string().nullable() })), erros: [400, 503] });
+rota({ metodo: "post", caminho: "/cobrancas", tag: COBRANCAS, resumo: "Bill one or more HubSpot contacts", descricao: "One Stripe invoice per contact (read live from HubSpot), its payment link e-mailed to the contact through Resend, and a summary to the issuer. The Idempotency-Key makes a retry bill and mail nobody twice.", admin: true, status: 201, corpo: z.object({ clienteIds: z.array(z.string()).min(1).max(50), descricao: z.string().max(200), valor: z.number().min(1), vencimentoDias: z.number().int().min(1).max(60).optional(), cc: z.array(z.string().email()).max(10).optional(), cco: z.array(z.string().email()).max(10).optional() }), resposta: um(z.object({ resultados: z.array(z.object({ clienteId: z.string(), nome: z.string(), email: z.string().nullable(), ok: z.boolean(), numero: z.string().nullable(), url: z.string().nullable(), vencimento: z.string().nullable(), erro: z.string().nullable(), emailEnviado: z.boolean(), semCopias: z.boolean().optional().openapi({ description: "The mail provider refused the Cc/Cco (e.g. Resend test mode), so it went to the client only" }) })), emissorNotificado: z.boolean(), erroEmailEmissor: z.string().nullable() })), erros: [400, 503] });
 rota({ metodo: "get", caminho: "/cobrancas", tag: COBRANCAS, resumo: "Latest cobranças", descricao: "The 30 newest invoices this ERP issued, from Stripe.", admin: true, resposta: lista(z.object({ id: z.string(), numero: z.string().nullable(), status: z.string(), clienteNome: z.string().nullable(), clienteEmail: z.string().nullable(), valorCentavos: z.number(), pagoCentavos: z.number(), criadaEm: z.string(), vencimento: z.string().nullable(), url: z.string().nullable(), emissor: z.string().nullable() })), erros: [503] });
+const LinhaDoTempo = z.object({ rodando: z.boolean(), iniciadaEm: z.string().nullable(), terminadaEm: z.string().nullable(), faturas: z.number().int(), notas: z.number().int(), pagas: z.number().int(), semCliente: z.number().int(), erros: z.array(z.string()), whatsappConfigurado: z.boolean() });
+rota({ metodo: "get", caminho: "/cobrancas/linha-do-tempo", tag: COBRANCAS, resumo: "Progress of the HubSpot timeline backfill", admin: true, resposta: um(LinhaDoTempo) });
+rota({ metodo: "post", caminho: "/cobrancas/linha-do-tempo/sincronizar", tag: COBRANCAS, resumo: "Give every issued invoice its HubSpot timeline note", descricao: "Runs in the background (joins one already running); paid invoices also move the client to customer. Poll GET /cobrancas/linha-do-tempo.", admin: true, status: 202, resposta: um(LinhaDoTempo) });
+const Ciclo = z.object({ ciclo: z.number().int(), dataReferencia: z.string(), valorCentavos: z.number().int(), status: z.enum(["emitida", "falhou", "pulado"]), faturaId: z.string().nullable(), faturaNumero: z.string().nullable(), faturaUrl: z.string().nullable(), vencimento: z.string().nullable(), emailEnviado: z.boolean(), erro: z.string().nullable(), criadoEm: z.string() });
+const PagamentoMensal = registry.register(
+  "PagamentoMensal",
+  z.object({
+    id: z.string().uuid(),
+    hubspotContatoId: z.string(),
+    descricao: z.string(),
+    valorCentavos: z.number().int(),
+    valorMaximoCentavos: z.number().int(),
+    valorMinimoCentavos: z.number().int().nullable(),
+    intervalo: z.number().int(),
+    unidade: z.enum(["dias", "meses"]),
+    vencimentoDias: z.number().int(),
+    dataInicio: z.string(),
+    dataFim: z.string().nullable(),
+    proximoCiclo: z.number().int(),
+    proximaData: z.string(),
+    status: z.enum(["ativo", "pausado", "encerrado", "cancelado"]),
+    tentativas: z.number().int(),
+    ultimoErro: z.string().nullable(),
+    cliente: z.object({ id: z.string(), nome: z.string(), email: z.string().nullable(), url: z.string().nullable() }).nullable(),
+    ciclos: z.array(Ciclo),
+  }),
+);
+const RECORRENTES = "/cobrancas/recorrentes";
+rota({ metodo: "get", caminho: RECORRENTES, tag: COBRANCAS, resumo: "List recurring payments (Pagamento mensal)", admin: true, query: z.object({ clienteId: z.string().optional() }), resposta: lista(PagamentoMensal), erros: [503] });
+rota({ metodo: "post", caminho: RECORRENTES, tag: COBRANCAS, resumo: "Create a recurring payment", descricao: "Charges valor (reais) every intervalo dias/meses from dataInicio, never above valorMaximo nor below valorMinimo. Each cycle is a Stripe invoice e-mailed to the client.", admin: true, status: 201, corpo: PlanoSchema, resposta: um(PagamentoMensal), erros: [422, 503] });
+rota({ metodo: "get", caminho: `${RECORRENTES}/{id}`, tag: COBRANCAS, resumo: "Get a recurring payment and its cycles", admin: true, params: PorId, resposta: um(PagamentoMensal) });
+rota({ metodo: "put", caminho: `${RECORRENTES}/{id}`, tag: COBRANCAS, resumo: "Change a recurring payment", descricao: "From the next cycle on; the client, frequency and start can't change.", admin: true, params: PorId, corpo: AlteracaoSchema, resposta: um(PagamentoMensal), erros: [409] });
+for (const [acao, resumo] of [["pausar", "Pause"], ["retomar", "Resume (from the first date not yet past)"], ["cancelar", "Cancel"]] as const) {
+  rota({ metodo: "post", caminho: `${RECORRENTES}/{id}/${acao}`, tag: COBRANCAS, resumo: `${resumo} a recurring payment`, admin: true, params: PorId, resposta: um(PagamentoMensal), erros: [409] });
+}
+
+// ---- telemetria ----
+const TELEMETRIA = "Telemetria";
+rota({ metodo: "post", caminho: "/telemetry", tag: TELEMETRIA, resumo: "Send a batch of web telemetry events", descricao: "Timings and sizes from the web's telemetry bus (which thread ran a search or parsed a page, long animation frames), kept as ML training data: never row data nor typed text. Always 204; the X-Telemetry header says stored or dropped (TELEMETRY_DIR unset).", status: 204, corpo: z.array(z.object({ source: z.string().min(1).max(64), type: z.string().min(1).max(64), ts: z.number(), data: z.record(z.string(), z.unknown()) })).min(1).max(200) });
 
 export const openApiDocument = new OpenApiGeneratorV31(registry.definitions).generateDocument({
   openapi: "3.1.0",
@@ -360,5 +445,7 @@ export const openApiDocument = new OpenApiGeneratorV31(registry.definitions).gen
     { name: DETALHAMENTOS, description: "The before and after of an auditoria." },
     { name: CLIENTES, description: "HubSpot contacts and companies, read live. ADM and SU only." },
     { name: INTEGRACOES, description: "Jira and HubSpot connections and their sending queues." },
+    { name: COBRANCAS, description: "Stripe invoices for HubSpot contacts (through the billing service) and recurring payments. ADM and SU only." },
+    { name: TELEMETRIA, description: "Web performance events." },
   ],
 });
