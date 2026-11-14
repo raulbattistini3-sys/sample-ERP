@@ -1,4 +1,4 @@
-# The api, web and importer images build from the repo root. Keep the context to sources: no installed
+# The api, web, importer, network and vault images build from the repo root. Keep the context to sources: no installed
 # dependencies, build outputs, local secrets or the launcher's bundle.
 **/node_modules
 **/dist
@@ -13,3 +13,9 @@ web/test-results
 web/playwright-report
 # the database CA is mounted at run time, never baked into an image
 *.crt
+# generated keys, tokens and certificates (secrets/generate.ts) never enter an image
+secrets
+# private keys of any kind (TLS, vault KEKs, DPAPI blobs)
+*.key
+*.pem
+*.dpapi
