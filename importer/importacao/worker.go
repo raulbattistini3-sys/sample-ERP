@@ -23,17 +23,37 @@ type WorkerConfig struct {
 	Intervalo     time.Duration // fallback queue check and stuck-import sweep
 }
 
+// Processamento takes one claimed job to its final status (Processador for products, ProcessadorClientes
+// for clients, ProcessadorEmpresas for companies).
+type Processamento interface {
+	Processar(ctx context.Context, job *postgres.Job) error
+}
+
 // Worker claims queued imports and processes them. Several can run against the same queue.
 type Worker struct {
-	pool *pgxpool.Pool
-	repo *postgres.Importacoes
-	proc *Processador
-	cfg  WorkerConfig
+	pool     *pgxpool.Pool
+	repo     *postgres.Importacoes
+	proc     Processamento
+	clientes Processamento // nil: client imports fail with a message saying so
+	empresas Processamento // same, for companies
+	cfg      WorkerConfig
 }
 
 // NewWorker returns a Worker. Call Run to start it.
-func NewWorker(pool *pgxpool.Pool, repo *postgres.Importacoes, proc *Processador, cfg WorkerConfig) *Worker {
+func NewWorker(pool *pgxpool.Pool, repo *postgres.Importacoes, proc Processamento, cfg WorkerConfig) *Worker {
 	return &Worker{pool: pool, repo: repo, proc: proc, cfg: cfg}
+}
+
+// ComClientes sets the processor of client imports.
+func (w *Worker) ComClientes(proc Processamento) *Worker {
+	w.clientes = proc
+	return w
+}
+
+// ComEmpresas sets the processor of company imports.
+func (w *Worker) ComEmpresas(proc Processamento) *Worker {
+	w.empresas = proc
+	return w
 }
 
 // Run processes imports until ctx is cancelled:
@@ -99,11 +119,27 @@ func (w *Worker) processar(ctx context.Context, job *postgres.Job) {
 	log := slog.With("importacao", job.ID, "arquivo", job.NomeArquivo, "tentativa", job.Tentativas)
 	inicio := time.Now()
 
-	// never outlive the lease: past it, DevolverTravadas may hand the job to someone else
-	jobCtx, cancel := context.WithTimeout(ctx, w.cfg.Prazo)
-	defer cancel()
-
-	err := w.proc.Processar(jobCtx, job)
+	var err error
+	if job.Tipo == postgres.TipoClientes || job.Tipo == postgres.TipoEmpresas {
+		// no overall timeout: a 500,000-row import runs for hours. Every committed batch renews the lease,
+		// and a batch that stalls past it loses the claim (Avancar's fencing) and resumes elsewhere.
+		proc, nome := w.clientes, "clientes"
+		if job.Tipo == postgres.TipoEmpresas {
+			proc, nome = w.empresas, "empresas"
+		}
+		if proc == nil {
+			err = w.repo.Finalizar(ctx, w.pool, job, postgres.Resultado{
+				Status: postgres.StatusFalhou, Mensagem: "O importador não está configurado para " + nome + " (HubSpot).",
+			})
+		} else {
+			err = proc.Processar(ctx, job)
+		}
+	} else {
+		// never outlive the lease: past it, DevolverTravadas may hand the job to someone else
+		jobCtx, cancel := context.WithTimeout(ctx, w.cfg.Prazo)
+		defer cancel()
+		err = w.proc.Processar(jobCtx, job)
+	}
 	switch {
 	case err == nil:
 		log.Info("importacao finished", "duracao", time.Since(inicio))

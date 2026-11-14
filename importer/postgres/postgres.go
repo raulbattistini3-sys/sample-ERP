@@ -44,11 +44,11 @@ func VerificarSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	err := pool.QueryRow(ctx, `
 		SELECT count(*) FROM information_schema.columns
 		WHERE table_schema = current_schema() AND table_name = 'importacoes'
-			AND column_name IN ('planilha', 'linhas_criadas', 'linhas_atualizadas')`).Scan(&colunas)
+			AND column_name IN ('planilha', 'linhas_criadas', 'linhas_atualizadas', 'tipo', 'linhas_processadas')`).Scan(&colunas)
 	if err != nil {
 		return fmt.Errorf("postgres: checking the schema: %w", err)
 	}
-	if colunas < 3 {
+	if colunas < 5 {
 		return fmt.Errorf("postgres: the database is missing the importacoes table or its latest columns; " +
 			"apply the API's migrations first (cd api && bun run db:migrate, with DATABASE_URL pointing at this database)")
 	}

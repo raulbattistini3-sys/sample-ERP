@@ -22,6 +22,66 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// What a spreadsheet holds, which decides how it is read and where it is written.
+type TipoImportacao int32
+
+const (
+	// read as PRODUTOS, for callers from before clients could be imported
+	TipoImportacao_TIPO_IMPORTACAO_UNSPECIFIED TipoImportacao = 0
+	// products, written to the database in one transaction: all rows or none
+	TipoImportacao_TIPO_IMPORTACAO_PRODUTOS TipoImportacao = 1
+	// clients (Nome, Sobrenome, E-mail, Telefone, Empresa, Cargo, Senioridade, Decisor), created or updated
+	// in HubSpot by e-mail in batches of 100; a row that fails is reported and the others go on
+	TipoImportacao_TIPO_IMPORTACAO_CLIENTES TipoImportacao = 2
+	// companies (Nome, Domínio, Setor, Telefone, Site, Cidade, Estado, País, Descrição, E-mail SAC), found in
+	// HubSpot by name (the oldest with it) and updated, or created; in batches like CLIENTES. The SAC e-mail
+	// is kept in the ERP (empresa_contatos_erp), not in HubSpot
+	TipoImportacao_TIPO_IMPORTACAO_EMPRESAS TipoImportacao = 3
+)
+
+// Enum value maps for TipoImportacao.
+var (
+	TipoImportacao_name = map[int32]string{
+		0: "TIPO_IMPORTACAO_UNSPECIFIED",
+		1: "TIPO_IMPORTACAO_PRODUTOS",
+		2: "TIPO_IMPORTACAO_CLIENTES",
+		3: "TIPO_IMPORTACAO_EMPRESAS",
+	}
+	TipoImportacao_value = map[string]int32{
+		"TIPO_IMPORTACAO_UNSPECIFIED": 0,
+		"TIPO_IMPORTACAO_PRODUTOS":    1,
+		"TIPO_IMPORTACAO_CLIENTES":    2,
+		"TIPO_IMPORTACAO_EMPRESAS":    3,
+	}
+)
+
+func (x TipoImportacao) Enum() *TipoImportacao {
+	p := new(TipoImportacao)
+	*p = x
+	return p
+}
+
+func (x TipoImportacao) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TipoImportacao) Descriptor() protoreflect.EnumDescriptor {
+	return file_importador_v1_importador_proto_enumTypes[0].Descriptor()
+}
+
+func (TipoImportacao) Type() protoreflect.EnumType {
+	return &file_importador_v1_importador_proto_enumTypes[0]
+}
+
+func (x TipoImportacao) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TipoImportacao.Descriptor instead.
+func (TipoImportacao) EnumDescriptor() ([]byte, []int) {
+	return file_importador_v1_importador_proto_rawDescGZIP(), []int{0}
+}
+
 // Where an import is. CONCLUIDA, REJEITADA and FALHOU are final.
 type StatusImportacao int32
 
@@ -31,7 +91,7 @@ const (
 	StatusImportacao_STATUS_IMPORTACAO_PENDENTE StatusImportacao = 1
 	// a worker holds it
 	StatusImportacao_STATUS_IMPORTACAO_PROCESSANDO StatusImportacao = 2
-	// every row was imported
+	// every row was imported; for CLIENTES and EMPRESAS, every row was gone through (see linhas_falharam)
 	StatusImportacao_STATUS_IMPORTACAO_CONCLUIDA StatusImportacao = 3
 	// at least one row was rejected; nothing is written when any row fails, as in POST /products/import
 	StatusImportacao_STATUS_IMPORTACAO_REJEITADA StatusImportacao = 4
@@ -70,11 +130,11 @@ func (x StatusImportacao) String() string {
 }
 
 func (StatusImportacao) Descriptor() protoreflect.EnumDescriptor {
-	return file_importador_v1_importador_proto_enumTypes[0].Descriptor()
+	return file_importador_v1_importador_proto_enumTypes[1].Descriptor()
 }
 
 func (StatusImportacao) Type() protoreflect.EnumType {
-	return &file_importador_v1_importador_proto_enumTypes[0]
+	return &file_importador_v1_importador_proto_enumTypes[1]
 }
 
 func (x StatusImportacao) Number() protoreflect.EnumNumber {
@@ -83,18 +143,19 @@ func (x StatusImportacao) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use StatusImportacao.Descriptor instead.
 func (StatusImportacao) EnumDescriptor() ([]byte, []int) {
-	return file_importador_v1_importador_proto_rawDescGZIP(), []int{0}
+	return file_importador_v1_importador_proto_rawDescGZIP(), []int{1}
 }
 
 // An upload to queue.
 type IniciarImportacaoRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// the .xlsx or .csv contents. The whole message must fit gRPC's 4 MB default, which the server doesn't raise
+	// the .xlsx or .csv contents. The server and the API both accept messages up to 128 MB
 	Planilha []byte `protobuf:"bytes,1,opt,name=planilha,proto3" json:"planilha,omitempty"`
 	// original name; its extension decides how the file is read
 	NomeArquivo string `protobuf:"bytes,2,opt,name=nome_arquivo,json=nomeArquivo,proto3" json:"nome_arquivo,omitempty"`
 	// who uploaded it, for the auditoria
-	UsuarioId     string `protobuf:"bytes,3,opt,name=usuario_id,json=usuarioId,proto3" json:"usuario_id,omitempty"`
+	UsuarioId     string         `protobuf:"bytes,3,opt,name=usuario_id,json=usuarioId,proto3" json:"usuario_id,omitempty"`
+	Tipo          TipoImportacao `protobuf:"varint,4,opt,name=tipo,proto3,enum=importador.v1.TipoImportacao" json:"tipo,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -148,6 +209,13 @@ func (x *IniciarImportacaoRequest) GetUsuarioId() string {
 		return x.UsuarioId
 	}
 	return ""
+}
+
+func (x *IniciarImportacaoRequest) GetTipo() TipoImportacao {
+	if x != nil {
+		return x.Tipo
+	}
+	return TipoImportacao_TIPO_IMPORTACAO_UNSPECIFIED
 }
 
 type IniciarImportacaoResponse struct {
@@ -282,6 +350,194 @@ func (x *ObterImportacaoResponse) GetImportacao() *Importacao {
 	return nil
 }
 
+type ListarErrosRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// the last seq the caller already has; 0 for the first page
+	DepoisDe int64 `protobuf:"varint,2,opt,name=depois_de,json=depoisDe,proto3" json:"depois_de,omitempty"`
+	// 1 to 5000; 0 means 500
+	Limite        int32 `protobuf:"varint,3,opt,name=limite,proto3" json:"limite,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListarErrosRequest) Reset() {
+	*x = ListarErrosRequest{}
+	mi := &file_importador_v1_importador_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListarErrosRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListarErrosRequest) ProtoMessage() {}
+
+func (x *ListarErrosRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_importador_v1_importador_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListarErrosRequest.ProtoReflect.Descriptor instead.
+func (*ListarErrosRequest) Descriptor() ([]byte, []int) {
+	return file_importador_v1_importador_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ListarErrosRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ListarErrosRequest) GetDepoisDe() int64 {
+	if x != nil {
+		return x.DepoisDe
+	}
+	return 0
+}
+
+func (x *ListarErrosRequest) GetLimite() int32 {
+	if x != nil {
+		return x.Limite
+	}
+	return 0
+}
+
+type ListarErrosResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Erros         []*ErroImportacao      `protobuf:"bytes,1,rep,name=erros,proto3" json:"erros,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListarErrosResponse) Reset() {
+	*x = ListarErrosResponse{}
+	mi := &file_importador_v1_importador_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListarErrosResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListarErrosResponse) ProtoMessage() {}
+
+func (x *ListarErrosResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_importador_v1_importador_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListarErrosResponse.ProtoReflect.Descriptor instead.
+func (*ListarErrosResponse) Descriptor() ([]byte, []int) {
+	return file_importador_v1_importador_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ListarErrosResponse) GetErros() []*ErroImportacao {
+	if x != nil {
+		return x.Erros
+	}
+	return nil
+}
+
+// One row's problem in a client import.
+type ErroImportacao struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// increasing within an import; page with ListarErrosRequest.depois_de
+	Seq int64 `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
+	// spreadsheet row number, header included
+	Linha int32 `protobuf:"varint,2,opt,name=linha,proto3" json:"linha,omitempty"`
+	// column, when the problem is one field
+	Campo string `protobuf:"bytes,3,opt,name=campo,proto3" json:"campo,omitempty"`
+	// the row's e-mail when it had one (CLIENTES), or the company's name (EMPRESAS), so the user finds the row
+	// without opening the sheet
+	Email         string `protobuf:"bytes,4,opt,name=email,proto3" json:"email,omitempty"`
+	Mensagem      string `protobuf:"bytes,5,opt,name=mensagem,proto3" json:"mensagem,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ErroImportacao) Reset() {
+	*x = ErroImportacao{}
+	mi := &file_importador_v1_importador_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ErroImportacao) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ErroImportacao) ProtoMessage() {}
+
+func (x *ErroImportacao) ProtoReflect() protoreflect.Message {
+	mi := &file_importador_v1_importador_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ErroImportacao.ProtoReflect.Descriptor instead.
+func (*ErroImportacao) Descriptor() ([]byte, []int) {
+	return file_importador_v1_importador_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ErroImportacao) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
+func (x *ErroImportacao) GetLinha() int32 {
+	if x != nil {
+		return x.Linha
+	}
+	return 0
+}
+
+func (x *ErroImportacao) GetCampo() string {
+	if x != nil {
+		return x.Campo
+	}
+	return ""
+}
+
+func (x *ErroImportacao) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *ErroImportacao) GetMensagem() string {
+	if x != nil {
+		return x.Mensagem
+	}
+	return ""
+}
+
 // One import and how it went.
 type Importacao struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -300,15 +556,22 @@ type Importacao struct {
 	CriadaEm     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=criada_em,json=criadaEm,proto3" json:"criada_em,omitempty"`
 	FinalizadaEm *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=finalizada_em,json=finalizadaEm,proto3" json:"finalizada_em,omitempty"`
 	// of linhas_importadas, how many created products and how many updated existing ones
-	LinhasCriadas     int32 `protobuf:"varint,10,opt,name=linhas_criadas,json=linhasCriadas,proto3" json:"linhas_criadas,omitempty"`
-	LinhasAtualizadas int32 `protobuf:"varint,11,opt,name=linhas_atualizadas,json=linhasAtualizadas,proto3" json:"linhas_atualizadas,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	LinhasCriadas     int32          `protobuf:"varint,10,opt,name=linhas_criadas,json=linhasCriadas,proto3" json:"linhas_criadas,omitempty"`
+	LinhasAtualizadas int32          `protobuf:"varint,11,opt,name=linhas_atualizadas,json=linhasAtualizadas,proto3" json:"linhas_atualizadas,omitempty"`
+	Tipo              TipoImportacao `protobuf:"varint,12,opt,name=tipo,proto3,enum=importador.v1.TipoImportacao" json:"tipo,omitempty"`
+	// CLIENTES and EMPRESAS: rows gone through so far (they move while PROCESSANDO), and of those how many failed
+	LinhasProcessadas int32 `protobuf:"varint,13,opt,name=linhas_processadas,json=linhasProcessadas,proto3" json:"linhas_processadas,omitempty"`
+	LinhasFalharam    int32 `protobuf:"varint,14,opt,name=linhas_falharam,json=linhasFalharam,proto3" json:"linhas_falharam,omitempty"`
+	// CLIENTES: companies created in HubSpot because a row named one it didn't have. EMPRESAS: 0 (the
+	// companies created are linhas_criadas)
+	EmpresasCriadas int32 `protobuf:"varint,15,opt,name=empresas_criadas,json=empresasCriadas,proto3" json:"empresas_criadas,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Importacao) Reset() {
 	*x = Importacao{}
-	mi := &file_importador_v1_importador_proto_msgTypes[4]
+	mi := &file_importador_v1_importador_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -320,7 +583,7 @@ func (x *Importacao) String() string {
 func (*Importacao) ProtoMessage() {}
 
 func (x *Importacao) ProtoReflect() protoreflect.Message {
-	mi := &file_importador_v1_importador_proto_msgTypes[4]
+	mi := &file_importador_v1_importador_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -333,7 +596,7 @@ func (x *Importacao) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Importacao.ProtoReflect.Descriptor instead.
 func (*Importacao) Descriptor() ([]byte, []int) {
-	return file_importador_v1_importador_proto_rawDescGZIP(), []int{4}
+	return file_importador_v1_importador_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Importacao) GetId() string {
@@ -413,6 +676,34 @@ func (x *Importacao) GetLinhasAtualizadas() int32 {
 	return 0
 }
 
+func (x *Importacao) GetTipo() TipoImportacao {
+	if x != nil {
+		return x.Tipo
+	}
+	return TipoImportacao_TIPO_IMPORTACAO_UNSPECIFIED
+}
+
+func (x *Importacao) GetLinhasProcessadas() int32 {
+	if x != nil {
+		return x.LinhasProcessadas
+	}
+	return 0
+}
+
+func (x *Importacao) GetLinhasFalharam() int32 {
+	if x != nil {
+		return x.LinhasFalharam
+	}
+	return 0
+}
+
+func (x *Importacao) GetEmpresasCriadas() int32 {
+	if x != nil {
+		return x.EmpresasCriadas
+	}
+	return 0
+}
+
 // One problem with one row; a row can have several (one per field)
 type ErroLinha struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -427,7 +718,7 @@ type ErroLinha struct {
 
 func (x *ErroLinha) Reset() {
 	*x = ErroLinha{}
-	mi := &file_importador_v1_importador_proto_msgTypes[5]
+	mi := &file_importador_v1_importador_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -439,7 +730,7 @@ func (x *ErroLinha) String() string {
 func (*ErroLinha) ProtoMessage() {}
 
 func (x *ErroLinha) ProtoReflect() protoreflect.Message {
-	mi := &file_importador_v1_importador_proto_msgTypes[5]
+	mi := &file_importador_v1_importador_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -452,7 +743,7 @@ func (x *ErroLinha) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ErroLinha.ProtoReflect.Descriptor instead.
 func (*ErroLinha) Descriptor() ([]byte, []int) {
-	return file_importador_v1_importador_proto_rawDescGZIP(), []int{5}
+	return file_importador_v1_importador_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ErroLinha) GetLinha() int32 {
@@ -480,12 +771,13 @@ var File_importador_v1_importador_proto protoreflect.FileDescriptor
 
 const file_importador_v1_importador_proto_rawDesc = "" +
 	"\n" +
-	"\x1eimportador/v1/importador.proto\x12\rimportador.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"x\n" +
+	"\x1eimportador/v1/importador.proto\x12\rimportador.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xab\x01\n" +
 	"\x18IniciarImportacaoRequest\x12\x1a\n" +
 	"\bplanilha\x18\x01 \x01(\fR\bplanilha\x12!\n" +
 	"\fnome_arquivo\x18\x02 \x01(\tR\vnomeArquivo\x12\x1d\n" +
 	"\n" +
-	"usuario_id\x18\x03 \x01(\tR\tusuarioId\"V\n" +
+	"usuario_id\x18\x03 \x01(\tR\tusuarioId\x121\n" +
+	"\x04tipo\x18\x04 \x01(\x0e2\x1d.importador.v1.TipoImportacaoR\x04tipo\"V\n" +
 	"\x19IniciarImportacaoResponse\x129\n" +
 	"\n" +
 	"importacao\x18\x01 \x01(\v2\x19.importador.v1.ImportacaoR\n" +
@@ -495,7 +787,19 @@ const file_importador_v1_importador_proto_rawDesc = "" +
 	"\x17ObterImportacaoResponse\x129\n" +
 	"\n" +
 	"importacao\x18\x01 \x01(\v2\x19.importador.v1.ImportacaoR\n" +
-	"importacao\"\xe4\x03\n" +
+	"importacao\"Y\n" +
+	"\x12ListarErrosRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
+	"\tdepois_de\x18\x02 \x01(\x03R\bdepoisDe\x12\x16\n" +
+	"\x06limite\x18\x03 \x01(\x05R\x06limite\"J\n" +
+	"\x13ListarErrosResponse\x123\n" +
+	"\x05erros\x18\x01 \x03(\v2\x1d.importador.v1.ErroImportacaoR\x05erros\"\x80\x01\n" +
+	"\x0eErroImportacao\x12\x10\n" +
+	"\x03seq\x18\x01 \x01(\x03R\x03seq\x12\x14\n" +
+	"\x05linha\x18\x02 \x01(\x05R\x05linha\x12\x14\n" +
+	"\x05campo\x18\x03 \x01(\tR\x05campo\x12\x14\n" +
+	"\x05email\x18\x04 \x01(\tR\x05email\x12\x1a\n" +
+	"\bmensagem\x18\x05 \x01(\tR\bmensagem\"\x9a\x05\n" +
 	"\n" +
 	"Importacao\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x127\n" +
@@ -509,21 +813,31 @@ const file_importador_v1_importador_proto_rawDesc = "" +
 	"\rfinalizada_em\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\ffinalizadaEm\x12%\n" +
 	"\x0elinhas_criadas\x18\n" +
 	" \x01(\x05R\rlinhasCriadas\x12-\n" +
-	"\x12linhas_atualizadas\x18\v \x01(\x05R\x11linhasAtualizadas\"S\n" +
+	"\x12linhas_atualizadas\x18\v \x01(\x05R\x11linhasAtualizadas\x121\n" +
+	"\x04tipo\x18\f \x01(\x0e2\x1d.importador.v1.TipoImportacaoR\x04tipo\x12-\n" +
+	"\x12linhas_processadas\x18\r \x01(\x05R\x11linhasProcessadas\x12'\n" +
+	"\x0flinhas_falharam\x18\x0e \x01(\x05R\x0elinhasFalharam\x12)\n" +
+	"\x10empresas_criadas\x18\x0f \x01(\x05R\x0fempresasCriadas\"S\n" +
 	"\tErroLinha\x12\x14\n" +
 	"\x05linha\x18\x01 \x01(\x05R\x05linha\x12\x14\n" +
 	"\x05campo\x18\x02 \x01(\tR\x05campo\x12\x1a\n" +
-	"\bmensagem\x18\x03 \x01(\tR\bmensagem*\xd8\x01\n" +
+	"\bmensagem\x18\x03 \x01(\tR\bmensagem*\x8b\x01\n" +
+	"\x0eTipoImportacao\x12\x1f\n" +
+	"\x1bTIPO_IMPORTACAO_UNSPECIFIED\x10\x00\x12\x1c\n" +
+	"\x18TIPO_IMPORTACAO_PRODUTOS\x10\x01\x12\x1c\n" +
+	"\x18TIPO_IMPORTACAO_CLIENTES\x10\x02\x12\x1c\n" +
+	"\x18TIPO_IMPORTACAO_EMPRESAS\x10\x03*\xd8\x01\n" +
 	"\x10StatusImportacao\x12!\n" +
 	"\x1dSTATUS_IMPORTACAO_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aSTATUS_IMPORTACAO_PENDENTE\x10\x01\x12!\n" +
 	"\x1dSTATUS_IMPORTACAO_PROCESSANDO\x10\x02\x12\x1f\n" +
 	"\x1bSTATUS_IMPORTACAO_CONCLUIDA\x10\x03\x12\x1f\n" +
 	"\x1bSTATUS_IMPORTACAO_REJEITADA\x10\x04\x12\x1c\n" +
-	"\x18STATUS_IMPORTACAO_FALHOU\x10\x052\xdd\x01\n" +
+	"\x18STATUS_IMPORTACAO_FALHOU\x10\x052\xb3\x02\n" +
 	"\x11ImportadorService\x12f\n" +
 	"\x11IniciarImportacao\x12'.importador.v1.IniciarImportacaoRequest\x1a(.importador.v1.IniciarImportacaoResponse\x12`\n" +
-	"\x0fObterImportacao\x12%.importador.v1.ObterImportacaoRequest\x1a&.importador.v1.ObterImportacaoResponseB\xc6\x01\n" +
+	"\x0fObterImportacao\x12%.importador.v1.ObterImportacaoRequest\x1a&.importador.v1.ObterImportacaoResponse\x12T\n" +
+	"\vListarErros\x12!.importador.v1.ListarErrosRequest\x1a\".importador.v1.ListarErrosResponseB\xc6\x01\n" +
 	"\x11com.importador.v1B\x0fImportadorProtoP\x01ZKgithub.com/raulbattistini3-sys/sample-ERP/gen/go/importador/v1;importadorv1\xa2\x02\x03IXX\xaa\x02\rImportador.V1\xca\x02\rImportador\\V1\xe2\x02\x19Importador\\V1\\GPBMetadata\xea\x02\x0eImportador::V1b\x06proto3"
 
 var (
@@ -538,34 +852,43 @@ func file_importador_v1_importador_proto_rawDescGZIP() []byte {
 	return file_importador_v1_importador_proto_rawDescData
 }
 
-var file_importador_v1_importador_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_importador_v1_importador_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_importador_v1_importador_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_importador_v1_importador_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_importador_v1_importador_proto_goTypes = []any{
-	(StatusImportacao)(0),             // 0: importador.v1.StatusImportacao
-	(*IniciarImportacaoRequest)(nil),  // 1: importador.v1.IniciarImportacaoRequest
-	(*IniciarImportacaoResponse)(nil), // 2: importador.v1.IniciarImportacaoResponse
-	(*ObterImportacaoRequest)(nil),    // 3: importador.v1.ObterImportacaoRequest
-	(*ObterImportacaoResponse)(nil),   // 4: importador.v1.ObterImportacaoResponse
-	(*Importacao)(nil),                // 5: importador.v1.Importacao
-	(*ErroLinha)(nil),                 // 6: importador.v1.ErroLinha
-	(*timestamppb.Timestamp)(nil),     // 7: google.protobuf.Timestamp
+	(TipoImportacao)(0),               // 0: importador.v1.TipoImportacao
+	(StatusImportacao)(0),             // 1: importador.v1.StatusImportacao
+	(*IniciarImportacaoRequest)(nil),  // 2: importador.v1.IniciarImportacaoRequest
+	(*IniciarImportacaoResponse)(nil), // 3: importador.v1.IniciarImportacaoResponse
+	(*ObterImportacaoRequest)(nil),    // 4: importador.v1.ObterImportacaoRequest
+	(*ObterImportacaoResponse)(nil),   // 5: importador.v1.ObterImportacaoResponse
+	(*ListarErrosRequest)(nil),        // 6: importador.v1.ListarErrosRequest
+	(*ListarErrosResponse)(nil),       // 7: importador.v1.ListarErrosResponse
+	(*ErroImportacao)(nil),            // 8: importador.v1.ErroImportacao
+	(*Importacao)(nil),                // 9: importador.v1.Importacao
+	(*ErroLinha)(nil),                 // 10: importador.v1.ErroLinha
+	(*timestamppb.Timestamp)(nil),     // 11: google.protobuf.Timestamp
 }
 var file_importador_v1_importador_proto_depIdxs = []int32{
-	5, // 0: importador.v1.IniciarImportacaoResponse.importacao:type_name -> importador.v1.Importacao
-	5, // 1: importador.v1.ObterImportacaoResponse.importacao:type_name -> importador.v1.Importacao
-	0, // 2: importador.v1.Importacao.status:type_name -> importador.v1.StatusImportacao
-	6, // 3: importador.v1.Importacao.erros:type_name -> importador.v1.ErroLinha
-	7, // 4: importador.v1.Importacao.criada_em:type_name -> google.protobuf.Timestamp
-	7, // 5: importador.v1.Importacao.finalizada_em:type_name -> google.protobuf.Timestamp
-	1, // 6: importador.v1.ImportadorService.IniciarImportacao:input_type -> importador.v1.IniciarImportacaoRequest
-	3, // 7: importador.v1.ImportadorService.ObterImportacao:input_type -> importador.v1.ObterImportacaoRequest
-	2, // 8: importador.v1.ImportadorService.IniciarImportacao:output_type -> importador.v1.IniciarImportacaoResponse
-	4, // 9: importador.v1.ImportadorService.ObterImportacao:output_type -> importador.v1.ObterImportacaoResponse
-	8, // [8:10] is the sub-list for method output_type
-	6, // [6:8] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	0,  // 0: importador.v1.IniciarImportacaoRequest.tipo:type_name -> importador.v1.TipoImportacao
+	9,  // 1: importador.v1.IniciarImportacaoResponse.importacao:type_name -> importador.v1.Importacao
+	9,  // 2: importador.v1.ObterImportacaoResponse.importacao:type_name -> importador.v1.Importacao
+	8,  // 3: importador.v1.ListarErrosResponse.erros:type_name -> importador.v1.ErroImportacao
+	1,  // 4: importador.v1.Importacao.status:type_name -> importador.v1.StatusImportacao
+	10, // 5: importador.v1.Importacao.erros:type_name -> importador.v1.ErroLinha
+	11, // 6: importador.v1.Importacao.criada_em:type_name -> google.protobuf.Timestamp
+	11, // 7: importador.v1.Importacao.finalizada_em:type_name -> google.protobuf.Timestamp
+	0,  // 8: importador.v1.Importacao.tipo:type_name -> importador.v1.TipoImportacao
+	2,  // 9: importador.v1.ImportadorService.IniciarImportacao:input_type -> importador.v1.IniciarImportacaoRequest
+	4,  // 10: importador.v1.ImportadorService.ObterImportacao:input_type -> importador.v1.ObterImportacaoRequest
+	6,  // 11: importador.v1.ImportadorService.ListarErros:input_type -> importador.v1.ListarErrosRequest
+	3,  // 12: importador.v1.ImportadorService.IniciarImportacao:output_type -> importador.v1.IniciarImportacaoResponse
+	5,  // 13: importador.v1.ImportadorService.ObterImportacao:output_type -> importador.v1.ObterImportacaoResponse
+	7,  // 14: importador.v1.ImportadorService.ListarErros:output_type -> importador.v1.ListarErrosResponse
+	12, // [12:15] is the sub-list for method output_type
+	9,  // [9:12] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_importador_v1_importador_proto_init() }
@@ -578,8 +901,8 @@ func file_importador_v1_importador_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_importador_v1_importador_proto_rawDesc), len(file_importador_v1_importador_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   6,
+			NumEnums:      2,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

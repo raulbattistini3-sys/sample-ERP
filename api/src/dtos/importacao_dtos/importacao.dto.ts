@@ -23,8 +23,19 @@ type ImportacaoDto = {
    mensagem: string;
    criada_em: string | null;
    finalizada_em: string | null;
+   tipo: TipoImportacaoDto;
+   // clientes only (0 for products): rows gone through so far (the progress bar), rows that failed and
+   // companies the import created. Their errors are paged with listarErros, not in `erros`.
+   linhas_processadas: number;
+   linhas_falharam: number;
+   empresas_criadas: number;
 };
 
-type IniciarImportacaoDto = { planilha: Buffer; nomeArquivo: string; usuarioId: string };
+type TipoImportacaoDto = "produtos" | "clientes" | "empresas";
 
-export { StatusImportacaoDto, ErroLinhaImportacaoDto, ImportacaoDto, IniciarImportacaoDto };
+type IniciarImportacaoDto = { planilha: Buffer; nomeArquivo: string; usuarioId: string; tipo?: TipoImportacaoDto };
+
+// one failed row of a clientes import; seq orders them and is the cursor ("after seq N")
+type ErroImportacaoDto = { seq: number; linha: number; campo: string; email: string; mensagem: string };
+
+export { StatusImportacaoDto, ErroLinhaImportacaoDto, ImportacaoDto, IniciarImportacaoDto, TipoImportacaoDto, ErroImportacaoDto };

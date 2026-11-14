@@ -37,6 +37,15 @@ const (
 // CanalImportacoes is the LISTEN/NOTIFY channel; the payload is the importacao id.
 const CanalImportacoes = "importacoes"
 
+// Tipo is what a spreadsheet holds, and so which processor takes it (match importacoes_tipo_check).
+type Tipo string
+
+const (
+	TipoProdutos Tipo = "produtos"
+	TipoClientes Tipo = "clientes"
+	TipoEmpresas Tipo = "empresas"
+)
+
 // Errors the repository returns for the caller to act on.
 var (
 	ErrNaoEncontrada        = errors.New("postgres: importacao not found")
@@ -63,6 +72,7 @@ type Importacao struct {
 	ID                string
 	UsuarioID         string
 	NomeArquivo       string
+	Tipo              Tipo
 	Status            Status
 	TotalLinhas       int32
 	LinhasImportadas  int32
@@ -74,6 +84,10 @@ type Importacao struct {
 	CriadaEm          time.Time
 	IniciadaEm        *time.Time
 	FinalizadaEm      *time.Time
+	// clientes only: the checkpoint (rows gone through, committed after each batch) and its counters
+	LinhasProcessadas int32
+	LinhasFalharam    int32
+	EmpresasCriadas   int32
 }
 
 // Job is a claimed importacao plus the spreadsheet to process.
@@ -112,13 +126,15 @@ func NewImportacoes(pool *pgxpool.Pool) *Importacoes {
 
 // planilha is left out on purpose: only Reivindicar needs the bytes
 const colunas = `id, usuario_id, nome_arquivo, status, total_linhas, linhas_importadas, linhas_criadas,
-	linhas_atualizadas, erros, coalesce(mensagem, ''), tentativas, criada_em, iniciada_em, finalizada_em`
+	linhas_atualizadas, erros, coalesce(mensagem, ''), tentativas, criada_em, iniciada_em, finalizada_em,
+	tipo, linhas_processadas, linhas_falharam, empresas_criadas`
 
 func scanImportacao(row pgx.Row, extra ...any) (Importacao, error) {
 	var i Importacao
 	dest := append([]any{
 		&i.ID, &i.UsuarioID, &i.NomeArquivo, &i.Status, &i.TotalLinhas, &i.LinhasImportadas, &i.LinhasCriadas,
 		&i.LinhasAtualizadas, &i.Erros, &i.Mensagem, &i.Tentativas, &i.CriadaEm, &i.IniciadaEm, &i.FinalizadaEm,
+		&i.Tipo, &i.LinhasProcessadas, &i.LinhasFalharam, &i.EmpresasCriadas,
 	}, extra...)
 	err := row.Scan(dest...)
 	return i, err
@@ -126,14 +142,14 @@ func scanImportacao(row pgx.Row, extra ...any) (Importacao, error) {
 
 // Criar queues an import. The NOTIFY is transactional, so it is only delivered once the row is
 // committed and a woken worker always finds it.
-func (r *Importacoes) Criar(ctx context.Context, usuarioID, nomeArquivo string, planilha []byte) (Importacao, error) {
+func (r *Importacoes) Criar(ctx context.Context, tipo Tipo, usuarioID, nomeArquivo string, planilha []byte) (Importacao, error) {
 	var imp Importacao
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
 		var err error
 		imp, err = scanImportacao(tx.QueryRow(ctx, `
-			INSERT INTO importacoes (usuario_id, nome_arquivo, planilha)
-			VALUES ($1, $2, $3)
-			RETURNING `+colunas, usuarioID, nomeArquivo, planilha))
+			INSERT INTO importacoes (usuario_id, nome_arquivo, planilha, tipo)
+			VALUES ($1, $2, $3, $4)
+			RETURNING `+colunas, usuarioID, nomeArquivo, planilha, string(tipo)))
 		if err != nil {
 			return err
 		}
@@ -217,6 +233,132 @@ func (r *Importacoes) Finalizar(ctx context.Context, db DBTX, job *Job, res Resu
 		return ErrReivindicacaoPerdida
 	}
 	return nil
+}
+
+// ErroCliente is one row's problem in a client import (the importacao_erros table).
+type ErroCliente struct {
+	Seq      int64
+	Linha    int32
+	Campo    string
+	Email    string
+	Mensagem string
+}
+
+// Lote is what one batch of a client import changed. The counters are added to the job's; Processadas is
+// the new checkpoint, absolute.
+type Lote struct {
+	Processadas     int32
+	Criadas         int32
+	Atualizadas     int32
+	Falharam        int32
+	EmpresasCriadas int32
+	Erros           []ErroCliente
+}
+
+// Comecar records a client import's row count and renews its lease, before the first batch.
+func (r *Importacoes) Comecar(ctx context.Context, job *Job, total int32) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE importacoes SET total_linhas = $3, iniciada_em = now()
+		WHERE id = $1 AND status = 'processando' AND tentativas = $2`, job.ID, job.Tentativas, total)
+	if err != nil {
+		return fmt.Errorf("postgres: starting importacao %s: %w", job.ID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrReivindicacaoPerdida
+	}
+	job.TotalLinhas = total
+	return nil
+}
+
+// Avancar commits one batch of a client import on db (the transaction that also wrote its senioridades):
+// the checkpoint, the counters and the batch's errors. It renews the lease too, so a long import that keeps
+// moving is never taken back. ErrReivindicacaoPerdida when the claim is gone, which rolls the batch back.
+func (r *Importacoes) Avancar(ctx context.Context, db DBTX, job *Job, lote Lote) error {
+	tag, err := db.Exec(ctx, `
+		UPDATE importacoes
+		SET linhas_processadas = $3, linhas_criadas = linhas_criadas + $4, linhas_atualizadas = linhas_atualizadas + $5,
+			linhas_importadas = linhas_importadas + $4 + $5, linhas_falharam = linhas_falharam + $6,
+			empresas_criadas = empresas_criadas + $7, iniciada_em = now()
+		WHERE id = $1 AND status = 'processando' AND tentativas = $2`,
+		job.ID, job.Tentativas, lote.Processadas, lote.Criadas, lote.Atualizadas, lote.Falharam, lote.EmpresasCriadas)
+	if err != nil {
+		return fmt.Errorf("postgres: saving progress of importacao %s: %w", job.ID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrReivindicacaoPerdida
+	}
+	if len(lote.Erros) > 0 {
+		linhas := make([]int32, len(lote.Erros))
+		campos := make([]string, len(lote.Erros))
+		emails := make([]string, len(lote.Erros))
+		mensagens := make([]string, len(lote.Erros))
+		for i, e := range lote.Erros {
+			linhas[i], campos[i], emails[i], mensagens[i] = e.Linha, e.Campo, e.Email, e.Mensagem
+		}
+		// in row order, so seq follows the spreadsheet within a batch
+		_, err = db.Exec(ctx, `
+			INSERT INTO importacao_erros (importacao_id, linha, campo, email, mensagem)
+			SELECT $1, linha, nullif(campo, ''), nullif(email, ''), mensagem
+			FROM unnest($2::int[], $3::text[], $4::text[], $5::text[]) WITH ORDINALITY AS e(linha, campo, email, mensagem, n)
+			ORDER BY n`, job.ID, linhas, campos, emails, mensagens)
+		if err != nil {
+			return fmt.Errorf("postgres: saving errors of importacao %s: %w", job.ID, err)
+		}
+	}
+	job.LinhasProcessadas = lote.Processadas
+	return nil
+}
+
+// Encerrar gives a client import its final status, keeping the counters its batches added up. It also
+// drops the stored file.
+func (r *Importacoes) Encerrar(ctx context.Context, job *Job, status Status, mensagem string) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE importacoes
+		SET status = $3, mensagem = nullif($4, ''), finalizada_em = now(), planilha = NULL
+		WHERE id = $1 AND status = 'processando' AND tentativas = $2`, job.ID, job.Tentativas, string(status), mensagem)
+	if err != nil {
+		return fmt.Errorf("postgres: finishing importacao %s: %w", job.ID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrReivindicacaoPerdida
+	}
+	return nil
+}
+
+// ListarErros returns up to limite errors of a client import after the seq depoisDe, in order.
+func (r *Importacoes) ListarErros(ctx context.Context, id string, depoisDe int64, limite int32) ([]ErroCliente, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT seq, linha, coalesce(campo, ''), coalesce(email, ''), mensagem
+		FROM importacao_erros WHERE importacao_id = $1 AND seq > $2
+		ORDER BY seq LIMIT $3`, id, depoisDe, limite)
+	if err != nil {
+		if pgCode(err) == pgInvalidTextRep {
+			return nil, ErrIDInvalido
+		}
+		return nil, fmt.Errorf("postgres: listing errors of importacao %s: %w", id, err)
+	}
+	erros, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (ErroCliente, error) {
+		var e ErroCliente
+		err := row.Scan(&e.Seq, &e.Linha, &e.Campo, &e.Email, &e.Mensagem)
+		return e, err
+	})
+	switch {
+	case pgCode(err) == pgInvalidTextRep:
+		return nil, ErrIDInvalido
+	case err != nil:
+		return nil, fmt.Errorf("postgres: listing errors of importacao %s: %w", id, err)
+	}
+	if len(erros) == 0 {
+		// none yet, or no such import: only the second is an error
+		var existe bool
+		if err := r.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM importacoes WHERE id = $1)`, id).Scan(&existe); err != nil {
+			return nil, fmt.Errorf("postgres: reading importacao %s: %w", id, err)
+		}
+		if !existe {
+			return nil, ErrNaoEncontrada
+		}
+	}
+	return erros, nil
 }
 
 // Devolver puts a job back in the queue without using up one of its attempts, for a worker that is
