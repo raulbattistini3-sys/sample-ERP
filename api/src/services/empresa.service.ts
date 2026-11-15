@@ -10,6 +10,7 @@ export type EmpresaDetalheDto = {
   id: string;
   nome: string;
   dominio: string | null;
+  cnpj: string | null;
   setor: string | null;
   telefone: string | null;
   cidade: string | null;
@@ -30,6 +31,7 @@ export type EmpresaSalva = { empresa: EmpresaDetalheDto; aviso: string | null };
 const toCompanyWrite = (e: EmpresaInput): CompanyWrite => ({
   name: e.nome,
   domain: e.dominio,
+  cnpj: e.cnpj,
   industry: e.setor,
   phone: e.telefone,
   city: e.cidade,
@@ -40,10 +42,17 @@ const toCompanyWrite = (e: EmpresaInput): CompanyWrite => ({
   ...(e.responsavelId !== undefined ? { hubspot_owner_id: e.responsavelId } : {}),
 });
 
+const semCnpjSe = (omitir: boolean, w: CompanyWrite): CompanyWrite => {
+  if (!omitir) return w;
+  const { cnpj: _omitido, ...resto } = w;
+  return resto;
+};
+
 const toDetalhe = ({ id, properties: p, url }: HubspotCompany, emailSac: string | null): EmpresaDetalheDto => ({
   id,
   nome: p.name || p.domain || `Empresa ${id}`,
   dominio: p.domain || null,
+  cnpj: p.cnpj || null,
   setor: p.industry || null,
   telefone: p.phone || null,
   cidade: p.city || null,
@@ -87,7 +96,9 @@ class EmpresaService {
     if (repetidas.value.length > 0) {
       return left(new ValidationError("409", `Já existe uma empresa "${parsed.value.nome}" no HubSpot. Edite a existente em vez de criar outra.`));
     }
-    const criada = await this.hubspot.createCompany(toCompanyWrite(parsed.value));
+    const cnpj = await this.cnpjLivre(parsed.value.cnpj);
+    if (cnpj.isLeft()) return left(cnpj.value);
+    const criada = await this.hubspot.createCompany(semCnpjSe(!cnpj.value, toCompanyWrite(parsed.value)));
     if (criada.isLeft()) return left(criada.value);
     return right(await this.depoisDeSalvar(criada.value, parsed.value, usuarioId));
   }
@@ -98,9 +109,27 @@ class EmpresaService {
     if (idValido.isLeft()) return left(idValido.value);
     const parsed = this.validator.parseEmpresa(payload);
     if (parsed.isLeft()) return left(parsed.value);
-    const salva = await this.hubspot.updateCompany(id, toCompanyWrite(parsed.value));
+    const cnpj = await this.cnpjLivre(parsed.value.cnpj, id);
+    if (cnpj.isLeft()) return left(cnpj.value);
+    const salva = await this.hubspot.updateCompany(id, semCnpjSe(!cnpj.value, toCompanyWrite(parsed.value)));
     if (salva.isLeft()) return left(salva.value);
     return right(await this.depoisDeSalvar(salva.value, parsed.value, usuarioId));
+  }
+
+  // A CNPJ needs HubSpot's "cnpj" property (made on first use) and must not belong to another company.
+  // Right(true): write the cnpj property; Right(false): leave it out (no CNPJ given and the property
+  // couldn't be made, e.g. the app lacks crm.schemas.companies.write).
+  private async cnpjLivre(cnpj: string | null, exceptId?: string): Promise<Either<BaseAppError, boolean>> {
+    const pronta = await this.hubspot.ensureCnpjProperty();
+    if (!cnpj) return right(pronta.isRight());
+    if (pronta.isLeft()) {
+      return left(new ValidationError("409", "Não foi possível criar a propriedade CNPJ no HubSpot (escopo crm.schemas.companies.write).", pronta.value));
+    }
+    const iguais = await this.hubspot.findCompaniesByCnpj(cnpj);
+    if (iguais.isLeft()) return left(iguais.value);
+    const outra = iguais.value.find((c) => c.id !== exceptId);
+    if (outra) return left(new ValidationError("409", `O CNPJ ${cnpj} já pertence à empresa "${outra.properties.name ?? outra.id}".`));
+    return right(true);
   }
 
   // HubSpot's industry values change rarely: read at most once an hour

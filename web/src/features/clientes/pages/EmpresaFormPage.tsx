@@ -19,9 +19,37 @@ import { EmpresaClientes } from "../components/EmpresaClientes";
 type Erros = Partial<Record<keyof EmpresaForm, string>>;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// the Receita Federal check digits (the API's validators/cnpj.validator.ts does the same)
+const cnpjValido = (v: string) => {
+  const d = v.replace(/\D/g, "");
+  if (d.length !== 14 || /^(\d)\1{13}$/.test(d)) return false;
+  const digito = (ate: number) => {
+    let soma = 0;
+    let peso = ate - 7;
+    for (let i = 0; i < ate; i++) {
+      soma += Number(d[i]) * peso;
+      peso = peso === 2 ? 9 : peso - 1;
+    }
+    const resto = soma % 11;
+    return resto < 2 ? 0 : 11 - resto;
+  };
+  return digito(12) === Number(d[12]) && digito(13) === Number(d[13]);
+};
+
+// typing mask: 11222333000181 -> 11.222.333/0001-81
+const mascaraCnpj = (v: string) =>
+  v
+    .replace(/\D/g, "")
+    .slice(0, 14)
+    .replace(/^(\d{2})(\d)/, "$1.$2")
+    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
+    .replace(/\.(\d{3})(\d)/, ".$1/$2")
+    .replace(/(\d{4})(\d)/, "$1-$2");
+
 const inicial = (e?: EmpresaDetalhe): EmpresaForm => ({
   nome: e?.nome ?? "",
   dominio: e?.dominio ?? "",
+  cnpj: e?.cnpj ?? "",
   setor: e?.setor ?? "",
   telefone: e?.telefone ?? "",
   cidade: e?.cidade ?? "",
@@ -39,6 +67,7 @@ const validar = (f: EmpresaForm): Erros => {
   if (!f.nome.trim()) erros.nome = "Informe o nome da empresa.";
   if (f.emailSac.trim() && !EMAIL.test(f.emailSac.trim())) erros.emailSac = "E-mail de SAC inválido.";
   if (f.telefone.trim() && !/^[+\d\s().-]{8,40}$/.test(f.telefone.trim())) erros.telefone = "Telefone inválido.";
+  if (f.cnpj.trim() && !cnpjValido(f.cnpj)) erros.cnpj = "CNPJ inválido.";
   if (f.dominio.trim() && !/^(https?:\/\/)?(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+\/?/i.test(f.dominio.trim())) erros.dominio = "Domínio inválido (ex.: empresa.com.br).";
   return erros;
 };
@@ -138,6 +167,18 @@ function EmpresaFormulario({ empresa }: { empresa?: EmpresaDetalhe }) {
             </Field>
             <Field id="empresa-dominio" label="Domínio" error={erros.dominio} hint="O HubSpot reconhece a empresa por ele (ex.: empresa.com.br).">
               <Input id="empresa-dominio" autoComplete="off" placeholder="empresa.com.br" value={form.dominio} onChange={set("dominio")} invalid={!!erros.dominio} maxLength={253} />
+            </Field>
+            <Field id="empresa-cnpj" label="CNPJ" error={erros.cnpj} hint="Opcional. Verificado pelos dígitos; não pode repetir outra empresa.">
+              <Input
+                id="empresa-cnpj"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="00.000.000/0000-00"
+                value={form.cnpj}
+                onChange={(e) => set("cnpj")({ target: { value: mascaraCnpj(e.target.value) } })}
+                invalid={!!erros.cnpj}
+                maxLength={18}
+              />
             </Field>
             <Field
               id="empresa-sac"

@@ -85,6 +85,8 @@ export type EmpresaDetalhe = {
   id: string;
   nome: string;
   dominio: string | null;
+  // 11.222.333/0001-81 (HubSpot property "cnpj"; the API checks the digits and that no other company has it)
+  cnpj: string | null;
   setor: string | null;
   telefone: string | null;
   cidade: string | null;

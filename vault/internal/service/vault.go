@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/mail"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/paemuri/brdoc/v2"
 	"github.com/raulbattistini3-sys/sample-ERP/vault/internal/audit"
 	"github.com/raulbattistini3-sys/sample-ERP/vault/internal/crypto"
 	"github.com/raulbattistini3-sys/sample-ERP/vault/internal/keys"
@@ -38,7 +40,10 @@ const (
 
 // Data is a record's content: field name -> value. Known fields are normalized and checked:
 //
-//	cpf              11 digits (punctuation dropped), blind-indexed and unique per owner type
+//	cpf              a valid CPF (check digits, brdoc); kept as 11 digits, blind-indexed, unique per owner type
+//	cnpj             a valid CNPJ (check digits, brdoc); kept as 14 digits, blind-indexed, unique per owner type
+//	email            one RFC 5322 address (net/mail), no display name; lowercased, blind-indexed, unique
+//	                 per owner type, so one email can't register twice
 //	data_nascimento  YYYY-MM-DD
 type Data map[string]string
 
@@ -89,11 +94,25 @@ func normalize(d Data) (Data, []storage.Index, error) {
 		out[k] = strings.TrimSpace(v)
 	}
 	if cpf, ok := out["cpf"]; ok {
-		cpf = crypto.Digits(cpf)
-		if len(cpf) != 11 {
-			return nil, nil, invalid("cpf must have 11 digits")
+		cpf, err := validCPF(cpf)
+		if err != nil {
+			return nil, nil, err
 		}
 		out["cpf"] = cpf
+	}
+	if cnpj, ok := out["cnpj"]; ok {
+		cnpj = crypto.Digits(cnpj)
+		if len(cnpj) != 14 || !brdoc.IsCNPJ(cnpj) {
+			return nil, nil, invalid("cnpj is not a valid CNPJ")
+		}
+		out["cnpj"] = cnpj
+	}
+	if email, ok := out["email"]; ok {
+		email, err := validEmail(email)
+		if err != nil {
+			return nil, nil, err
+		}
+		out["email"] = email
 	}
 	if dn, ok := out["data_nascimento"]; ok {
 		if _, err := time.Parse(time.DateOnly, dn); err != nil || !dateRe.MatchString(dn) {
@@ -103,12 +122,33 @@ func normalize(d Data) (Data, []storage.Index, error) {
 	return out, nil, nil
 }
 
+// the fields kept unique per owner type through a blind index
+var indexedFields = []string{"cpf", "cnpj", "email"}
+
 func (v *Vault) indexes(ownerType string, d Data) []storage.Index {
 	var idx []storage.Index
-	if cpf, ok := d["cpf"]; ok {
-		idx = append(idx, storage.Index{Field: "cpf", Digest: crypto.BlindIndex(v.Keys.Index(), ownerType, "cpf", cpf)})
+	for _, f := range indexedFields {
+		if val, ok := d[f]; ok {
+			idx = append(idx, storage.Index{Field: f, Digest: crypto.BlindIndex(v.Keys.Index(), ownerType, f, val)})
+		}
 	}
 	return idx
+}
+
+func validCPF(s string) (string, error) {
+	cpf := crypto.Digits(s)
+	if len(cpf) != 11 || !brdoc.IsCPF(cpf) {
+		return "", invalid("cpf is not a valid CPF")
+	}
+	return cpf, nil
+}
+
+func validEmail(s string) (string, error) {
+	a, err := mail.ParseAddress(s)
+	if err != nil || a.Name != "" || a.Address != s || !strings.Contains(a.Address[strings.LastIndex(a.Address, "@")+1:], ".") {
+		return "", invalid("email is not a valid address")
+	}
+	return strings.ToLower(a.Address), nil
 }
 
 // Put seals d as the owner's whole record, replacing any previous one.
@@ -245,9 +285,9 @@ func (v *Vault) LookupCPF(ctx context.Context, ownerType, cpf string) (string, e
 	if !ownerTypeRe.MatchString(ownerType) {
 		return "", invalid("owner type must be lowercase letters and _")
 	}
-	cpf = crypto.Digits(cpf)
-	if len(cpf) != 11 {
-		return "", invalid("cpf must have 11 digits")
+	cpf, err := validCPF(cpf)
+	if err != nil {
+		return "", err
 	}
 	id, err := v.Store.Lookup(ctx, ownerType, "cpf", crypto.BlindIndex(v.Keys.Index(), ownerType, "cpf", cpf))
 	outcome := "ok"

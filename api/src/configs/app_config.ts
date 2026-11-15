@@ -1,4 +1,5 @@
 import "dotenv/config";
+import "./secrets_env";
 import { drizzle, NodePgClient, NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../db/schema";

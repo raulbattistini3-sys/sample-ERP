@@ -1,63 +1,112 @@
-import { appendFile, mkdir } from "node:fs/promises";
-import { join } from "node:path";
-import { createTelemetry } from "../../../../pkg/telemetry/bus.js";
-import { ndjsonExporter } from "../../../../pkg/telemetry/exporters.js";
-import { createHostTelemetry } from "../../../../pkg/telemetry/host.js";
+import { createHash, randomUUID } from "node:crypto";
+import { hostname } from "node:os";
+import { createHostTelemetry, httpSender } from "../../../../pkg/telemetry/host.js";
 
-// Telemetry sink of this process, built from the shared package (pkg/telemetry): the API's own events
-// (how long a product snapshot took to build) and the batches the web posts to /telemetry, one JSON
-// object per line in TELEMETRY_DIR/<yyyy-mm-dd>.ndjson. Without TELEMETRY_DIR events are dropped; the
-// launcher sets it to data/telemetry.
+// Telemetry sink of this process. Everything goes to the TCC telemetry server (tcc-v2.exe, a sibling
+// process the launcher and `network dev` start), never to local files:
+// - app events: the API's own (how long a product snapshot took to build) and the batches the web posts
+//   to /telemetry (product search engine/query timings, Empresa list loads), batched to
+//   POST <tcc>/telemetry/events every 2 s or 200 events;
+// - host telemetry: memory, GC, event loop, requests and queries every 10 s to POST <tcc>/telemetry/host.
+// TCC_TELEMETRY_URL is the host endpoint (".../telemetry/host"); the events endpoint is its sibling.
+// Without it both are off and events are dropped. TCC being down never affects the API: batches wait in a
+// bounded queue and the oldest are dropped when it's full.
 
-const dir = process.env.TELEMETRY_DIR?.trim() || null;
-let made: Promise<unknown> | null = null;
-// appends run one after the other, so lines from one batch stay together and in order
-let tail: Promise<unknown> = Promise.resolve();
+const hostUrl = process.env.TCC_TELEMETRY_URL?.trim() || null;
+const token = process.env.TCC_TOKEN?.trim() ?? "";
+const eventsUrl = hostUrl ? hostUrl.replace(/\/telemetry\/host\/?$/, "") + "/telemetry/events" : null;
+const instanceId = process.env.TELEMETRY_INSTANCE_ID?.trim() || `${hostname()}:sample-erp-api`;
+const bootId = randomUUID();
 
-function write(line: string) {
-   if (!dir) return;
-   made ??= mkdir(dir, { recursive: true });
-   const file = join(dir, `${new Date().toISOString().slice(0, 10)}.ndjson`);
-   tail = tail
-      .then(() => made)
-      .then(() => appendFile(file, line))
-      .catch(() => {
-         // a full disk or a missing folder must never fail a request; telemetry is best effort
-      });
+export const telemetryEnabled = eventsUrl !== null;
+
+type AppEvent = { service: string; source: string; type: string; ts: number; at: string; user?: string; data: Record<string, unknown> };
+type Batch = { version: 1; source: string; instanceId: string; bootId: string; sequence: number; timestamp: string; events: AppEvent[] };
+
+const FLUSH_MS = 2000;
+const BATCH_MAX = 200;
+const QUEUE_MAX = 300; // batches kept while TCC is down (~10 min of a busy API), then the oldest go
+
+let pending: AppEvent[] = [];
+const queue: Batch[] = [];
+let sequence = 0;
+let timer: NodeJS.Timeout | null = null;
+let sending: Promise<void> | null = null;
+const send = eventsUrl ? httpSender(eventsUrl, token) : null;
+
+function seal() {
+   if (pending.length === 0) return;
+   queue.push({ version: 1, source: "sample-erp", instanceId, bootId, sequence: sequence++, timestamp: new Date().toISOString(), events: pending });
+   pending = [];
+   while (queue.length > QUEUE_MAX) queue.shift();
 }
 
-export const telemetryEnabled = dir !== null;
-
-const bus = createTelemetry({ collectors: [], exporters: [ndjsonExporter({ write, base: { service: "api" } })] });
-let started = false;
-
-// one event from the API itself; `ts` is this process's clock, `at` the wall clock
-export function emitApi(type: string, data: Record<string, unknown>) {
-   if (!dir) return;
-   if (!started) {
-      started = true;
-      bus.start(); // writes a "capabilities" line first: cpu count and runtime of this host
+async function drain() {
+   while (queue.length > 0 && send) {
+      try {
+         await send(queue[0] as never);
+         queue.shift();
+      } catch (err) {
+         // 400 is a batch TCC will never take: drop it rather than block the queue behind it
+         if (String(err).includes("HTTP 400")) queue.shift();
+         else return;
+      }
    }
-   bus.emit({ source: "api", type, ts: performance.now(), data: { ...data, at: new Date().toISOString() } });
+}
+
+function flush(): Promise<void> {
+   seal();
+   sending ??= drain().finally(() => (sending = null));
+   return sending;
+}
+
+function push(e: AppEvent) {
+   if (!send) return;
+   pending.push(e);
+   if (pending.length >= BATCH_MAX) void flush();
+   timer ??= setInterval(() => void flush(), FLUSH_MS);
+   timer.unref?.();
+}
+
+// who did it, without saying who: the same user always maps to the same hash (so sessions can be
+// compared across restarts); TCC never gets the id itself
+const userHash = (id: string) => createHash("sha256").update(`sample-erp:${id}`).digest("hex").slice(0, 16);
+
+// one event from the API itself; `ts` is this process's clock
+export function emitApi(type: string, data: Record<string, unknown>) {
+   push({ service: "api", source: "api", type, ts: performance.now(), at: new Date().toISOString(), data });
 }
 
 export type WebEvent = { source: string; type: string; ts: number; data: Record<string, unknown> };
 
-// a batch from the web's telemetry bus, tagged with who sent it and when it arrived
+// a batch from the web's telemetry bus, tagged with who sent it (hashed) and when it arrived
 export function recordWebEvents(usuarioId: string, events: WebEvent[]) {
-   if (!dir) return;
-   const exporter = ndjsonExporter({ write, base: { service: "web", usuario: usuarioId, receivedAt: new Date().toISOString() } });
-   for (const e of events) exporter.export(e);
+   const at = new Date().toISOString();
+   const user = userHash(usuarioId);
+   for (const e of events) push({ service: "web", source: e.source, type: e.type, ts: e.ts, at, user, data: e.data ?? {} });
+}
+
+/** sends what's left; called on shutdown */
+export async function flushTelemetry(): Promise<void> {
+   if (timer) clearInterval(timer);
+   timer = null;
+   await Promise.race([flush(), new Promise((r) => setTimeout(r, 3000))]);
 }
 
 // ─── host telemetry: what the API measures about itself (pkg/telemetry/host.js) ─────────────────────
 // Memory, GC pauses, event-loop delay and utilization, requests per route and queries per label,
-// aggregated every 10 s into one envelope, written as one line { service: "api", type: "host", ... } to
-// the same NDJSON files. start() only when TELEMETRY_DIR is set; the middleware's Server-Timing header
-// works either way.
+// aggregated every 10 s into one envelope and sent to TCC with TCC_TOKEN. The middleware's
+// Server-Timing header works either way. A failed send keeps the envelope in the bounded queue (360 = 1 h).
+const toTcc = hostUrl ? httpSender(hostUrl, token) : null;
+
+export const hostTelemetryEnabled = toTcc !== null;
+
 export const hostTelemetry = createHostTelemetry({
    source: "sample-erp-api",
-   send: async (envelope) => write(JSON.stringify({ service: "api", type: "host", ...envelope }) + "\n"),
+   instanceId: process.env.TELEMETRY_INSTANCE_ID?.trim() || undefined,
+   send: async (envelope) => {
+      if (toTcc) await toTcc(envelope);
+   },
 });
 
 // "select produtos", "insert auditorias": the verb and the first table of a statement. Telemetry is

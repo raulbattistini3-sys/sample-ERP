@@ -147,6 +147,9 @@ type Rotulo = { endpoint: "clientes" | "clientes/empresas"; page: number; busca:
 const decoder = new TextDecoder();
 const parsearAqui = (corpo: ArrayBuffer): unknown => JSON.parse(decoder.decode(corpo));
 
+// endpoints already loaded once in this page
+const vistos = new Set<string>();
+
 // GETs `url` as bytes and parses where decidir() says. ms is the whole load (network, API and HubSpot,
 // parse), as the dev timing line shows it.
 export async function carregarPagina<T extends { data: unknown[]; totalItems: number }>(
@@ -155,13 +158,18 @@ export async function carregarPagina<T extends { data: unknown[]; totalItems: nu
   rotulo: Rotulo,
 ): Promise<T & Medicao> {
   const t0 = performance.now();
-  const relatar = (data: Record<string, unknown>) =>
+  const relatar = (data: Record<string, unknown>) => {
+    // the first load of each endpoint in this page: the cold run (connection, API JIT, Postgres and
+    // HubSpot caches); TCC splits its percentiles on this flag
+    const cold = !vistos.has(rotulo.endpoint);
+    vistos.add(rotulo.endpoint);
     telemetry().emit({
       source: "search",
       type: "request",
       ts: performance.now(),
       data: {
         endpoint: rotulo.endpoint,
+        cold,
         page: rotulo.page === 1 ? "first" : "next",
         busca: rotulo.busca.length > 0,
         chars: rotulo.busca.length,
@@ -169,6 +177,7 @@ export async function carregarPagina<T extends { data: unknown[]; totalItems: nu
         ...data,
       },
     });
+  };
 
   let corpo: ArrayBuffer;
   try {

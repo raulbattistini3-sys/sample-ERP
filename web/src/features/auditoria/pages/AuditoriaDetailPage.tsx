@@ -1,7 +1,8 @@
 import { ReactNode } from "react";
 import { useParams } from "react-router-dom";
 import { useBackToList } from "../../../hooks/useListPage";
-import { Archive, ArrowLeft, Trash2 } from "lucide-react";
+import { Archive, ArrowLeft, Download, Trash2 } from "lucide-react";
+import { baixarPlanilhaAuditorias } from "../api/auditoria.api";
 import { Button } from "../../../components/ui/Button";
 import { ErrorAlert, FormCard, LoadingState, PageHeader } from "../../../components/ui/PageState";
 import { getApiErrorMessage } from "../../../lib/api-client";
@@ -88,6 +89,10 @@ export const AuditoriaDetailPage = () => {
             <Button variant="ghost" onClick={backToList}>
               <ArrowLeft className="h-4 w-4" aria-hidden="true" />
               Voltar
+            </Button>
+            <Button variant="secondary" onClick={() => void baixarPlanilhaAuditorias({ id })} title="Esta auditoria, uma linha por produto e campo alterado (CSV)">
+              <Download className="h-4 w-4" aria-hidden="true" />
+              Baixar planilha
             </Button>
             <Button variant="secondary" onClick={handleArchive} disabled={archiveMutation.isPending}>
               <Archive className="h-4 w-4" aria-hidden="true" />

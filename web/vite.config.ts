@@ -101,8 +101,8 @@ ${sum}`).digest("hex");
 // `bun run secrets` writes (secrets/tls/web.crt, names localhost). Without either the server stays on HTTP.
 // The browser trusts it once the internal CA (secrets/tls/ca.crt) is imported, see the README.
 function devHttps(env: Record<string, string | undefined>) {
-  const cert = env.WEB_TLS_CERT?.trim() || fileURLToPath(new URL("../secrets/tls/web.crt", import.meta.url));
-  const key = env.WEB_TLS_KEY?.trim() || fileURLToPath(new URL("../secrets/tls/web.key", import.meta.url));
+  const cert = env.WEB_TLS_CERT?.trim() || fileURLToPath(new URL("../../../secrets/tls/web.crt", import.meta.url));
+  const key = env.WEB_TLS_KEY?.trim() || fileURLToPath(new URL("../../../secrets/tls/web.key", import.meta.url));
   if (!existsSync(cert) || !existsSync(key)) return undefined;
   return { cert: readFileSync(cert), key: readFileSync(key), minVersion: "TLSv1.3" as const };
 }

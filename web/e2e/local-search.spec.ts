@@ -121,7 +121,7 @@ test("the snapshot is binary, revalidates with its ETag, and telemetry batches a
     data: [{ source: "e2e", type: "probe", ts: 1, data: { ok: true } }],
   });
   expect(ok.status()).toBe(204);
-  expect(ok.headers()["x-telemetry"]).toBe("stored"); // the launcher sets TELEMETRY_DIR
+  expect(ok.headers()["x-telemetry"]).toBe("queued"); // the launcher points the API at tcc-v2 (TCC_TELEMETRY_URL)
   const bad = await request.post("/api/telemetry", { headers, data: [{ nope: 1 }] });
   expect(bad.status()).toBe(400);
 });

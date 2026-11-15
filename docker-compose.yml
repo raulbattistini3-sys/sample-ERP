@@ -16,7 +16,7 @@
 #
 # Optional secrets (Resend, Jira/HubSpot OAuth, ...) come from api/.env when it exists; the database,
 # host/port and CORS settings below always win over it.
-# The shared secrets come from secrets/ and are required: run `cd secrets && bun install && bun generate.ts`
+# The shared secrets come from secrets/ and are required: run `cd ../../secrets && bun install && bun generate.ts`
 # once before the first `up`. secrets/secrets.env (JWT_SECRET, NETWORK_TOKEN,
 # VAULT_TOKEN, VAULT_TOKEN_SHA256, VAULT_ADMIN_TOKEN_SHA256, VAULT_DB_PASSWORD) is loaded after api/.env and
 # billing/.env, so it wins over them; secrets/tls/ holds the TLS certificates (browser -> web and
@@ -25,7 +25,10 @@
 
 services:
   db:
-    image: postgres:17-alpine
+    # postgres 17 + pgsodium, supabase_vault, hypopg, index_advisor, pgvector (api/postgres/Dockerfile)
+    build: ./api/postgres
+    image: sample-erp-postgres:17
+    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements,pg_prewarm"]
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -35,6 +38,9 @@ services:
       - db-data:/var/lib/postgresql/data
       # run once, on an empty volume: schema, then categorias + drizzle's migration log
       - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+      # first: extensions of sample_erp, then the "profiling" database and its extensions
+      - ./api/postgres/init/erp/00_extensions.sql:/docker-entrypoint-initdb.d/00_extensions.sql:ro
+      - ./api/postgres/init/erp/01_profiling.sh:/docker-entrypoint-initdb.d/00_profiling.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d sample_erp"]
       interval: 5s
@@ -66,7 +72,7 @@ services:
     env_file:
       - path: ./api/.env
         required: false
-      - path: ./secrets/secrets.env
+      - path: ../../secrets/secrets.env
         required: true
     secrets: [internal_ca, api_tls_cert, api_tls_key]
     environment:
@@ -133,7 +139,7 @@ services:
     env_file:
       - path: ./api/.env
         required: false
-      - path: ./secrets/secrets.env
+      - path: ../../secrets/secrets.env
         required: true
     secrets: [internal_ca, importer_tls_cert, importer_tls_key]
     environment:
@@ -166,7 +172,7 @@ services:
     env_file:
       - path: ./billing/.env
         required: false
-      - path: ./secrets/secrets.env
+      - path: ../../secrets/secrets.env
         required: true
     environment:
       # plain Postgres, no TLS; production verifies the database's certificate
@@ -229,7 +235,7 @@ services:
     env_file:
       - path: ./api/.env
         required: false
-      - path: ./secrets/secrets.env
+      - path: ../../secrets/secrets.env
         required: true
     environment:
       NETWORK_ADDR: ":8080"
@@ -245,16 +251,18 @@ services:
   # The vault's own Postgres, apart from db: a dump of the ERP database holds no CPF, and the ciphertext
   # never sits next to the rows it describes. No published port. Its password is VAULT_DB_PASSWORD.
   vault-db:
-    image: postgres:17-alpine
+    build: ./api/postgres
+    image: sample-erp-postgres:17
     env_file:
-      - path: ./secrets/secrets.env
+      - path: ../../secrets/secrets.env
         required: true
     environment:
       POSTGRES_USER: vault
       POSTGRES_DB: sample_erp_vault
-    entrypoint: ["/bin/sh", "-c", "export POSTGRES_PASSWORD=\"$$VAULT_DB_PASSWORD\"; exec docker-entrypoint.sh postgres"]
+    entrypoint: ["/bin/sh", "-c", "export POSTGRES_PASSWORD=\"$$VAULT_DB_PASSWORD\"; exec docker-entrypoint.sh postgres -c shared_preload_libraries=pg_stat_statements"]
     volumes:
       - vault-data:/var/lib/postgresql/data
+      - ./api/postgres/init/vault:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U vault -d sample_erp_vault"]
       interval: 5s
@@ -270,7 +278,7 @@ services:
       context: .
       dockerfile: vault/Dockerfile
     env_file:
-      - path: ./secrets/secrets.env
+      - path: ../../secrets/secrets.env
         required: true
     secrets: [internal_ca, vault_tls_cert, vault_tls_key]
     environment:
@@ -285,7 +293,7 @@ services:
       VAULT_TLS_KEY: /run/secrets/vault_tls_key
       VAULT_TLS_CLIENT_CA: /run/secrets/internal_ca
     volumes:
-      - ./secrets/vault:/keys:ro
+      - ../../secrets/vault:/keys:ro
     depends_on:
       vault-db:
         condition: service_healthy
@@ -301,24 +309,24 @@ volumes:
 # written by secrets/generate.ts
 secrets:
   internal_ca:
-    file: ./secrets/tls/ca.crt
+    file: ../../secrets/tls/ca.crt
   importer_tls_cert:
-    file: ./secrets/tls/importer.crt
+    file: ../../secrets/tls/importer.crt
   importer_tls_key:
-    file: ./secrets/tls/importer.key
+    file: ../../secrets/tls/importer.key
   vault_tls_cert:
-    file: ./secrets/tls/vault.crt
+    file: ../../secrets/tls/vault.crt
   vault_tls_key:
-    file: ./secrets/tls/vault.key
+    file: ../../secrets/tls/vault.key
   api_tls_cert:
-    file: ./secrets/tls/api.crt
+    file: ../../secrets/tls/api.crt
   api_tls_key:
-    file: ./secrets/tls/api.key
+    file: ../../secrets/tls/api.key
   billing_tls_cert:
-    file: ./secrets/tls/billing.crt
+    file: ../../secrets/tls/billing.crt
   billing_tls_key:
-    file: ./secrets/tls/billing.key
+    file: ../../secrets/tls/billing.key
   web_tls_cert:
-    file: ./secrets/tls/web.crt
+    file: ../../secrets/tls/web.crt
   web_tls_key:
-    file: ./secrets/tls/web.key
+    file: ../../secrets/tls/web.key

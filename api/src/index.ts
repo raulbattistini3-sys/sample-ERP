@@ -20,7 +20,7 @@ import { listenWithFallback } from "./utils/listen_with_fallback";
 import { anunciar, novoId, rede } from "./integrations/network/network.client";
 import { apiTls } from "./configs/tls.config";
 import { DevChildren } from "./dev/children";
-import { hostTelemetry, telemetryEnabled } from "./utils/telemetry/telemetry";
+import { flushTelemetry, hostTelemetry, hostTelemetryEnabled } from "./utils/telemetry/telemetry";
 
 const config = Config.getInstance();
 
@@ -47,8 +47,8 @@ if (!tls) console.warn("API_TLS_* not set: serving plain HTTP, and billing can't
 
 // development: the importer, the vault and billing as this process's children (API_CHILDREN)
 const children = DevChildren.fromEnv();
-// GC, event loop, request and query timings every 10 s into TELEMETRY_DIR (utils/telemetry)
-if (telemetryEnabled) hostTelemetry.start();
+// GC, event loop, request and query timings every 10 s to the TCC server, tcc-v2 (utils/telemetry)
+if (hostTelemetryEnabled) hostTelemetry.start();
 if (children && apiEnv() === "production") {
    console.warn("API_CHILDREN is ignored in production; the launcher or the container platform runs those services");
 } else {
@@ -104,7 +104,9 @@ const shutdown = async () => {
    await Promise.all([integracaoEnvioWorker.stop(), pagamentoRecorrenteWorker.stop(), auditoriaConsolidacaoWorker.stop(), importacaoCluster?.stop(), closeProductSocket()]);
    importadorClient.close();
    // a "stopping" sample and the last window, written before the process exits
-   if (telemetryEnabled) await hostTelemetry.stop();
+   if (hostTelemetryEnabled) await hostTelemetry.stop();
+   // the app events still in the batch (searches of the last 2 s)
+   await flushTelemetry();
    // the children last: billing may still be sending its last notifications
    await children?.stop();
    process.exit(0);

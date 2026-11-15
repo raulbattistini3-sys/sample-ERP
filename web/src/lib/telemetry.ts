@@ -6,7 +6,7 @@ import { getToken } from "./auth-storage";
 // - signals: the recent main-thread load and pressure, which the search scheduler reads to decide main
 //   thread or worker (features/produtos/search)
 // - memory: the last events, readable as window.__erpTelemetry.events (DevTools, the e2e tests)
-// - fetch: batches to the API's POST /telemetry, which appends them to TELEMETRY_DIR as NDJSON; skipped
+// - fetch: batches to the API's POST /telemetry, which forwards them to the TCC server (tcc-v2); skipped
 //   while signed out
 //
 // Timings only, never row data: the events say which thread ran a search and how long it took, not

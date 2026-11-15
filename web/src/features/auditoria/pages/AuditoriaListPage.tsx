@@ -1,8 +1,9 @@
 import { FilterBar, FilterOption, MultiSelectFilter } from "../../../components/ui/MultiSelectFilter";
 import { useListFilters } from "../../../hooks/useListFilters";
 import { AcaoEfetuadaEnum, acaoEfetuadaLabels } from "../types/auditoria.types";
-import { useMemo } from "react";
-import { Plus } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Download, Plus } from "lucide-react";
+import { baixarPlanilhaAuditorias } from "../api/auditoria.api";
 import { Button } from "../../../components/ui/Button";
 import { DataTable } from "../../../components/ui/DataTable";
 import { LoadMore } from "../../../components/ui/LoadMore";
@@ -23,6 +24,19 @@ export const AuditoriaListPage = () => {
   const { filters, params, setFilter, clear, active } = useListFilters(FILTERS);
   const { data, isLoading, error, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = useAuditorias(params);
   const auditorNames = useAuditorNames();
+  const [baixando, setBaixando] = useState(false);
+  const [erroPlanilha, setErroPlanilha] = useState<string | null>(null);
+  const baixarPlanilha = async () => {
+    setBaixando(true);
+    setErroPlanilha(null);
+    try {
+      await baixarPlanilhaAuditorias(params);
+    } catch (e) {
+      setErroPlanilha(getApiErrorMessage(e, "Não foi possível gerar a planilha."));
+    } finally {
+      setBaixando(false);
+    }
+  };
   const auditorOptions = useMemo<FilterOption[]>(
     () =>
       [...auditorNames]
@@ -44,6 +58,10 @@ export const AuditoriaListPage = () => {
         actions={
           <>
             <FakeDataButton tipo="auditorias" />
+            <Button variant="secondary" onClick={baixarPlanilha} disabled={baixando} title="As auditorias filtradas, uma linha por produto e campo alterado (CSV)">
+              <Download className="h-4 w-4" aria-hidden="true" />
+              {baixando ? "Gerando…" : "Baixar planilha"}
+            </Button>
             <Button onClick={() => openItem("/auditoria/new")}>
               <Plus className="h-4 w-4" aria-hidden="true" />
               Nova auditoria
@@ -51,6 +69,7 @@ export const AuditoriaListPage = () => {
           </>
         }
       />
+      {erroPlanilha && <ErrorAlert message={erroPlanilha} />}
       <AlteracoesPendentes />
       <FilterBar active={active} onClear={clear}>
         <MultiSelectFilter label="Ação" options={ACAO_OPTIONS} selected={filters.acao} onChange={(v) => setFilter("acao", v)} />

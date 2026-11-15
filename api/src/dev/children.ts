@@ -3,13 +3,16 @@ import { createInterface } from "node:readline";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { WindowLog } from "./window-log";
 
-// Development only: the API starts the importer, the vault and billing as its own child processes, so
-// one `go run ./network/cmd/network dev` (network -> web, api -> importer, vault, billing) brings the
-// whole stack up in one terminal and Ctrl+C brings it down.
+// Development only: the API starts the importer, the vault, billing and the TCC as its own child
+// processes, so one `go run ./network/cmd/network dev` (network -> web, api -> importer, vault, billing,
+// tcc) brings the whole stack up in one terminal and Ctrl+C brings it down.
 //
-//   API_CHILDREN        which ones: "importer,vault,billing" (any subset; empty = none, the default)
+//   API_CHILDREN        which ones: "importer,vault,billing,tcc" (any subset; empty = none, the default)
+//   TCC_DIR             the TCC pnpm workspace (default: tcc-v2/tcc-v1/demo-monorepo-workspace found above)
+//   TCC_SECRETS_DIR     where tcc-server.env is (default: the secrets/ folder found above, erp-v1/secrets)
 //   API_CHILDREN_ROOT   the repo root (default: the folder above the API's cwd)
 //
 // Each child runs in its own folder with that folder's .env added to its environment (the importer and
@@ -41,10 +44,53 @@ export function parseEnvFile(path: string): Record<string, string> {
    return out;
 }
 
+// postgresql://user:pass@host:port/db?x=y  ->  jdbc:postgresql://host:port/db?x=y&user=...&password=...
+export function toJdbcUrl(url: string): string {
+   const u = new URL(url);
+   const params = new URLSearchParams(u.search);
+   if (u.username) params.set("user", decodeURIComponent(u.username));
+   if (u.password) params.set("password", decodeURIComponent(u.password));
+   const q = params.toString();
+   return `jdbc:postgresql://${u.host}${u.pathname}${q ? `?${q}` : ""}`;
+}
+
 const sha256Hex = (v: string) => createHash("sha256").update(v).digest("hex");
 
+// <ancestor>/<rel> for the first folder from `from` upwards that has it
+function findUp(from: string, rels: string[], probe: string): string | null {
+   for (let d = resolve(from); ; d = dirname(d)) {
+      for (const rel of rels) if (existsSync(join(d, rel, probe))) return join(d, rel);
+      if (dirname(d) === d) return null;
+   }
+}
+
+// the TCC pnpm workspace (TCC_DIR, or tcc-v2/tcc-v1/demo-monorepo-workspace beside the ERP in erp-v1)
+export function tccWorkspace(root: string): string | null {
+   if (process.env.TCC_DIR?.trim()) return resolve(process.env.TCC_DIR.trim());
+   return findUp(root, ["tcc-v2/tcc-v1/demo-monorepo-workspace", "tcc-v1/demo-monorepo-workspace"], "pnpm-workspace.yaml");
+}
+
+// erp-v1/secrets (TCC_SECRETS_DIR, or the secrets/ folder holding generate.ts above the ERP)
+export function secretsDir(root: string): string | null {
+   if (process.env.TCC_SECRETS_DIR?.trim()) return resolve(process.env.TCC_SECRETS_DIR.trim());
+   return findUp(root, ["secrets"], "generate.ts");
+}
+
 function specs(root: string): Record<string, Spec> {
+   const tccDir = tccWorkspace(root);
+   const secrets = secretsDir(root);
    return {
+      // the TCC: `pnpm run dev` at the workspace root starts its server (apps/server) and its dashboard
+      // (apps/web, vite) together. Its settings come from erp-v1/secrets/tcc-server.env, handed down here
+      // so nothing the API inherited overrides them; both join the network as "tcc" and "tcc-web".
+      ...(tccDir && {
+         tcc: {
+            cwd: tccDir,
+            command: "pnpm",
+            args: ["run", "dev"],
+            env: { ...(secrets ? { TCC_SECRETS_DIR: secrets, ...parseEnvFile(join(secrets, "tcc-server.env")) } : {}) },
+         },
+      }),
       importer: { cwd: join(root, "importer"), command: "go", args: ["run", "./cmd/importer"] },
       vault: {
          cwd: join(root, "vault"),
@@ -53,11 +99,22 @@ function specs(root: string): Record<string, Spec> {
          // the vault needs only the token's digest; derived from the API's VAULT_TOKEN when vault/.env has none
          env: process.env.VAULT_TOKEN ? { VAULT_TOKEN_SHA256: sha256Hex(process.env.VAULT_TOKEN) } : {},
       },
-      billing: { cwd: join(root, "billing"), command: WIN ? "mvnw.cmd" : "./mvnw", args: ["spring-boot:run", "-e"] },
+      // billing reads JDBC only: the ERP's one DATABASE_URL (secrets/sample-erp.env), rewritten
+      billing: {
+         cwd: join(root, "billing"),
+         command: WIN ? "mvnw.cmd" : "./mvnw",
+         args: ["spring-boot:run", "-e"],
+         env: process.env.DATABASE_URL ? { JDBC_DATABASE_URL: toJdbcUrl(process.env.DATABASE_URL) } : {},
+      },
    };
 }
 
-type Running = { name: string; proc: ChildProcess; exited: Promise<void> };
+type Running = { name: string; proc: ChildProcess; exited: Promise<void>; log?: WindowLog };
+
+// children whose output goes to 5-minute files (window-log.ts) under <repo>/logs/<name>/ instead of the
+// terminal; only lines that look like errors or warnings still show up there
+const FILE_LOGGED = new Set(["tcc"]);
+const ALARM = /error|warn|fail|exception|panic|EADDRINUSE/i;
 
 // a tree-kill that works with a dead parent too (Windows: taskkill /T walks from the pid down)
 function killTree(pid: number) {
@@ -98,7 +155,11 @@ export class DevChildren {
       for (const name of this.names) {
          const spec = all[name];
          if (!spec) {
-            console.warn(`[api] API_CHILDREN: unknown "${name}" (importer, vault, billing)`);
+            console.warn(
+               name === "tcc"
+                  ? `[api] API_CHILDREN: no TCC workspace found above ${this.root} (set TCC_DIR to tcc-v2/tcc-v1/demo-monorepo-workspace)`
+                  : `[api] API_CHILDREN: unknown "${name}" (importer, vault, billing, tcc)`,
+            );
             continue;
          }
          this.spawn(name, spec);
@@ -127,9 +188,17 @@ export class DevChildren {
          windowsHide: true,
       });
       const prefix = `[${name}]`;
+      const log = FILE_LOGGED.has(name) ? new WindowLog(join(this.root, "logs", name), name) : undefined;
+      if (log) console.log(`[api] ${name} output: ${log.dir} (one gzipped file per 5 minutes; errors/warnings also here)`);
       for (const stream of [proc.stdout, proc.stderr]) {
          if (!stream) continue;
-         createInterface({ input: stream }).on("line", (line) => process.stdout.write(`${prefix} ${line}\n`));
+         createInterface({ input: stream }).on("line", (line) => {
+            if (log) {
+               log.write(line);
+               if (!ALARM.test(line)) return;
+            }
+            process.stdout.write(`${prefix} ${line}\n`);
+         });
       }
       const exited = new Promise<void>((done) => {
          proc.once("exit", (code, signal) => {
@@ -142,7 +211,7 @@ export class DevChildren {
          });
       });
       console.log(`[api] started ${name}: ${spec.command} ${spec.args.join(" ")} (in ${spec.cwd})`);
-      this.running.push({ name, proc, exited });
+      this.running.push({ name, proc, exited, log });
    }
 
    async stop() {
@@ -162,6 +231,8 @@ export class DevChildren {
       // whatever is left (on Windows the go/maven processes under the shell) goes with its tree
       for (const { proc } of this.running) if (proc.pid) killTree(proc.pid);
       rmSync(this.pidFile, { force: true });
+      // the last window of each file-logged child gets compressed too
+      await Promise.all(this.running.map((r) => r.log?.close()));
    }
 
    private savePids() {

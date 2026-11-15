@@ -100,6 +100,9 @@ func Request(l *slog.Logger, r *http.Request, client string, status int, bytes i
 		level = slog.LevelError
 	case status >= 400:
 		level = slog.LevelWarn
+	case isTelemetry(Path(r)):
+		// the browser's telemetry beacons fire constantly; only failures are worth an access line
+		level = slog.LevelDebug
 	}
 	base := []slog.Attr{
 		slog.String("method", r.Method),
@@ -110,4 +113,10 @@ func Request(l *slog.Logger, r *http.Request, client string, status int, bytes i
 		slog.String("client", client),
 	}
 	l.LogAttrs(r.Context(), level, "request", append(base, attrs...)...)
+}
+
+// isTelemetry reports whether path is one of the telemetry ingestion endpoints (/api/telemetry,
+// /api/telemetry/..., /telemetry/...), whose successful requests are logged at debug only.
+func isTelemetry(path string) bool {
+	return path == "/api/telemetry" || strings.HasPrefix(path, "/api/telemetry/") || strings.HasPrefix(path, "/telemetry/")
 }

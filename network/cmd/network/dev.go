@@ -8,6 +8,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strings"
 	"syscall"
 	"time"
 
@@ -18,13 +20,17 @@ import (
 // one terminal. The network service runs here as usual and starts two children,
 //
 //	web   bun run dev   (in web/)
-//	api   bun run dev   (in api/), with API_CHILDREN=importer,vault,billing so the API starts those itself
+//	api   bun run dev   (in api/), with API_CHILDREN=importer,vault,billing,tcc so the API starts those itself
 //
 // Every line comes out as "[name] ...". Ctrl+C (or SIGTERM) stops the API first, which stops its own
 // children, then the web app, then the network; anything still running after 30 s is killed. If the web app
 // or the API exits, the rest is stopped too, so a half-up stack never lingers.
 //
-// Flags: --no-web, --no-api; DEV_API_CHILDREN overrides the API's children (empty = none).
+// The TCC (server + dashboard, `pnpm run dev` in tcc-v2/tcc-v1/demo-monorepo-workspace) is one of the API's
+// children; the API gets its TCC_TELEMETRY_URL / TCC_TOKEN from secrets/tcc-server.env (sidecars.go).
+// Beside them, when found, erp-cache ("cache"), which may end without stopping anything.
+//
+// Flags: --no-web, --no-api, --no-tcc, --no-cache; DEV_API_CHILDREN overrides the API's children (empty = none).
 func dev(args []string) int {
 	sup := &supervisor.Supervisor{Grace: 30 * time.Second}
 	root, err := repoRoot()
@@ -32,15 +38,19 @@ func dev(args []string) int {
 		sup.Logf("network", "%v", err)
 		return 1
 	}
-	web, api := true, true
+	web, api, tcc, cache := true, true, true, true
 	for _, a := range args {
 		switch a {
 		case "--no-web":
 			web = false
 		case "--no-api":
 			api = false
+		case "--no-tcc":
+			tcc = false
+		case "--no-cache":
+			cache = false
 		default:
-			sup.Logf("network", "unknown flag %q (--no-web, --no-api)", a)
+			sup.Logf("network", "unknown flag %q (--no-web, --no-api, --no-tcc, --no-cache)", a)
 			return 2
 		}
 	}
@@ -58,18 +68,36 @@ func dev(args []string) int {
 	go func() { serverDone <- run() }()
 
 	exited := make(chan string, 4)
+	// sidecars first, so they are up before the API sends its first envelope
+	sidecarExited := make(chan string, 4)
+	go func() {
+		for name := range sidecarExited {
+			sup.Logf("network", "%s ended; the stack keeps running without it", name)
+		}
+	}()
+	if cache {
+		startCache(sup, root, sidecarExited)
+	}
+	var tccEnv []string
+
 	bun := "bun"
 	if runtime.GOOS == "windows" {
 		bun = "bun.exe"
 	}
 	children, ok := os.LookupEnv("DEV_API_CHILDREN")
 	if !ok {
-		children = "importer,vault,billing"
+		children = "importer,vault,billing,tcc"
+	}
+	if !tcc {
+		children = strings.Join(slices.DeleteFunc(strings.Split(children, ","), func(c string) bool { return strings.TrimSpace(c) == "tcc" }), ",")
+	}
+	if strings.Contains(","+children+",", ",tcc,") {
+		tccEnv = tccAPIEnv(root)
 	}
 	started := 0
 	if api {
 		if err := sup.Start(supervisor.Spec{Name: "api", Dir: filepath.Join(root, "api"), Command: bun, Args: []string{"run", "dev"},
-			Env: append([]string{"API_CHILDREN=" + children, "API_CHILDREN_ROOT=" + root}, join...)}, exited); err != nil {
+			Env: append(append(append([]string{"API_CHILDREN=" + children, "API_CHILDREN_ROOT=" + root}, join...), tccEnv...), erpAPIEnv(root)...)}, exited); err != nil {
 			sup.Logf("network", "%v", err)
 		} else {
 			started++

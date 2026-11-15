@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { formatarCnpj, isCnpjValido } from "../../validators/cnpj.validator";
 
 
 const opcional = (max: number, message: string) =>
@@ -19,6 +20,10 @@ export const EmpresaSchema = z.object({
   dominio: opcional(253, "Domínio longo demais.")
     .transform((v) => v?.toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "") || null)
     .refine((v) => v === null || /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(v), "Domínio inválido (ex.: empresa.com.br)."),
+  // validated (check digits) and kept formatted, 11.222.333/0001-81; HubSpot property "cnpj"
+  cnpj: opcional(18, "CNPJ inválido.")
+    .refine((v) => v === null || isCnpjValido(v), "CNPJ inválido.")
+    .transform((v) => (v ? formatarCnpj(v) : null)),
   // one of HubSpot's own industry values (GET /clientes/empresas/setores)
   setor: opcional(100, "Setor inválido."),
   telefone: opcional(40, "Telefone longo demais.").refine((v) => v === null || /^[+\d\s().-]{8,40}$/.test(v), "Telefone inválido."),

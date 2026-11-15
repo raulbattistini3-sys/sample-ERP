@@ -17,7 +17,8 @@ import { enqueueForCategoria, enqueueForLote, enqueueForProducts } from "./integ
 // concurrent changes can't both use one manual auditoria. Otherwise an automatic auditoria is created,
 // already vinculada, so it can't cover a later change either.
 
-export type FieldChange = { campo: string; antes: string; depois: string };
+// produto/produtoId: set on the changes of a grouped auditoria (several products), so each line says whose it is
+export type FieldChange = { campo: string; antes: string; depois: string; produto?: string; produtoId?: string };
 
 // the row as saved: like the UPDATE, undefined fields in `values` keep their stored value
 export const applyChanges = <T extends object>(before: T, values: Partial<T>): T => ({
@@ -204,40 +205,47 @@ export async function recordProductChanges(tx: DrizzleDB, usuarioId: string, ite
   if (novas.length > 0) await enfileirar(tx, usuarioId, novas.length > 1 ? grupoDeLote() : GRUPO_EDICAO, novas);
 }
 
-// A lote of product auditorias, in a few statements however many there are, then one integration
-// issue/ticket per categoria (enqueueForLote). Returns how many auditorias were created.
-async function inserirLote(tx: DrizzleDB, usuarioId: string, dataDeAudicao: Date, itens: Pendente[]): Promise<number> {
-  const novas = itens.map((item) => ({ ...item, auditoriaId: randomUUID(), detalhamentoId: randomUUID() }));
+// One auditoria for a group of product changes of the same kind (see consolidarPendentes): one
+// detalhamento listing every product's changes (FieldChange.produto/produtoId), every product linked
+// through produtos_por_auditoria, then one integration issue/ticket per categoria (enqueueForLote).
+// A single product keeps the old shape: its name and its valor de venda before/after.
+async function inserirGrupo(tx: DrizzleDB, usuarioId: string, dataDeAudicao: Date, itens: Pendente[]): Promise<void> {
+  const unico = itens.length === 1 ? itens[0] : null;
+  const changes: FieldChange[] = unico
+    ? unico.changes
+    : itens.flatMap((i) => i.changes.map((c) => ({ ...c, produto: i.nomeProduto, produtoId: i.produtoId })));
+  const campos = [...new Set(itens.flatMap((i) => i.changes.map((c) => c.campo)))];
+  const nome = unico ? unico.nomeProduto : `${itens.length} produtos — ${campos.join(", ")}`;
+  const obs = unico
+    ? observacoes(unico.changes)
+    : limitar(
+        `Alteração registrada automaticamente em ${itens.length} produtos (${campos.join(", ")}). ${itens
+          .map((i) => `${i.nomeProduto}: ${i.changes.map(({ campo, antes, depois }) => `${campo} ${antes} → ${depois}`).join(", ")}`)
+          .join("; ")}`,
+      );
   const loteId = randomUUID();
-  for (const lote of emLotes(novas)) {
+  const detalhamentoId = firstId(
     await tx.execute(sql`
-      insert into detalhamentos_auditoria (id, nome_do_produto, valor_anterior, valor_atual, observacoes_adicionais, alteracoes)
-      select id, nome, antes, depois, obs, alteracoes::jsonb
-      from unnest(
-        ${arrayParam(lote.map((n) => n.detalhamentoId))}::uuid[],
-        ${arrayParam(lote.map((n) => n.nomeProduto))}::text[],
-        ${arrayParam(lote.map((n) => n.antes))}::numeric[],
-        ${arrayParam(lote.map((n) => n.depois))}::numeric[],
-        ${arrayParam(lote.map((n) => observacoes(n.changes)))}::text[],
-        ${arrayParam(lote.map((n) => JSON.stringify(n.changes)))}::text[]
-      ) as v(id, nome, antes, depois, obs, alteracoes)`);
+      insert into detalhamentos_auditoria (nome_do_produto, valor_anterior, valor_atual, observacoes_adicionais, alteracoes)
+      values (${nome.slice(0, 255)}, ${unico ? unico.antes : "0.00"}::numeric, ${unico ? unico.depois : "0.00"}::numeric, ${obs}, ${JSON.stringify(changes)}::jsonb)
+      returning id`),
+  )!;
+  const auditoriaId = firstId(
     await tx.execute(sql`
-      insert into auditorias (id, acao_efetuada, data_de_audicao, usuario_id, detalhamento_auditoria_id, vinculada_em, lote_id)
-      select id, 'Alteracao', ${dataDeAudicao.toISOString()}::timestamptz, ${usuarioId}, detalhamento, now(), ${loteId}::uuid
-      from unnest(
-        ${arrayParam(lote.map((n) => n.auditoriaId))}::uuid[],
-        ${arrayParam(lote.map((n) => n.detalhamentoId))}::uuid[]
-      ) as v(id, detalhamento)`);
+      insert into auditorias (acao_efetuada, data_de_audicao, usuario_id, detalhamento_auditoria_id, vinculada_em, lote_id)
+      values ('Alteracao', ${dataDeAudicao.toISOString()}::timestamptz, ${usuarioId}, ${detalhamentoId}, now(), ${loteId}::uuid)
+      returning id`),
+  )!;
+  for (const lote of emLotes(itens)) {
     await tx.execute(sql`
       insert into produtos_por_auditoria (auditoria_id, produto_id)
-      select * from unnest(
-        ${arrayParam(lote.map((n) => n.auditoriaId))}::uuid[],
-        ${arrayParam(lote.map((n) => n.produtoId))}::uuid[]
-      )`);
+      select ${auditoriaId}::uuid, p from unnest(${arrayParam(lote.map((n) => n.produtoId))}::uuid[]) as v(p)
+      on conflict do nothing`);
   }
-  if (novas.length > 0) await enqueueForLote(tx, loteId);
-  return novas.length;
+  await enqueueForLote(tx, loteId);
 }
+
+const limitar = (text: string) => (text.length > MAX_OBSERVACOES ? `${text.slice(0, MAX_OBSERVACOES - 1)}…` : text);
 
 export async function recordCategoriaChange(
   tx: DrizzleDB,
@@ -305,6 +313,26 @@ export function juntarAlteracoes(listas: FieldChange[][]): FieldChange[] {
   return [...porCampo.values()].filter(({ antes, depois }) => antes !== depois);
 }
 
+// how long a burst of same-kind changes keeps going into the same auditoria, from its first change
+export const JANELA_MS = 60_000;
+
+// the kind of a product change: the fields it touched, in a fixed order
+export const tipoDeAlteracao = (changes: FieldChange[]) => [...new Set(changes.map((c) => c.campo))].sort().join("+");
+
+// rows sorted by criada_em -> windows of JANELA_MS, each starting at its first row
+export function emJanelas<T extends { criada_em: Date | string }>(linhas: T[]): T[][] {
+  const janelas: T[][] = [];
+  let inicio = -Infinity;
+  for (const l of linhas) {
+    const t = +new Date(l.criada_em);
+    if (janelas.length === 0 || t - inicio >= JANELA_MS) {
+      janelas.push([l]);
+      inicio = t;
+    } else janelas[janelas.length - 1].push(l);
+  }
+  return janelas;
+}
+
 export type Consolidacao = { pendentes: number; auditorias: number; lotes: number };
 
 const agrupar = <T>(itens: T[], chave: (item: T) => string) => {
@@ -320,19 +348,28 @@ const agrupar = <T>(itens: T[], chave: (item: T) => string) => {
 
 // Turns up to `limite` queued changes (oldest first) into auditorias, on the caller's transaction: the
 // rows are taken FOR UPDATE SKIP LOCKED and deleted, so two API instances never consolidate one change.
-export async function consolidarPendentes(tx: DrizzleDB, limite: number): Promise<Consolidacao> {
+// minIdadeMs: leave the changes younger than that queued (the timer passes JANELA_MS, so a window
+// still filling up isn't cut in two by a sweep); "Gerar agora" and shutdown take everything.
+export async function consolidarPendentes(tx: DrizzleDB, limite: number, minIdadeMs = 0): Promise<Consolidacao> {
   const { rows } = await tx.execute(sql`
     delete from alteracoes_pendentes
-    where id in (select id from alteracoes_pendentes order by criada_em limit ${limite} for update skip locked)
+    where id in (
+      select id from alteracoes_pendentes
+      where criada_em <= now() - make_interval(secs => ${minIdadeMs / 1000})
+      order by criada_em limit ${limite} for update skip locked)
     returning usuario_id::text, grupo, produto_id::text, categoria_id::text, nome, venda_antes::text,
               venda_depois::text, alteracoes, criada_em`);
   const linhas = (rows as LinhaPendente[]).sort((a, b) => +new Date(a.criada_em) - +new Date(b.criada_em));
   const resultado: Consolidacao = { pendentes: linhas.length, auditorias: 0, lotes: 0 };
 
-  const grupos = agrupar(linhas, (l) =>
-    l.categoria_id ? `${l.usuario_id}|categoria|${l.categoria_id}` : `${l.usuario_id}|${l.grupo}`,
-  );
-  for (const grupo of grupos.values()) {
+  // a categoria's own edits: per user and categoria. Product edits: per user and kind of change (which
+  // fields: "Status", "Valor de venda", ...), cut into JANELA_MS windows, so inactivating three products
+  // within a minute is one auditoria, and inactivating one while repricing another is two.
+  const grupos = [
+    ...agrupar(linhas.filter((l) => l.categoria_id), (l) => `${l.usuario_id}|categoria|${l.categoria_id}`).values(),
+    ...[...agrupar(linhas.filter((l) => !l.categoria_id), (l) => `${l.usuario_id}|${tipoDeAlteracao(l.alteracoes)}`).values()].flatMap(emJanelas),
+  ];
+  for (const grupo of grupos) {
     const { usuario_id: usuarioId, categoria_id: categoriaId } = grupo[0];
     const dataDeAudicao = new Date(grupo[0].criada_em);
     const ultima = grupo[grupo.length - 1];
@@ -372,7 +409,8 @@ export async function consolidarPendentes(tx: DrizzleDB, limite: number): Promis
       });
     }
     if (itens.length === 0) continue;
-    resultado.auditorias += await inserirLote(tx, usuarioId, dataDeAudicao, itens);
+    await inserirGrupo(tx, usuarioId, dataDeAudicao, itens);
+    resultado.auditorias += 1;
     resultado.lotes += 1;
   }
   return resultado;
