@@ -21,6 +21,7 @@ import { anunciar, novoId, rede } from "./integrations/network/network.client";
 import { apiTls } from "./configs/tls.config";
 import { DevChildren } from "./dev/children";
 import { flushTelemetry, hostTelemetry, hostTelemetryEnabled } from "./utils/telemetry/telemetry";
+import { processRole } from "./configs/process_role";
 
 const config = Config.getInstance();
 
@@ -69,7 +70,8 @@ listenWithFallback(server, { host, port, fallback: apiEnv() === "development", l
       // the first superuser of an empty database, when BOOTSTRAP_SU_* is set
       await ensureBootstrapSu(pinoLogger);
       // pg-boss worker that creates the Jira issues / HubSpot tickets of new auditorias
-      void integracaoEnvioWorker.start();
+      // (API_ROLE=api: producer only; the consumers run in the worker process, src/worker.ts)
+      void integracaoEnvioWorker.start({ consume: processRole() !== "api" });
       // issues each recurring payment's (Pagamento mensal) invoice on its date
       pagamentoRecorrenteWorker.start();
       // automatic auditorias, consolidated every AUDITORIAS_INTERVALO_MINUTOS (default 5)
