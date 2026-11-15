@@ -2,13 +2,18 @@ import express from "express";
 import cors from "cors";
 import swaggerUi from "swagger-ui-express";
 import router from "./routes";
-import { corsOptions } from "./configs/cors.config";
+import { corsOptions, origins } from "./configs/cors.config";
+import { hostTelemetry } from "./utils/telemetry/telemetry";
 import { openApiDocument } from "./docs/openapi";
 
 const app = express();
 
 // Express 5 defaults to the "simple" parser; keep nested params like ?categoria[nome]=x working for the product filters
 app.set("query parser", "extended");
+
+// first, so it times the whole request: http.request per matched route (never the raw URL) in host
+// telemetry, and a Server-Timing header (app, db) the web's allowed origins can read
+app.use(hostTelemetry.middleware({ timingAllowOrigin: origins }));
 
 // 100kb (the default) everywhere except the JSON spreadsheet import (up to 5000 products). Clientes
 // spreadsheets are uploaded as files (multipart) to /clientes/importacoes, which this parser skips.

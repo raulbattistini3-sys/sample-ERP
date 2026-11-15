@@ -9,7 +9,8 @@ export const allowedOrigins = (process.env.CORS_ORIGINS ?? "")
    .map((origin) => origin.trim().replace(/\/$/, ""))
    .filter(Boolean);
 
-const origins = allowedOrigins.length > 0 ? allowedOrigins : DEFAULT_ORIGINS;
+// also sent as Timing-Allow-Origin, so pages there see the Server-Timing of API responses
+export const origins = allowedOrigins.length > 0 ? allowedOrigins : DEFAULT_ORIGINS;
 
 // also checked when a page opens the product socket (sockets/produtos.socket.ts), which CORS doesn't cover
 export const isAllowedOrigin = (origin: string | undefined) => !origin || origins.includes(origin);
