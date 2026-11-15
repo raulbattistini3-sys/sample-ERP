@@ -2,6 +2,7 @@ import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { createTelemetry } from "../../../../pkg/telemetry/bus.js";
 import { ndjsonExporter } from "../../../../pkg/telemetry/exporters.js";
+import { createHostTelemetry } from "../../../../pkg/telemetry/host.js";
 
 // Telemetry sink of this process, built from the shared package (pkg/telemetry): the API's own events
 // (how long a product snapshot took to build) and the batches the web posts to /telemetry, one JSON
@@ -47,4 +48,39 @@ export function recordWebEvents(usuarioId: string, events: WebEvent[]) {
    if (!dir) return;
    const exporter = ndjsonExporter({ write, base: { service: "web", usuario: usuarioId, receivedAt: new Date().toISOString() } });
    for (const e of events) exporter.export(e);
+}
+
+// ─── host telemetry: what the API measures about itself (pkg/telemetry/host.js) ─────────────────────
+// Memory, GC pauses, event-loop delay and utilization, requests per route and queries per label,
+// aggregated every 10 s into one envelope, written as one line { service: "api", type: "host", ... } to
+// the same NDJSON files. start() only when TELEMETRY_DIR is set; the middleware's Server-Timing header
+// works either way.
+export const hostTelemetry = createHostTelemetry({
+   source: "sample-erp-api",
+   send: async (envelope) => write(JSON.stringify({ service: "api", type: "host", ...envelope }) + "\n"),
+});
+
+// "select produtos", "insert auditorias": the verb and the first table of a statement. Telemetry is
+// training data, so the label never carries the SQL text or its values.
+export function queryLabel(text: string): string {
+   const verb = /^\s*(\w+)/.exec(text)?.[1]?.toLowerCase() ?? "query";
+   const table = /\b(?:from|into|update)\s+"?([\w.]+)"?/i.exec(text)?.[1];
+   return table ? `${verb} ${table}` : verb;
+}
+
+type QueryablePool = { query: (...args: unknown[]) => unknown };
+
+// counts every promise-style pool.query (what drizzle calls outside transactions) under db.query and in
+// the request's Server-Timing "db". Callback-style calls pass through untimed; queries inside a
+// transaction run on a checked-out client (pool.connect) and aren't counted.
+export function instrumentPool<P extends object>(pool: P): P {
+   const p = pool as unknown as QueryablePool;
+   const original = p.query.bind(pool);
+   p.query = (...args: unknown[]) => {
+      if (typeof args[args.length - 1] === "function") return original(...args);
+      const first = args[0] as string | { text?: unknown } | undefined;
+      const text = typeof first === "string" ? first : typeof first?.text === "string" ? first.text : "";
+      return hostTelemetry.query(queryLabel(text), () => original(...args) as Promise<unknown>);
+   };
+   return pool;
 }

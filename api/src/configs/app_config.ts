@@ -4,6 +4,7 @@ import { Pool } from "pg";
 import * as schema from "../db/schema";
 import { databaseConnection } from "./database_connection";
 import { checkRequiredEnv } from "./required_env";
+import { instrumentPool } from "../utils/telemetry/telemetry";
 
 export type ApiConfig = {
   port: number;
@@ -47,7 +48,8 @@ class Config {
     if (!this.db) {
       // API_ENV decides TLS: verified in production, plain in development (configs/database_connection.ts)
       const { connectionString, ssl } = databaseConnection();
-      const pool = new Pool({ connectionString, ssl });
+      // every query counted in host telemetry (db.query) and the request's Server-Timing "db"
+      const pool = instrumentPool(new Pool({ connectionString, ssl }));
       this.db = drizzle(pool, { schema });
     }
     return this.db;

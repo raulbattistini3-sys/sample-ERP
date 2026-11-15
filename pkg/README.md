@@ -8,11 +8,14 @@ packages in `pkg/`. Plain JavaScript typed with JSDoc: no build step, so the API
 |---|---|---|
 | `tablecore/` | Columnar table in one `ArrayBuffer` (TCC1 format, typed-array views, strings in a dictionary), the filter/sort both threads run (`runOp`), an inverted text index for word-start search, typo-tolerant (fuzzy) word matching, a Web Worker running the same code, a per-device cost model and the scheduler that picks main thread or worker per operation | API: encodes the product snapshot (`columnar.js`) and splits search words like the web (`text-index.js`). Web: the product list's local search (`web/src/features/produtos/search`) |
 | `telemetry/` | One event shape (`{ source, type, ts, data }`), browser collectors (long animation frames, interactions, compute pressure, heap), exporters (scheduler signals, in-memory log, `fetch` to a collector, NDJSON) and the bus between them | Web: `web/src/lib/telemetry.ts`, posting to `POST /api/telemetry`. API: `api/src/utils/telemetry/telemetry.ts`, writing `TELEMETRY_DIR/<date>.ndjson` |
+| `telemetry/host.js` | Node only, its own entry point (not in `index.js`, which the web bundles). What a service measures about itself: `process.memory`, `gc` pauses by kind (a `PerformanceObserver` on `gc` entries), `event-loop.delay` (`monitorEventLoopDelay` p50/p95/p99), `event-loop.utilization`, `http.request` and `db.query` aggregated per route / query label each interval, and lifecycle (`started`, `ready`, `degraded`/`recovered` on event-loop p99, `stopping`). Batched into `HostTelemetryEnvelope`s (`bootId`, `sequence`) for a `send` you supply (`httpSender` POSTs with a bearer token; failures stay queued and retry in order). Also an Express/`node:http` middleware that adds `Server-Timing` (`app`, `db`, `timed()` parts) and `Timing-Allow-Origin` | Not wired in yet |
 
 `tablecore` comes from the TCC prototype (`experiments/tcc-v1/src`, commit `d478a1d`). It is unchanged
 except that the folders are flattened, numeric `in` filters and the `fuzzy` search were added, and
 telemetry moved here as its own package. Changes in `telemetry`: the `fetch` and NDJSON exporters were added, and the pressure
-timestamps fixed (Chromium's `PressureRecord.time` is already relative to `timeOrigin`).
+timestamps fixed (Chromium's `PressureRecord.time` is already relative to `timeOrigin`). `telemetry/host.js`
+is tcc-v1's `@tcc/host-telemetry` (`demo-monorepo-workspace/packages/host-telemetry`) moved from TypeScript to JSDoc, with
+the envelope and sample shapes of `@tcc/contracts` as typedefs rather than zod schemas, so the package keeps no dependencies.
 
 ## How the product search uses it
 
