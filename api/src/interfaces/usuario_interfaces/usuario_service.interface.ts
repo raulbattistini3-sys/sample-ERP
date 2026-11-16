@@ -51,6 +51,8 @@ interface IUsuarioService {
    ) => Promise<Either<BaseAppError, null>>;
    deleteUser: (id: string, actor: UsuarioResponseDto) => Promise<Either<BaseAppError, null>>;
    archiveUser: (id: string, actor: UsuarioResponseDto) => Promise<Either<BaseAppError, ResponseArchiveUsuario>>;
+   // the login's first step: 404 when the email has no account yet
+   checkLoginEmail: (payload: unknown) => Promise<Either<BaseAppError, { email: string }>>;
    loginUsuario: (
       payload: PayloadLoginUsuarioDto,
    ) => Promise<Either<BaseAppError, ResponseLoginUsuarioDto>>;

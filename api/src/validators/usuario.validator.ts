@@ -7,6 +7,7 @@ import {
    CreateUserSchema,
    ChangePasswordSchema,
    ForgotPasswordSchema,
+   LoginEmailSchema,
    LoginUserSchema,
    ResetPasswordSchema,
    RegisterUserSchema,
@@ -30,6 +31,10 @@ class UsuarioValidator extends BaseValidator implements IUsuarioValidator {
 
    validateRegisterPayload(payload: unknown): Either<BaseAppError, void> {
       return this.validateWith(RegisterUserSchema, payload);
+   }
+
+   validateLoginEmailPayload(payload: unknown): Either<BaseAppError, void> {
+      return this.validateWith(LoginEmailSchema, payload);
    }
 
    validateForgotPasswordPayload(payload: unknown): Either<BaseAppError, void> {

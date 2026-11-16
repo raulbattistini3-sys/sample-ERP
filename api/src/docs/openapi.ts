@@ -22,6 +22,7 @@ import { CreateProdutoSchema, FilterProdutoSchema, ImportProdutosSchema, UpdateP
 import {
   CreateUserSchema,
   ForgotPasswordSchema,
+  LoginEmailSchema,
   LoginUserSchema,
   RegisterUserSchema,
   ResetPasswordSchema,
@@ -274,7 +275,8 @@ const rota = ({ metodo, caminho, tag, resumo, descricao, publica, admin, params,
 // ---- usuarios ----
 const USUARIOS = "Usuários";
 rota({ metodo: "post", caminho: "/user/register", tag: USUARIOS, resumo: "Create your own account", descricao: "Always an active Estoque usuario; permissoes and ativo are ignored.", publica: true, corpo: RegisterUserSchema, resposta: Usuario, erros: [409] });
-rota({ metodo: "post", caminho: "/user/login", tag: USUARIOS, resumo: "Log in", publica: true, status: 200, corpo: LoginUserSchema, resposta: Sessao, erros: [401] });
+rota({ metodo: "post", caminho: "/user/login/email", tag: USUARIOS, resumo: "Check the e-mail before asking for the password", descricao: "The login's first step: 200 when the e-mail has an account, 404 when it has none yet.", publica: true, status: 200, corpo: LoginEmailSchema, resposta: z.object({ email: z.string() }), erros: [404] });
+rota({ metodo: "post", caminho: "/user/login", tag: USUARIOS, resumo: "Log in", descricao: "404 when the e-mail has no account, 401 when the password is wrong or the usuario is inactive.", publica: true, status: 200, corpo: LoginUserSchema, resposta: Sessao, erros: [401, 404] });
 rota({ metodo: "post", caminho: "/user/forgot-password", tag: USUARIOS, resumo: "Ask for a password reset email", descricao: "Answers the same whether the e-mail exists or not.", publica: true, status: 202, corpo: ForgotPasswordSchema, resposta: z.object({ message: z.string() }) });
 rota({ metodo: "post", caminho: "/user/reset-password", tag: USUARIOS, resumo: "Set a new password with an emailed token", publica: true, status: 204, corpo: ResetPasswordSchema });
 rota({ metodo: "post", caminho: "/user/change-password", tag: USUARIOS, resumo: "Change your own password", descricao: "Ends your other sessions and returns a new one. The only route, with refresh-token, open while trocaSenhaObrigatoria is true; every other one answers 403.", status: 200, corpo: ChangePasswordSchema, resposta: Sessao, erros: [400] });

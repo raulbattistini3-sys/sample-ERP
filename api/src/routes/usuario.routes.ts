@@ -37,6 +37,8 @@ const passwordResetController = new PasswordResetController(
 // the only routes reachable without a token (mounted before AuthMiddleware in routes/index.ts)
 const publicUsuarioRoutes = Router();
 publicUsuarioRoutes.post("/register", usuarioController.register);
+// the login's first step: 200 when the email has an account, 404 when it doesn't yet
+publicUsuarioRoutes.post("/login/email", usuarioController.checkLoginEmail);
 publicUsuarioRoutes.post("/login", usuarioController.login);
 publicUsuarioRoutes.post("/forgot-password", passwordResetController.forgotPassword);
 publicUsuarioRoutes.post("/reset-password", passwordResetController.resetPassword);

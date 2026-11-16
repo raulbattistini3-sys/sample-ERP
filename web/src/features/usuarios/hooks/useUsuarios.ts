@@ -6,6 +6,7 @@ import {
   getUsuarioById,
   registerUsuario,
   forgotPassword,
+  checkLoginEmail,
   resetPassword,
   changePassword,
   createUsuario,
@@ -47,6 +48,8 @@ export const useChangePassword = () => {
   const { applySession } = useSessionActions();
   return useSingleFlightMutation({ mutationFn: changePassword, onSuccess: applySession });
 };
+
+export const useCheckLoginEmail = () => useSingleFlightMutation({ mutationFn: checkLoginEmail });
 
 export const useLogin = () => {
   const { login } = useSessionActions();

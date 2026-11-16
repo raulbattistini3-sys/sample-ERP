@@ -67,6 +67,9 @@ export const ForgotPasswordSchema = z.object({
         .email("Informe um e-mail válido."),
 });
 
+// POST /user/login/email (public): the login's first step, which only asks whether the email has an account
+export const LoginEmailSchema = ForgotPasswordSchema;
+
 // POST /user/reset-password (public); token is the one from the emailed link
 export const ResetPasswordSchema = z.object({
     token: z
