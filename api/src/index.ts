@@ -119,3 +119,5 @@ const shutdown = async () => {
 };
 process.once("SIGINT", shutdown);
 process.once("SIGTERM", shutdown);
+// polyvisor stops a service in its own process group (stop.signal: break) by CTRL_BREAK on Windows
+process.once("SIGBREAK", shutdown);

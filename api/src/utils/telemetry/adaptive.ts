@@ -35,13 +35,19 @@ let adaptive: Adaptive | null = null;
 let middleware: Middleware | null = null;
 
 /** loads the runtime when POLYVISOR_RUNTIME is set; resolves either way (the API never waits on it) */
-export async function startAdaptive(log: (m: string) => void = (m) => console.log(`[adaptive] ${m}`)): Promise<void> {
+export async function startAdaptive(
+   log: (m: string) => void = (m) => console.log(`[adaptive] ${m}`),
+   onLevel?: (level: Level, previous: Level) => void,
+): Promise<void> {
    const dir = process.env.POLYVISOR_RUNTIME?.trim();
    if (!dir || adaptive) return;
    try {
       const runtime = await importEsm(pathToFileURL(join(dir, "index.js")).href);
       adaptive = runtime.createAdaptive({
-         onChange: (level, previous, reasons) => log(`${previous} → ${level}${reasons.length ? `: ${reasons.join("; ")}` : ""}`),
+         onChange: (level, previous, reasons) => {
+            log(`${previous} → ${level}${reasons.length ? `: ${reasons.join("; ")}` : ""}`);
+            onLevel?.(level, previous);
+         },
       });
       middleware = adaptive.middleware({ classify });
       adaptive.start();
