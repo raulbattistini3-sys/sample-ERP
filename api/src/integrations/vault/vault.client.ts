@@ -20,6 +20,8 @@ export type VaultRecord = { owner_type: string; owner_id: string; data: VaultDad
 
 export class VaultIndisponivel extends Error {}
 export class VaultConflito extends Error {}
+// 400: the vault refused a value (an invalid CPF/CNPJ/email); the message says which field
+export class VaultInvalido extends Error {}
 
 type Resposta = { status: number; body: unknown };
 
@@ -115,10 +117,20 @@ export class VaultClient {
       });
    }
 
+   // "ok": answering /healthz; "degraded": configured but unreachable or failing; "off": VAULT_URL unset
+   async saude(): Promise<"ok" | "degraded" | "off"> {
+      if (!this.base) return "off";
+      try {
+         return (await this.chamar("GET", "/healthz")).status === 200 ? "ok" : "degraded";
+      } catch {
+         return "degraded";
+      }
+   }
+
    private falha(res: Resposta, acao: string): never {
       const msg = (res.body as { error?: string } | null)?.error ?? `HTTP ${res.status}`;
       if (res.status === 409) throw new VaultConflito(msg);
-      if (res.status === 400) throw new Error(`vault rejected ${acao}: ${msg}`);
+      if (res.status === 400) throw new VaultInvalido(msg);
       throw new VaultIndisponivel(`vault ${acao} failed: ${msg}`);
    }
 

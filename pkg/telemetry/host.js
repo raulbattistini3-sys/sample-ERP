@@ -31,6 +31,8 @@ import { randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { hostname } from "node:os";
 import { constants, monitorEventLoopDelay, performance, PerformanceObserver } from "node:perf_hooks";
+import { join } from "node:path";
+import v8 from "node:v8";
 
 /** @typedef {import("node:http").IncomingMessage} IncomingMessage */
 /** @typedef {import("node:http").ServerResponse} ServerResponse */
@@ -65,6 +67,9 @@ import { constants, monitorEventLoopDelay, performance, PerformanceObserver } fr
  * @property {number} [maxQueue] envelopes kept while `send` fails; the oldest go first and leave a gap in `sequence` (default 360: 1 h at 10 s)
  * @property {number} [loopResolutionMs] monitorEventLoopDelay's sampling resolution (default 10 ms)
  * @property {number} [degradedLoopP99Ms] event-loop p99 above this marks the service degraded, below it again recovered (default 200 ms; 0 disables)
+ * @property {number} [maxSeries] distinct request routes / query names kept per interval; the rest are counted under "(other)" (default 200)
+ * @property {number} [heapEvery] a process.heap sample (V8 heap per space) every Nth interval (default 6: once a minute at 10 s; 0 disables)
+ * @property {() => TelemetrySample[]} [extraSamples] samples measured elsewhere, added to each window (the job readings of the IPC telemetry child: win.job, win.system)
  * @property {(err: unknown) => void} [onError]
  */
 
@@ -87,7 +92,9 @@ import { constants, monitorEventLoopDelay, performance, PerformanceObserver } fr
 /** @type {Record<string, SampleCategory>} */
 const CATEGORY_OF = {
   "process.memory": "runtime",
+  "process.heap": "runtime",
   gc: "runtime",
+  cache: "performance",
   "event-loop.delay": "performance",
   "event-loop.utilization": "performance",
   "http.request": "performance",
@@ -145,6 +152,39 @@ export class Distribution {
   }
 }
 
+const OTHER = "(other)";
+
+/**
+ * V8's heap per space ("new_space" → "new"), plus the totals that are not in process.memoryUsage()
+ * @returns {TelemetrySample}
+ */
+export function heapSample() {
+  const h = v8.getHeapStatistics();
+  /** @type {Record<string, { usedBytes: number, sizeBytes: number }>} */
+  const spaces = {};
+  for (const s of v8.getHeapSpaceStatistics()) spaces[s.space_name.replace(/_space$/, "")] = { usedBytes: s.space_used_size, sizeBytes: s.space_size };
+  const active = /** @type {{ getActiveResourcesInfo?: () => string[] }} */ (process).getActiveResourcesInfo?.().length;
+  return {
+    type: "process.heap",
+    heapSizeLimitBytes: h.heap_size_limit,
+    mallocedBytes: h.malloced_memory,
+    detachedContexts: h.number_of_detached_contexts,
+    ...(active !== undefined ? { activeResources: active } : {}),
+    spaces,
+  };
+}
+
+/**
+ * Writes a heap snapshot to `dir` and returns its path. Never taken automatically: it pauses the
+ * process for about a second per 100 MB of heap and the file can hold any string the process holds
+ * (personal data included), so it is for a developer on their own machine, on purpose.
+ * @param {string} dir
+ * @param {string} [label]
+ */
+export function writeHeapSnapshot(dir, label = "heap") {
+  return v8.writeHeapSnapshot(join(dir, `${label}-${process.pid}-${Date.now()}.heapsnapshot`));
+}
+
 // ─── the collector ──────────────────────────────────────────────────────────────────────────────────
 
 /** @typedef {{ timings: Map<string, number> }} RequestContext */
@@ -164,6 +204,9 @@ export function createHostTelemetry(opts) {
   const degradedAt = opts.degradedLoopP99Ms ?? 200;
   const onError = opts.onError ?? (() => {});
   const instanceId = opts.instanceId ?? hostname();
+  const maxSeries = Math.max(1, opts.maxSeries ?? 200);
+  const heapEvery = opts.heapEvery ?? 6;
+  let ticks = 0;
   const bootId = randomUUID();
   /** @type {AsyncLocalStorage<RequestContext>} */
   const als = new AsyncLocalStorage();
@@ -213,9 +256,14 @@ export function createHostTelemetry(opts) {
   /** @param {RequestRecord} r */
   function recordRequest(r) {
     const status = `${Math.floor(r.status / 100)}xx`;
-    const key = `${r.method} ${r.route} ${status}`;
+    let route = r.route;
+    let key = `${r.method} ${route} ${status}`;
+    if (!requests.has(key) && requests.size >= maxSeries) {
+      route = OTHER;
+      key = `${r.method} ${route} ${status}`;
+    }
     let agg = requests.get(key);
-    if (!agg) requests.set(key, (agg = { method: r.method, route: r.route, status, d: new Distribution(), timings: new Map() }));
+    if (!agg) requests.set(key, (agg = { method: r.method, route, status, d: new Distribution(), timings: new Map() }));
     agg.d.add(r.ms);
     for (const [name, ms] of Object.entries(r.timings ?? {})) agg.timings.set(name, (agg.timings.get(name) ?? 0) + ms);
   }
@@ -226,6 +274,7 @@ export function createHostTelemetry(opts) {
    * @param {boolean} [ok]
    */
   function recordQuery(name, ms, ok = true) {
+    if (!queries.has(name) && queries.size >= maxSeries) name = OTHER;
     let agg = queries.get(name);
     if (!agg) queries.set(name, (agg = { d: new Distribution(), errors: 0 }));
     agg.d.add(ms);
@@ -338,6 +387,7 @@ export function createHostTelemetry(opts) {
 
     const m = process.memoryUsage();
     samples.push({ type: "process.memory", rssBytes: m.rss, heapUsedBytes: m.heapUsed, heapTotalBytes: m.heapTotal, externalBytes: m.external, arrayBuffersBytes: m.arrayBuffers });
+    if (heapEvery > 0 && ticks++ % heapEvery === 0) samples.push(heapSample());
 
     if (gc.count) {
       samples.push({ type: "gc", intervalMs: window, count: gc.count, totalMs: round(gc.totalMs), maxMs: round(gc.maxMs), byKind: Object.fromEntries(Object.entries(gc.byKind).map(([k, v]) => [k, { count: v.count, totalMs: round(v.totalMs) }])) });
@@ -369,6 +419,13 @@ export function createHostTelemetry(opts) {
     requests.clear();
     for (const [name, q] of queries) samples.push({ type: "db.query", intervalMs: window, name, ...q.d.summary(), errors: q.errors });
     queries.clear();
+    if (opts.extraSamples) {
+      try {
+        samples.push(...opts.extraSamples());
+      } catch (err) {
+        onError(err);
+      }
+    }
 
     const out = [...pending, ...samples];
     pending = [];

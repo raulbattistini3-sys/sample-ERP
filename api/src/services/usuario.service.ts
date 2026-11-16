@@ -34,10 +34,12 @@ import { toUsuarioResponse } from "../mappers/usuario.mapper";
 import { UsuarioResponseDto } from "../dtos/usuario_dtos/usuario_response.dto";
 import { isAdminRole, isSu } from "../utils/helpers/permissoes.util";
 import permissoesUsuarioEnum from "../enums/usuarios_permissoes.enum";
-import { vault, VaultConflito, VaultDados, VaultRecord } from "../integrations/vault/vault.client";
+import { vault, VaultConflito, VaultDados, VaultIndisponivel, VaultInvalido, VaultRecord } from "../integrations/vault/vault.client";
 import { normalizarCpf } from "../validators/cpf.validator";
 
-// the vault keeps usuarios' cpf and data_nascimento under this owner type, owner_id = usuarios.id
+// the vault keeps usuarios' cpf, data_nascimento and email under this owner type, owner_id = usuarios.id.
+// Registration is one step across both: the usuarios row, then the vault record (which validates the CPF
+// and the email and keeps both unique); when the vault refuses, the row is removed again.
 const VAULT_OWNER = "usuario";
 
 type CamposSensiveis = { cpf?: string | null; dataNascimento?: string | null };
@@ -53,8 +55,14 @@ const vaultIndisponivel = (cause?: unknown) =>
 
 const vaultErro = (error: unknown) =>
    error instanceof VaultConflito
-      ? new ValidationError("409", "Este CPF já está cadastrado para outro usuário.", error)
-      : vaultIndisponivel(error);
+      ? new ValidationError("409", "Este CPF ou e-mail já está cadastrado para outro usuário.", error)
+      : error instanceof VaultInvalido
+        ? new ValidationError("400", vaultMotivo(error.message), error)
+        : vaultIndisponivel(error);
+
+// the vault's reason in Portuguese, for the form
+const vaultMotivo = (msg: string) =>
+   /cpf/i.test(msg) ? "CPF inválido." : /email/i.test(msg) ? "E-mail inválido." : /data_nascimento/i.test(msg) ? "Data de nascimento inválida." : `Dados recusados pelo cofre: ${msg}`;
 
 // the vault's fields after applying a payload; null or "" on a key removes it
 const dadosVault = (atual: VaultDados, p: CamposSensiveis): VaultDados => {
@@ -172,6 +180,8 @@ class UsuarioService implements IUserService {
             return left(onlySuError());
          }
          const dados = dadosVault({}, payload as CamposSensiveis);
+         // with the vault on, every usuario has a record there: at least the email, validated and unique
+         if (vault().configurado) dados.email = payload.email.trim();
          if (Object.keys(dados).length > 0 && !vault().configurado) {
             return left(vaultIndisponivel());
          }
@@ -202,6 +212,17 @@ class UsuarioService implements IUserService {
             try {
                response = comVault(response, await vault().put(VAULT_OWNER, response.id, dados, actor.id));
             } catch (error) {
+               // vault down (degraded): the usuario is kept; only the email was due there, or the CPF /
+               // birth date are dropped (never stored in plain text) and the response says so
+               if (error instanceof VaultIndisponivel) {
+                  console.warn(`[usuarios] vault unavailable, ${response.id} created without its vault record: ${error.message}`);
+                  const semSensiveis = Object.keys(dados).some((k) => k !== "email");
+                  return right({
+                     ...response,
+                     vault: "degraded",
+                     ...(semSensiveis && { aviso: "Usuário criado, mas o cofre (vault) está indisponível: CPF e data de nascimento não foram salvos." }),
+                  } as ResponseCreateUsuario);
+               }
                await this.userRepository.deleteUsuario(response.id);
                return left(vaultErro(error));
             }
@@ -264,7 +285,8 @@ class UsuarioService implements IUserService {
             efetivo: payload.efetivo ?? existing.value.efetivo,
          };
          const sensiveis = payload as CamposSensiveis;
-         if (tocaVault(sensiveis)) {
+         const emailMudou = vault().configurado && !!payload.email && payload.email.trim().toLowerCase() !== existing.value.email.toLowerCase();
+         if (tocaVault(sensiveis) || emailMudou) {
             // the vault first: a refused CPF leaves the usuario as it was
             if (!vault().configurado) {
                return left(vaultIndisponivel());
@@ -272,6 +294,7 @@ class UsuarioService implements IUserService {
             try {
                const atual = await vault().get(VAULT_OWNER, id, true, actor.id);
                const dados = dadosVault(atual?.data ?? {}, sensiveis);
+               if (payload.email) dados.email = payload.email.trim();
                if (Object.keys(dados).length > 0) {
                   await vault().put(VAULT_OWNER, id, dados, actor.id);
                } else if (atual) {
@@ -388,6 +411,12 @@ class UsuarioService implements IUserService {
       }
       const userData = await this.userRepository.getUsuarioByEmail(payload.email);
       if (userData.isLeft()) {
+         // "No usuario found" is a wrong email; anything else is the database failing, not the credentials
+         if (userData.value.message === "Database error") {
+            const causa = (userData.value as { cause?: unknown }).cause ?? userData.value;
+            console.error("[login] database error:", causa);
+            return left(new ServerError("503", true, "Banco de dados indisponível.", causa));
+         }
          return left(new ValidationError("401", "credenciais inválidas"));
       }
       const matches = await comparePassword(payload.senha, userData.value.senha);

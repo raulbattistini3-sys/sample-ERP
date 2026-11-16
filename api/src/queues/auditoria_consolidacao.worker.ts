@@ -1,10 +1,10 @@
 import { DrizzleDB } from "../db/client";
-import { consolidarPendentes, Consolidacao } from "../repositories/audit_trail.repository";
+import { consolidarPendentes, Consolidacao, JANELA_MS } from "../repositories/audit_trail.repository";
 import LoggerInterface from "../interfaces/logger_interfaces/logger_interface.interface";
 import ErrorLevelsEnum from "../enums/errors_enums/errors_levels.enum";
 
 // Every AUDITORIAS_INTERVALO_MINUTOS (default 5): turns the queued product and categoria changes
-// (alteracoes_pendentes) into automatic auditorias, one lote per user and action (see
+// (alteracoes_pendentes) into automatic auditorias, one per user, kind of change and minute (see
 // audit_trail.repository). Each batch is its own transaction; on shutdown whatever is queued is flushed.
 const LIMITE = 5000;
 
@@ -27,7 +27,8 @@ class AuditoriaConsolidacaoWorker {
   start(): void {
     if (this.timer) return;
     this.iniciado = new Date();
-    this.timer = setInterval(() => void this.consolidar(), intervaloDeAuditorias() * 60_000);
+    // the timer leaves the last minute queued: its window may still be filling up
+    this.timer = setInterval(() => void this.consolidar(JANELA_MS), intervaloDeAuditorias() * 60_000);
     this.timer.unref?.();
   }
 
@@ -50,19 +51,19 @@ class AuditoriaConsolidacaoWorker {
   }
 
   // also called by "Gerar agora" on the Auditorias page; overlapping calls share the running sweep
-  consolidar(): Promise<Consolidacao> {
+  consolidar(minIdadeMs = 0): Promise<Consolidacao> {
     if (this.running) return this.running;
-    this.running = this.run().finally(() => {
+    this.running = this.run(minIdadeMs).finally(() => {
       this.running = null;
     });
     return this.running;
   }
 
-  private async run(): Promise<Consolidacao> {
+  private async run(minIdadeMs: number): Promise<Consolidacao> {
     const total: Consolidacao = { pendentes: 0, auditorias: 0, lotes: 0 };
     try {
       for (;;) {
-        const lote: Consolidacao = await this.db.transaction((tx: DrizzleDB) => consolidarPendentes(tx, LIMITE));
+        const lote: Consolidacao = await this.db.transaction((tx: DrizzleDB) => consolidarPendentes(tx, LIMITE, minIdadeMs));
         total.pendentes += lote.pendentes;
         total.auditorias += lote.auditorias;
         total.lotes += lote.lotes;

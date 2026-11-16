@@ -8,6 +8,9 @@ import AuditoriaValidator from "../validators/auditoria.validator";
 import DetalhamentoAuditoriaRepository from "../repositories/detalhamento_auditoria.repository";
 import AuditoriaConsolidacaoWorker from "../queues/auditoria_consolidacao.worker";
 import { contarPendentes } from "../repositories/audit_trail.repository";
+import { planilhaDeAuditorias } from "../services/auditoria_planilha";
+import { parseListFilters } from "../utils/helpers/list_filters";
+import { AUDITORIA_FILTERS } from "../utils/schemas/list_filters.schema";
 
 
 const config = Config.getInstance();
@@ -45,6 +48,22 @@ auditoriaRoutes.get("/pendentes", async (_req, res, next) => {
 auditoriaRoutes.post("/pendentes/consolidar", async (_req, res, next) => {
   try {
     res.status(200).json({ data: await auditoriaConsolidacaoWorker.consolidar() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// "Baixar planilha": CSV of the auditorias matching the list's filters (?acao=&auditor=), or ?id= for one
+auditoriaRoutes.get("/planilha", async (req, res, next) => {
+  try {
+    const filtros = parseListFilters(req.query, AUDITORIA_FILTERS);
+    if (filtros.isLeft()) return next(filtros.value);
+    const id = typeof req.query.id === "string" && /^[0-9a-f-]{36}$/i.test(req.query.id) ? req.query.id : undefined;
+    const csv = await planilhaDeAuditorias(db, filtros.value, id);
+    const nome = id ? `auditoria-${id.slice(0, 8)}.csv` : `auditorias-${new Date().toISOString().slice(0, 10)}.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${nome}"`);
+    res.status(200).send(csv);
   } catch (error) {
     next(error);
   }

@@ -18,7 +18,7 @@ type Props = {
 // HubSpot's search only starts at this many letters: fewer would match half the portal
 const MIN_BUSCA_EMPRESA = 3;
 
-const SEM_DADOS = { dominio: "", setor: "", telefone: "", cidade: "", estado: "", pais: "", site: "", descricao: "", emailSac: "", responsavelId: "" };
+const SEM_DADOS = { cnpj: "", dominio: "", setor: "", telefone: "", cidade: "", estado: "", pais: "", site: "", descricao: "", emailSac: "", responsavelId: "" };
 
 // A combobox over HubSpot's companies. Picking one links the client to it; typing a name nobody has offers
 // "Criar empresa", which creates it in HubSpot right then: the field only ever holds a company that exists.

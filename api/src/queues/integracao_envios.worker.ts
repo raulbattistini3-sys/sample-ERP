@@ -16,6 +16,7 @@ export type EnvioSender = (envio: QueuedEnvio) => Promise<Either<BaseAppError, {
 const LEASE_MINUTES = Math.floor(JOB_EXPIRE_SECONDS / 60) - 1;
 const SWEEP_MS = 5 * 60_000;
 const RESTART_MS = 30_000;
+const DEFAULT_CONCURRENCY = 3;
 
 // Runs the "create this issue/ticket" jobs of every provider's queue. A failure throws, so pg-boss retries
 // the job with backoff; after the last attempt pg-boss moves it to the provider's dead-letter queue.
@@ -24,6 +25,10 @@ class IntegracaoEnvioWorker {
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
+  // consumption state of the worker process: work() registered per queue, and whether it is paused
+  private consuming = false;
+  private paused = false;
+  private concurrency = DEFAULT_CONCURRENCY;
 
   constructor(
     private readonly queue: QueueClient,
@@ -34,7 +39,13 @@ class IntegracaoEnvioWorker {
 
   // If the database or the pg-boss schema isn't reachable at startup, the API keeps serving (rows saved
   // meanwhile wait without a job) and this keeps trying every 30s.
-  async start(): Promise<void> {
+  // consume=false (API_ROLE=api): only the producer side, so the API can enqueue jobs in its transactions
+  // and "Reenviar" works, while a separate worker process (src/worker.ts) runs boss.work() and the sweep;
+  // the jobs' allocations then never land on the API's heap.
+  // concurrency: jobs run at once per queue (the worker gets POLYVISOR_MAX_CONCURRENCY from polyvisor)
+  async start(opts: { consume?: boolean; concurrency?: number } = {}): Promise<void> {
+    const consume = opts.consume ?? true;
+    if (opts.concurrency && opts.concurrency > 0) this.concurrency = Math.floor(opts.concurrency);
     if (this.stopped) return;
     try {
       await this.queue.start(this.logger);
@@ -43,11 +54,14 @@ class IntegracaoEnvioWorker {
         await this.queue.boss.createQueue(dlq);
         await this.queue.boss.createQueue(queue, envioQueueOptions(provider));
         await this.queue.boss.updateQueue(queue, envioQueueOptions(provider)); // keeps options current on existing queues
-        await this.queue.boss.work(
-          queue,
-          { batchSize: 1, localConcurrency: 3, pollingIntervalSeconds: 2, includeMetadata: true } as const,
-          async ([job]: JobWithMetadata<EnvioJob>[]) => this.handle(job),
-        );
+      }
+      if (consume) {
+        this.consuming = true;
+        if (!this.paused) await this.workAll();
+      }
+      if (!consume) {
+        this.log(ErrorLevelsEnum.Values.INFO, "integration queue started (producer only; jobs run in the worker process)", { schema: this.queue.schema });
+        return;
       }
       await this.enqueueMissing();
       this.sweepTimer = setInterval(() => void this.enqueueMissing(), SWEEP_MS);
@@ -55,13 +69,42 @@ class IntegracaoEnvioWorker {
       this.log(ErrorLevelsEnum.Values.INFO, "integration worker started", { schema: this.queue.schema, queues: ENVIO_QUEUES });
     } catch (error) {
       this.log(ErrorLevelsEnum.Values.ERROR, `integration queue unavailable, retrying in ${RESTART_MS / 1000}s`, { error: (error as Error).message });
-      this.restartTimer = setTimeout(() => void this.start(), RESTART_MS);
+      this.restartTimer = setTimeout(() => void this.start(opts), RESTART_MS);
       this.restartTimer.unref?.();
+    }
+  }
+
+  // Under memory pressure (polyvisor's "critical") the worker process stops fetching: the jobs it holds
+  // finish, the rest stay in Postgres (no allocation for them here) until resume().
+  async pause(): Promise<void> {
+    if (this.paused) return;
+    this.paused = true;
+    if (!this.consuming || !this.queue.isStarted) return;
+    for (const { queue } of Object.values(ENVIO_QUEUES)) await this.queue.boss.offWork(queue).catch(() => {});
+    this.log(ErrorLevelsEnum.Values.WARN, "integration worker paused (memory pressure)", {});
+  }
+
+  async resume(): Promise<void> {
+    if (!this.paused) return;
+    this.paused = false;
+    if (!this.consuming || !this.queue.isStarted || this.stopped) return;
+    await this.workAll();
+    this.log(ErrorLevelsEnum.Values.INFO, "integration worker resumed", { concurrency: this.concurrency });
+  }
+
+  private async workAll(): Promise<void> {
+    for (const { queue } of Object.values(ENVIO_QUEUES)) {
+      await this.queue.boss.work(
+        queue,
+        { batchSize: 1, localConcurrency: this.concurrency, pollingIntervalSeconds: 2, includeMetadata: true } as const,
+        async ([job]: JobWithMetadata<EnvioJob>[]) => this.handle(job),
+      );
     }
   }
 
   async stop(): Promise<void> {
     this.stopped = true;
+    this.consuming = false;
     if (this.sweepTimer) clearInterval(this.sweepTimer);
     if (this.restartTimer) clearTimeout(this.restartTimer);
     await this.queue.stop().catch(() => {});

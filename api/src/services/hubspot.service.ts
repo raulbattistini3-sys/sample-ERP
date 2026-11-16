@@ -20,7 +20,7 @@ const CONTACT_PROPERTIES = [
   "firstname", "lastname", "email", "phone", "mobilephone", "company", "lifecyclestage", "jobtitle", "hs_seniority", "hs_buying_role", "associatedcompanyid",
 ];
 const COMPANY_PROPERTIES = [
-  "name", "domain", "industry", "phone", "city", "state", "country", "website", "description", "lifecyclestage", "hubspot_owner_id",
+  "name", "domain", "cnpj", "industry", "phone", "city", "state", "country", "website", "description", "lifecyclestage", "hubspot_owner_id",
 ];
 const OWNERS = `/crm/owners/${API_VERSION}`;
 // HubSpot's lifecycle stages, in order. The board (Funil) shows companies by these; "Não contatado" is a
@@ -71,7 +71,7 @@ type Pipeline = { id: string; label: string; stages: { id: string; label: string
 // the contact fields the ERP writes; hs_seniority is not among them (the ERP keeps its own senioridade)
 export type ContactWrite = Partial<Record<"firstname" | "lastname" | "email" | "phone" | "company" | "jobtitle" | "hs_buying_role", string | null>>;
 export type CompanyWrite = Partial<
-  Record<"name" | "domain" | "industry" | "phone" | "city" | "state" | "country" | "website" | "description" | "hubspot_owner_id", string | null>
+  Record<"name" | "domain" | "cnpj" | "industry" | "phone" | "city" | "state" | "country" | "website" | "description" | "hubspot_owner_id", string | null>
 >;
 export type IndustryOption = { value: string; label: string };
 
@@ -244,6 +244,49 @@ class HubspotService {
       sorts: [{ propertyName: "createdate", direction: "ASCENDING" }],
     });
     return response.isLeft() ? left(response.value) : right(response.value.results ?? []);
+  }
+
+  // companies with this CNPJ (stored formatted, as the schema writes it)
+  async findCompaniesByCnpj(cnpj: string): Promise<Either<BaseAppError, HubspotCompany[]>> {
+    const response = await this.search<HubspotCompany>(COMPANIES, {
+      limit: 10,
+      properties: COMPANY_PROPERTIES,
+      filterGroups: [{ filters: [{ propertyName: "cnpj", operator: "EQ", value: cnpj }] }],
+    });
+    // the property not existing yet just means no company has one
+    if (response.isLeft()) return response.value.statusCode === "400" ? right([]) : left(response.value);
+    return right(response.value.results ?? []);
+  }
+
+  private cnpjPropertyReady = false;
+
+  // "cnpj" is a custom company property: created in the portal on first use (needs
+  // crm.schemas.companies.write); reads of a missing property are simply empty
+  async ensureCnpjProperty(): Promise<Either<BaseAppError, null>> {
+    if (this.cnpjPropertyReady) return right(null);
+    const existing = await this.request("/crm/v3/properties/companies/cnpj");
+    if (!existing.isLeft()) {
+      this.cnpjPropertyReady = true;
+      return right(null);
+    }
+    const erro = existing.value as BaseAppError;
+    if (erro.statusCode !== "404") return left(erro);
+    const created = await this.request("/crm/v3/properties/companies", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "cnpj",
+        label: "CNPJ",
+        type: "string",
+        fieldType: "text",
+        groupName: "companyinformation",
+        description: "CNPJ da empresa (validado pelo sample ERP), formato 00.000.000/0000-00",
+        hasUniqueValue: true,
+      }),
+    });
+    // 409: created meanwhile
+    if (created.isLeft() && created.value.statusCode !== "409") return left(created.value);
+    this.cnpjPropertyReady = true;
+    return right(null);
   }
 
   // HubSpot's own list for industry (the property only takes these values); needs crm.schemas.companies.read

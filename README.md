@@ -10,7 +10,7 @@ Inventory and audit ERP: products, categorias, usuarios and auditorias, with opt
 | `web/` | Web app: React 18, Vite, Tailwind, TanStack Query |
 | `importer/` | Spreadsheet importer: Go, gRPC. Reads `.xlsx`/`.csv` product spreadsheets and saves them in the background, with its job queue in Postgres |
 | `vault/` | Vault: Go. Keeps sensitive data (usuarios' CPF and birth date) encrypted with AES-256-GCM in its own database, reached only by the API over mutual TLS |
-| `secrets/` | `generate.ts`: makes the shared secrets, certificates and vault keys (gitignored output) |
+| `../../secrets/` (erp-v1/secrets) | `generate.ts`: makes the shared secrets, certificates and vault keys (gitignored output) |
 | `billing/` | Stripe service: Spring Boot, Java 21. Receives Stripe's webhooks and tells the API about paid and failed invoices |
 | `proto/` | gRPC contract between the API and the importer; `buf generate` writes the Go and TypeScript code from it |
 | `docker/postgres/init/` | SQL that creates the database from scratch: `01_schema.sql` (tables, types, indexes) and `02_seed.sql` (categorias + drizzle's migration log) |
@@ -40,7 +40,7 @@ The services share secrets (JWT key, internal tokens, mutual TLS certificates, t
 never committed. Generate them once, then start the stack:
 
 ```bash
-cd secrets && bun install && bun generate.ts && cd ..   # writes secrets/secrets.env, secrets/tls/, secrets/vault/
+cd ../../secrets && bun install && bun generate.ts && cd -   # writes ../../secrets/secrets.env, tls/, vault/
 docker compose up --build -d
 ```
 
@@ -79,12 +79,19 @@ go run ./network/cmd/network dev
 ```
 
 ```text
-network ── web       bun run dev                    (web/)
+network ── tcc       pnpm run dev:server            (TCC workspace, sidecar: telemetry server :8787)
+        ├─ cache     go run ./cmd/erp-cache         (../../cache, sidecar, only with a cache.json)
+        ├─ web       bun run dev                    (web/)
         └─ api       bun run dev                    (api/)
              ├─ importer  go run ./cmd/importer     (importer/)
              ├─ vault     go run ./cmd/vault serve  (vault/)
              └─ billing   ./mvnw spring-boot:run -e (billing/)
 ```
+
+The sidecars are found next to the repository (`TCC_DIR` / `CACHE_DIR` override, `--no-tcc` / `--no-cache` skip)
+and may end without stopping anything: the API sends its host telemetry to the TCC server
+(`TCC_TELEMETRY_URL`, same `TCC_TOKEN` on both sides) and keeps running without it. Details, ports and what to look
+at: `../../README.md` (erp-v1/README.md).
 
 The network service runs in that process. It starts the web app and the API, and the API starts the importer, the
 vault and billing itself (`API_CHILDREN`, see `api/.env.example`). Ctrl+C stops the API first, which stops its own
@@ -103,11 +110,11 @@ and `https://localhost:3333`:
 
 ```bash
 # Windows (current user; Chrome and Edge use it)
-certutil -user -addstore Root secrets\tls\ca.crt
+certutil -user -addstore Root ..\..\secrets\tls\ca.crt
 # macOS
-sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain secrets/tls/ca.crt
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ../../secrets/tls/ca.crt
 # Linux (Debian/Ubuntu); Firefox: Settings > Certificates > Import
-sudo cp secrets/tls/ca.crt /usr/local/share/ca-certificates/sample-erp.crt && sudo update-ca-certificates
+sudo cp ../../secrets/tls/ca.crt /usr/local/share/ca-certificates/sample-erp.crt && sudo update-ca-certificates
 ```
 
 The CA key stays in `secrets/tls/ca.key` on your machine. Remove the CA from the store when you no longer need it.
@@ -343,7 +350,7 @@ To add a dependency, declare it as a `private final` field. To add a collaborato
 
 ## Create the first user
 
-With Docker Compose or the native launcher (`launcher/`) there is nothing to do: the API creates a
+With Docker Compose or the native launcher (`../../launcher/`, at the erp-v1 root) there is nothing to do: the API creates a
 superuser on a database without one. Sign in as `admin@sample-erp.local` with password `change-me`, and the
 web app asks you to choose a new password before anything else. Change those defaults with
 `BOOTSTRAP_SU_NAME`, `BOOTSTRAP_SU_EMAIL` and `BOOTSTRAP_SU_PASSWORD` (Compose) or `ERP_ADMIN_*` in

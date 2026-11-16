@@ -33,10 +33,10 @@ func main() {
 		err = healthcheck()
 	case len(os.Args) > 2 && os.Args[1] == "keys" && os.Args[2] == "new":
 		err = newKey()
-	case len(os.Args) > 1:
-		err = fmt.Errorf("unknown command %q (serve | healthcheck | keys new)", os.Args[1])
-	default:
+	case len(os.Args) == 1 || os.Args[1] == "serve":
 		err = serve()
+	default:
+		err = fmt.Errorf("unknown command %q (serve | healthcheck | keys new)", os.Args[1])
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "vault:", err)

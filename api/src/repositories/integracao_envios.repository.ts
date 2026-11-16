@@ -45,14 +45,24 @@ export async function enqueueForProducts(tx: DrizzleDB, auditoriaId: string, pro
 export async function enqueueForLote(tx: DrizzleDB, loteId: string): Promise<void> {
   const result = await tx.execute(sql`
     with alteracoes as (
+      -- a grouped auditoria (several products) has each product's changes tagged with its produtoId;
+      -- a single-product one has them untagged plus its valor de venda in valor_anterior/valor_atual
       select a.id as auditoria_id, c.id as categoria_id, c.nome::text as categoria_nome,
-             d.valor_atual > d.valor_anterior as aumento, d.valor_atual < d.valor_anterior as reducao,
-             d.alteracoes @> '[{"campo": "ICMS"}]'::jsonb as icms
+             coalesce(venda.depois > venda.antes, d.valor_atual > d.valor_anterior) as aumento,
+             coalesce(venda.depois < venda.antes, d.valor_atual < d.valor_anterior) as reducao,
+             exists (select 1 from jsonb_array_elements(d.alteracoes) e
+                     where e->>'campo' = 'ICMS' and coalesce(e->>'produtoId', p.id::text) = p.id::text) as icms
       from auditorias a
       join detalhamentos_auditoria d on d.id = a.detalhamento_auditoria_id
       join produtos_por_auditoria pa on pa.auditoria_id = a.id
       join produtos p on p.id = pa.produto_id
       join categorias c on c.id = p.categoria_id
+      left join lateral (
+        select replace(e->>'antes', ',', '.')::numeric as antes, replace(e->>'depois', ',', '.')::numeric as depois
+        from jsonb_array_elements(d.alteracoes) e
+        where e->>'produtoId' = p.id::text and e->>'campo' = 'Valor de venda'
+        limit 1
+      ) venda on true
       where a.lote_id = ${loteId}
     ),
     por_categoria as (

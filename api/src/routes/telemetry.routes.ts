@@ -23,8 +23,9 @@ telemetryRoutes.post("/", (req, res) => {
       return res.status(400).json({ message: "Lote de telemetria inválido." });
    }
    recordWebEvents(req.user!.id, batch.data);
-   // 204 even when TELEMETRY_DIR is unset: the web can't do anything about it, and shouldn't retry
-   res.setHeader("X-Telemetry", telemetryEnabled ? "stored" : "dropped");
+   // 204 even without a TCC server (TCC_TELEMETRY_URL unset): the web can't do anything about it, and
+   // shouldn't retry. "queued": handed to the batch for tcc-v2 (sent within 2 s, kept while it's down)
+   res.setHeader("X-Telemetry", telemetryEnabled ? "queued" : "dropped");
    return res.status(204).end();
 });
 

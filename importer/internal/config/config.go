@@ -8,7 +8,9 @@ import (
 	"io/fs"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -77,6 +79,7 @@ func Load() (*Config, error) {
 	if err := godotenv.Load(); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("config: reading .env: %w", err)
 	}
+	loadSharedSecrets()
 
 	var errs []error
 
@@ -165,4 +168,46 @@ func getDuration(key string, fallback time.Duration, errs *[]error) time.Duratio
 		return fallback
 	}
 	return d
+}
+
+// loadSharedSecrets fills what is still unset from erp-v1/secrets/sample-erp.env (the ERP's one
+// DATABASE_URL and its CA), for `go run ./cmd/importer` on its own; network dev and the launcher pass
+// these in already. ERP_SECRETS_DIR / TCC_SECRETS_DIR name the folder, else the first secrets/ holding
+// generate.ts above the working directory.
+func loadSharedSecrets() {
+	dir := strings.TrimSpace(os.Getenv("ERP_SECRETS_DIR"))
+	if dir == "" {
+		dir = strings.TrimSpace(os.Getenv("TCC_SECRETS_DIR"))
+	}
+	if dir == "" {
+		wd, _ := os.Getwd()
+		for d := wd; d != ""; {
+			if _, err := os.Stat(filepath.Join(d, "secrets", "generate.ts")); err == nil {
+				dir = filepath.Join(d, "secrets")
+				break
+			}
+			parent := filepath.Dir(d)
+			if parent == d {
+				break
+			}
+			d = parent
+		}
+	}
+	if dir == "" {
+		return
+	}
+	vals, err := godotenv.Read(filepath.Join(dir, "sample-erp.env"))
+	if err != nil {
+		return
+	}
+	for _, k := range []string{"DATABASE_URL", "DATABASE_CA_CERT"} {
+		v := vals[k]
+		if v == "" || os.Getenv(k) != "" {
+			continue
+		}
+		if k == "DATABASE_CA_CERT" && !filepath.IsAbs(v) {
+			v = filepath.Join(dir, v)
+		}
+		os.Setenv(k, v)
+	}
 }
