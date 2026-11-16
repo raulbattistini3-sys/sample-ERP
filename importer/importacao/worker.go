@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/raulbattistini3-sys/sample-ERP/importer/memoria"
 	"github.com/raulbattistini3-sys/sample-ERP/importer/postgres"
 )
 
@@ -37,11 +38,18 @@ type Worker struct {
 	clientes Processamento // nil: client imports fail with a message saying so
 	empresas Processamento // same, for companies
 	cfg      WorkerConfig
+	memoria  *memoria.Elastico // nil: no elastic limit
 }
 
 // NewWorker returns a Worker. Call Run to start it.
 func NewWorker(pool *pgxpool.Pool, repo *postgres.Importacoes, proc Processamento, cfg WorkerConfig) *Worker {
 	return &Worker{pool: pool, repo: repo, proc: proc, cfg: cfg}
+}
+
+// ComMemoria makes the worker grow the runtime's memory limit while an import runs and shrink it after.
+func (w *Worker) ComMemoria(m *memoria.Elastico) *Worker {
+	w.memoria = m
+	return w
 }
 
 // ComClientes sets the processor of client imports.
@@ -118,6 +126,10 @@ func (w *Worker) consumir(ctx context.Context, acordar chan struct{}) {
 func (w *Worker) processar(ctx context.Context, job *postgres.Job) {
 	log := slog.With("importacao", job.ID, "arquivo", job.NomeArquivo, "tentativa", job.Tentativas)
 	inicio := time.Now()
+	if w.memoria != nil {
+		// grows the heap limit for this file while it runs; given back (and freed to the OS when idle) after
+		defer w.memoria.Reservar(int64(len(job.Planilha)))()
+	}
 
 	var err error
 	if job.Tipo == postgres.TipoClientes || job.Tipo == postgres.TipoEmpresas {

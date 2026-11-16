@@ -153,5 +153,80 @@ export function memoryCollector({ intervalMs = 2000 } = {}) {
   };
 }
 
+const r1 = (/** @type {number} */ v) => Math.round(Math.max(0, v) * 10) / 10;
+
+/**
+ * The network phases of one navigation or resource entry: redirect, DNS, TCP (TLS included), TLS, fila
+ * (waiting for the request to go out once the connection is ready), TTFB and download. A cross-origin entry
+ * without Timing-Allow-Origin only has its duration: timingAllowed is false and the phases are zero.
+ *
+ * @param {PerformanceResourceTiming} e
+ */
+export function phasesOf(e) {
+  const timingAllowed = e.responseStart > 0 || e.requestStart > 0;
+  const connectStart = e.connectStart || e.fetchStart;
+  const connectEnd = e.connectEnd || e.fetchStart;
+  return {
+    redirectMs: r1(e.redirectEnd - e.redirectStart),
+    dnsMs: r1(e.domainLookupEnd - e.domainLookupStart),
+    tcpMs: r1(connectEnd - connectStart),
+    tlsMs: e.secureConnectionStart > 0 ? r1(connectEnd - e.secureConnectionStart) : 0,
+    filaMs: timingAllowed ? r1(e.requestStart - connectEnd) : 0,
+    ttfbMs: timingAllowed ? r1(e.responseStart - e.requestStart) : 0,
+    downloadMs: timingAllowed ? r1(e.responseEnd - e.responseStart) : 0,
+    durationMs: r1(e.duration),
+    reusedConnection: e.connectStart === e.connectEnd,
+    timingAllowed,
+    transferSize: e.transferSize ?? null,
+    decodedBodySize: e.decodedBodySize ?? null,
+  };
+}
+
+/**
+ * Navigation and resource timing as phases. The navigation (the HTML document) is emitted once; resources
+ * are the API calls (fetch/XHR) and the bundle's scripts and styles, so a slow first load shows whether it
+ * was DNS, the connection, the queue, the server or the download of a big chunk. Paths only, never the
+ * query string (it can carry search terms).
+ *
+ * The telemetry upload itself is skipped (`exclude`), or each send would report the previous one forever.
+ *
+ * @param {{ initiators?: string[], exclude?: RegExp }} [options]
+ * @returns {Collector}
+ */
+export function resourceCollector({ initiators = ["fetch", "xmlhttprequest", "script", "link", "css"], exclude = /\/telemetry(\/|$)/ } = {}) {
+  /** @type {PerformanceObserver[]} */
+  const obs = [];
+  const path = (/** @type {string} */ name) => {
+    try {
+      const u = new URL(name);
+      return u.origin === location.origin ? u.pathname : u.host + u.pathname;
+    } catch {
+      return name.split(/[?#]/)[0];
+    }
+  };
+  return {
+    name: "resource-timing",
+    supported: () => supportsEntry("resource"),
+    start(emit) {
+      const observe = (/** @type {string} */ type, /** @type {(e: PerformanceResourceTiming) => void} */ fn) => {
+        if (!supportsEntry(type)) return;
+        const o = new PerformanceObserver((list) => {
+          for (const e of list.getEntries()) fn(/** @type {PerformanceResourceTiming} */ (e));
+        });
+        o.observe({ type, buffered: true });
+        obs.push(o);
+      };
+      observe("navigation", (e) => emit({ source: "network", type: "navigation", ts: e.startTime, data: { url: path(e.name), ...phasesOf(e) } }));
+      observe("resource", (e) => {
+        if (!initiators.includes(e.initiatorType)) return;
+        const url = path(e.name);
+        if (exclude.test(url)) return;
+        emit({ source: "network", type: "resource", ts: e.startTime, data: { url, initiator: e.initiatorType, ...phasesOf(e) } });
+      });
+    },
+    stop: () => obs.forEach((o) => o.disconnect()),
+  };
+}
+
 /** Every collector with default settings. */
-export const defaultCollectors = () => [loafCollector(), interactionCollector(), pressureCollector(), memoryCollector()];
+export const defaultCollectors = () => [loafCollector(), interactionCollector(), pressureCollector(), memoryCollector(), resourceCollector()];

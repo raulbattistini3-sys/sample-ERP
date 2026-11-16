@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"math/rand/v2"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -85,28 +84,3 @@ func TestPipelineStopsOnFatal(t *testing.T) {
 	}
 }
 
-// two workers asking for the same new company at once: only one creates it
-func TestEmpresasResolvidasCreatesOnce(t *testing.T) {
-	c := novasEmpresasResolvidas()
-	var chamadas, criadas atomic.Int32
-	var wg sync.WaitGroup
-	for range 20 {
-		wg.Go(func() {
-			_, criada, err := c.resolver(context.Background(), "acme", func() (string, bool, error) {
-				chamadas.Add(1)
-				time.Sleep(5 * time.Millisecond)
-				return "123", true, nil
-			})
-			if err != nil {
-				t.Error(err)
-			}
-			if criada {
-				criadas.Add(1)
-			}
-		})
-	}
-	wg.Wait()
-	if chamadas.Load() != 1 || criadas.Load() != 1 {
-		t.Fatalf("chamadas=%d criadas=%d", chamadas.Load(), criadas.Load())
-	}
-}

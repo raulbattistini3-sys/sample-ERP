@@ -27,6 +27,7 @@ import (
 	"github.com/raulbattistini3-sys/sample-ERP/importer/hubspot"
 	"github.com/raulbattistini3-sys/sample-ERP/importer/importacao"
 	"github.com/raulbattistini3-sys/sample-ERP/importer/internal/config"
+	"github.com/raulbattistini3-sys/sample-ERP/importer/memoria"
 	"github.com/raulbattistini3-sys/sample-ERP/importer/postgres"
 )
 
@@ -78,6 +79,10 @@ func run() error {
 		MaxTentativas: int32(cfg.Importer.MaxAttempts),
 		Intervalo:     cfg.Importer.PollInterval,
 	})
+	// elastic heap: small while idle, grown per import by the file's size, shrunk and returned to the OS after
+	mem := memoria.Novo(memoria.DoAmbiente())
+	worker.ComMemoria(mem)
+	slog.Info("elastic memory limit", "idleMB", mem.Limite()>>20)
 	if cfg.HubSpot.ServiceKey != "" || len(cfg.HubSpot.ChaveCifra) == 32 {
 		hs := hubspot.New(hubspot.Config{
 			ServiceKey: cfg.HubSpot.ServiceKey, ClientID: cfg.HubSpot.ClientID, ClientSecret: cfg.HubSpot.ClientSecret,

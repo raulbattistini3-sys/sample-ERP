@@ -1,5 +1,6 @@
 import axios, { type AxiosRequestConfig } from "axios";
 import { apiClient } from "../../../lib/api-client";
+import { fasesDaRequisicao } from "../../../lib/fases";
 import { telemetry } from "../../../lib/telemetry";
 
 // Loading a Clientes/Empresas page: the body arrives as bytes and is decoded + parsed either on the main
@@ -195,6 +196,8 @@ export async function carregarPagina<T extends { data: unknown[]; totalItems: nu
     throw err;
   }
   const redeMs = performance.now() - t0;
+  // where redeMs went: DNS, TCP+TLS, fila, TTFB, download (null when the browser has no entry)
+  const fases = fasesDaRequisicao(url, t0);
   const bytes = corpo.byteLength;
   const kb = bytes / 1024;
   const decisao = decidir(kb);
@@ -225,6 +228,7 @@ export async function carregarPagina<T extends { data: unknown[]; totalItems: nu
     ok: true,
     ms,
     redeMs,
+    ...fases,
     bytes,
     rows: dados.data.length,
     total: dados.totalItems,

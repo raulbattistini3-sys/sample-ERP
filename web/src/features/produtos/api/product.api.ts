@@ -1,5 +1,6 @@
 import { ListFilterParams } from "../../../hooks/useListFilters";
 import { apiClient, ItemResponse, ListResponse } from "../../../lib/api-client";
+import { fasesDaRequisicao } from "../../../lib/fases";
 import { productSocket, SocketUnavailable } from "../../../lib/productSocket";
 import { telemetry } from "../../../lib/telemetry";
 import type { Filtros, Produto } from "../../../gen/produtos/v1/busca";
@@ -87,7 +88,13 @@ export async function getProductsScroll(cursor: string | undefined, amount: numb
   try {
     const res = await getProductsScrollRest(cursor, amount, filters);
     const length = Number(res.headers["content-length"]);
-    report("rest", { ok: true, restMs: performance.now() - t1, bytes: Number.isFinite(length) ? length : null, rows: res.data.data.length });
+    report("rest", {
+      ok: true,
+      restMs: performance.now() - t1,
+      ...fasesDaRequisicao("/products/scroll", t1), // DNS, TCP+TLS, fila, TTFB, download
+      bytes: Number.isFinite(length) ? length : null,
+      rows: res.data.data.length,
+    });
     return res.data;
   } catch (err) {
     report("rest", { ok: false, status: (err as { response?: { status?: number } }).response?.status ?? null });

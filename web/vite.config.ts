@@ -118,5 +118,22 @@ export default defineConfig(({ mode }) => {
     server: { https: devHttps(env), fs: { allow: [fileURLToPath(new URL(".", import.meta.url)), pkg] } },
     // the search worker imports pkg modules, so it is bundled as an ES module worker
     worker: { format: "es" as const },
+    build: {
+      rollupOptions: {
+        output: {
+          // libraries change less often than the app: their own chunks stay cached across deploys, and the
+          // shell no longer carries what only some pages use (protobuf for the product socket, the table)
+          manualChunks(id: string) {
+            if (!id.includes("node_modules")) return undefined;
+            if (/[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/.test(id)) return "react";
+            if (id.includes("@tanstack")) return "tanstack";
+            if (id.includes("@bufbuild")) return "protobuf";
+            if (id.includes("lucide-react")) return "icons";
+            if (/[\\/]node_modules[\\/](zod|react-hook-form|@hookform)[\\/]/.test(id)) return "forms";
+            return undefined;
+          },
+        },
+      },
+    },
   };
 })

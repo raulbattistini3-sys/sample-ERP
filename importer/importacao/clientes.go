@@ -98,7 +98,9 @@ func (p *ProcessadorClientes) Processar(ctx context.Context, job *postgres.Job) 
 	}
 
 	// 2nd pass, in batches sent by the workers
-	empresas := novasEmpresasResolvidas() // lowercase name -> HubSpot id, shared by the workers
+	// company names go through one queue shared by the workers, found and created in batches of 100
+	empresas := novaFilaEmpresas(ctx, p.hs, hubspot.TamanhoLote*max(p.workers, 1)*2)
+	defer empresas.fechar()
 	envios := iniciarPipeline(ctx, p.workers,
 		func(ctx context.Context, lote []clienteLinha, processadas int32) (envio, error) {
 			return p.enviarLote(ctx, job, lote, processadas, empresas)
@@ -180,7 +182,7 @@ func (p *ProcessadorClientes) logResumo(job *postgres.Job, soma postgres.Lote) {
 // enviarLote sends one batch to HubSpot and returns what to commit; it never touches the checkpoint (the
 // pipeline commits in order). A fatal envio means HubSpot refused the import as a whole (not connected,
 // missing scopes...); an error leaves the import to resume later.
-func (p *ProcessadorClientes) enviarLote(ctx context.Context, job *postgres.Job, lote []clienteLinha, processadas int32, empresas *empresasResolvidas) (envio, error) {
+func (p *ProcessadorClientes) enviarLote(ctx context.Context, job *postgres.Job, lote []clienteLinha, processadas int32, empresas *filaEmpresas) (envio, error) {
 	resultado := postgres.Lote{Processadas: processadas}
 	falhou := func(c clienteLinha, campo, mensagem string) {
 		resultado.Falharam++
@@ -203,7 +205,18 @@ func (p *ProcessadorClientes) enviarLote(ctx context.Context, job *postgres.Job,
 		}
 	}
 
-	// the companies, by name: found (oldest with that name) or created, once per import
+	// the companies, by name: found (oldest with that name) or created, once per import, in batches
+	var nomes []string
+	for _, c := range validos {
+		if c.empresa != "" {
+			nomes = append(nomes, c.empresa)
+		}
+	}
+	idsEmpresas, criadas, errosEmpresas, err := empresas.resolver(ctx, nomes)
+	if err != nil {
+		return encerrar(err)
+	}
+	resultado.EmpresasCriadas += int32(criadas)
 	empresaDe := make(map[string]string)
 	var semEmpresa []clienteLinha
 	for _, c := range validos {
@@ -211,25 +224,12 @@ func (p *ProcessadorClientes) enviarLote(ctx context.Context, job *postgres.Job,
 			semEmpresa = append(semEmpresa, c)
 			continue
 		}
-		id, criada, err := empresas.resolver(ctx, strings.ToLower(c.empresa), func() (string, bool, error) {
-			id, err := p.hs.BuscarEmpresa(ctx, c.empresa)
-			if err == nil && id == "" {
-				id, err = p.hs.CriarEmpresa(ctx, c.empresa)
-				return id, err == nil, err
-			}
-			return id, false, err
-		})
-		if err != nil {
-			if hubspot.Fatal(err) || ctx.Err() != nil {
-				return encerrar(err)
-			}
+		chave := strings.ToLower(strings.TrimSpace(c.empresa))
+		if err := errosEmpresas[chave]; err != nil {
 			falhou(c, "empresa", "Empresa: "+err.Error())
 			continue
 		}
-		if criada {
-			resultado.EmpresasCriadas++
-		}
-		empresaDe[c.email] = id
+		empresaDe[c.email] = idsEmpresas[chave]
 		semEmpresa = append(semEmpresa, c)
 	}
 	validos = semEmpresa

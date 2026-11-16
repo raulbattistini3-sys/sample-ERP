@@ -6,7 +6,7 @@
 // host.js, imported directly: it needs node:perf_hooks, so it stays out of this browser-safe entry.
 
 export { createTelemetry } from "./bus.js";
-export { loafCollector, interactionCollector, pressureCollector, memoryCollector, defaultCollectors } from "./collectors.js";
+export { loafCollector, interactionCollector, pressureCollector, memoryCollector, resourceCollector, phasesOf, defaultCollectors } from "./collectors.js";
 export {
   signalsExporter,
   extensionBridgeExporter,

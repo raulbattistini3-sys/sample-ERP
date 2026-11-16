@@ -1,70 +1,81 @@
-import { createBrowserRouter } from "react-router-dom";
+import { createBrowserRouter, type RouteObject } from "react-router-dom";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { AppLayout } from "../layouts/AppLayout";
 import { NotFoundPage } from "./NotFoundPage";
 
-import { LoginPage } from "../features/usuarios/pages/LoginPage";
-import { RegisterPage } from "../features/usuarios/pages/RegisterPage";
-import { ForgotPasswordPage } from "../features/usuarios/pages/ForgotPasswordPage";
-import { ResetPasswordPage } from "../features/usuarios/pages/ResetPasswordPage";
-import { ChangePasswordPage } from "../features/usuarios/pages/ChangePasswordPage";
-import { UsuarioListPage } from "../features/usuarios/pages/UsuarioListPage";
-import { UsuarioFormPage } from "../features/usuarios/pages/UsuarioFormPage";
+// Every page is its own chunk, loaded when its route is first matched (react-router's `lazy`), so the
+// first load downloads the shell and one page instead of the whole app: the products list no longer
+// carries the audit, users, billing and import screens, nor the spreadsheet parser.
+type Modulo = Record<string, unknown>;
+const pagina =
+  <M extends Modulo>(carregar: () => Promise<M>, nome: keyof M & string): RouteObject["lazy"] =>
+  async () => {
+    const Componente = (await carregar())[nome] as React.ComponentType;
+    return { Component: Componente };
+  };
 
-import { ProductListPage } from "../features/produtos/pages/ProductListPage";
-import { ProductFormPage } from "../features/produtos/pages/ProductFormPage";
-import { ProductImportPage } from "../features/produtos/pages/ProductImportPage";
+const Login = pagina(() => import("../features/usuarios/pages/LoginPage"), "LoginPage");
+const Register = pagina(() => import("../features/usuarios/pages/RegisterPage"), "RegisterPage");
+const ForgotPassword = pagina(() => import("../features/usuarios/pages/ForgotPasswordPage"), "ForgotPasswordPage");
+const ResetPassword = pagina(() => import("../features/usuarios/pages/ResetPasswordPage"), "ResetPasswordPage");
+const ChangePassword = pagina(() => import("../features/usuarios/pages/ChangePasswordPage"), "ChangePasswordPage");
+const UsuarioList = pagina(() => import("../features/usuarios/pages/UsuarioListPage"), "UsuarioListPage");
+const UsuarioForm = pagina(() => import("../features/usuarios/pages/UsuarioFormPage"), "UsuarioFormPage");
 
-import { CategoriaListPage } from "../features/categoria/pages/CategoriaListPage";
-import { CategoriaFormPage } from "../features/categoria/pages/CategoriaFormPage";
+const ProductList = pagina(() => import("../features/produtos/pages/ProductListPage"), "ProductListPage");
+const ProductForm = pagina(() => import("../features/produtos/pages/ProductFormPage"), "ProductFormPage");
+const ProductImport = pagina(() => import("../features/produtos/pages/ProductImportPage"), "ProductImportPage");
 
-import { AuditoriaListPage } from "../features/auditoria/pages/AuditoriaListPage";
-import { AuditoriaDetailPage } from "../features/auditoria/pages/AuditoriaDetailPage";
-import { AuditoriaFormPage } from "../features/auditoria/pages/AuditoriaFormPage";
+const CategoriaList = pagina(() => import("../features/categoria/pages/CategoriaListPage"), "CategoriaListPage");
+const CategoriaForm = pagina(() => import("../features/categoria/pages/CategoriaFormPage"), "CategoriaFormPage");
 
-import { IntegracoesPage } from "../features/integracoes/pages/IntegracoesPage";
-import { ClienteListPage } from "../features/clientes/pages/ClienteListPage";
-import { EmpresaFormPage } from "../features/clientes/pages/EmpresaFormPage";
-import { CobrancasPage } from "../features/cobrancas/pages/CobrancasPage";
+const AuditoriaList = pagina(() => import("../features/auditoria/pages/AuditoriaListPage"), "AuditoriaListPage");
+const AuditoriaDetail = pagina(() => import("../features/auditoria/pages/AuditoriaDetailPage"), "AuditoriaDetailPage");
+const AuditoriaForm = pagina(() => import("../features/auditoria/pages/AuditoriaFormPage"), "AuditoriaFormPage");
+
+const Integracoes = pagina(() => import("../features/integracoes/pages/IntegracoesPage"), "IntegracoesPage");
+const ClienteList = pagina(() => import("../features/clientes/pages/ClienteListPage"), "ClienteListPage");
+const EmpresaForm = pagina(() => import("../features/clientes/pages/EmpresaFormPage"), "EmpresaFormPage");
+const Cobrancas = pagina(() => import("../features/cobrancas/pages/CobrancasPage"), "CobrancasPage");
 
 export const router = createBrowserRouter([
-  { path: "/login", element: <LoginPage /> },
-  { path: "/register", element: <RegisterPage /> },
-  { path: "/forgot-password", element: <ForgotPasswordPage /> },
-  { path: "/reset-password", element: <ResetPasswordPage /> },
+  { path: "/login", lazy: Login },
+  { path: "/register", lazy: Register },
+  { path: "/forgot-password", lazy: ForgotPassword },
+  { path: "/reset-password", lazy: ResetPassword },
 
   {
     element: <ProtectedRoute />,
     children: [
       // outside AppLayout: a forced change shows nothing but this form
-      { path: "trocar-senha", element: <ChangePasswordPage /> },
+      { path: "trocar-senha", lazy: ChangePassword },
       {
         element: <AppLayout />,
         children: [
-          { index: true, element: <ProductListPage /> }, // "/" — pick a sensible landing page
+          { index: true, lazy: ProductList }, // "/" — pick a sensible landing page
 
-          { path: "products", element: <ProductListPage /> },
-          { path: "products/new", element: <ProductFormPage /> },
-          { path: "products/import", element: <ProductImportPage /> },
-          { path: "products/:id", element: <ProductFormPage /> },
+          { path: "products", lazy: ProductList },
+          { path: "products/new", lazy: ProductForm },
+          { path: "products/import", lazy: ProductImport },
+          { path: "products/:id", lazy: ProductForm },
 
-          { path: "categorias", element: <CategoriaListPage /> },
-          { path: "categorias/new", element: <CategoriaFormPage /> },
-          { path: "categorias/:id", element: <CategoriaFormPage /> },
+          { path: "categorias", lazy: CategoriaList },
+          { path: "categorias/new", lazy: CategoriaForm },
+          { path: "categorias/:id", lazy: CategoriaForm },
 
-          { path: "usuarios", element: <UsuarioListPage /> },
-          { path: "usuarios/new", element: <UsuarioFormPage /> },
-          { path: "usuarios/:id", element: <UsuarioFormPage /> },
+          { path: "usuarios", lazy: UsuarioList },
+          { path: "usuarios/new", lazy: UsuarioForm },
+          { path: "usuarios/:id", lazy: UsuarioForm },
 
-          { path: "auditoria", element: <AuditoriaListPage /> },
-          { path: "auditoria/new", element: <AuditoriaFormPage /> },
-          { path: "auditoria/:id", element: <AuditoriaDetailPage /> },
+          { path: "auditoria", lazy: AuditoriaList },
+          { path: "auditoria/new", lazy: AuditoriaForm },
+          { path: "auditoria/:id", lazy: AuditoriaDetail },
 
-          { path: "integracoes", element: <IntegracoesPage /> },
-          { path: "clientes", element: <ClienteListPage /> },
-          { path: "clientes/empresas/new", element: <EmpresaFormPage /> },
-          { path: "clientes/empresas/:id", element: <EmpresaFormPage /> },
-          { path: "cobrancas", element: <CobrancasPage /> },
+          { path: "integracoes", lazy: Integracoes },
+          { path: "clientes", lazy: ClienteList },
+          { path: "clientes/empresas/new", lazy: EmpresaForm },
+          { path: "clientes/empresas/:id", lazy: EmpresaForm },
+          { path: "cobrancas", lazy: Cobrancas },
         ],
       },
     ],

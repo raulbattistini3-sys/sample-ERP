@@ -1,5 +1,3 @@
-import { readSheet } from "read-excel-file/browser";
-
 export type SpreadsheetRow = unknown[];
 
 export const SPREADSHEET_ACCEPT = ".csv,.xlsx";
@@ -8,6 +6,8 @@ export const SPREADSHEET_ACCEPT = ".csv,.xlsx";
 export async function readSpreadsheetRows(file: File): Promise<SpreadsheetRow[]> {
   const name = file.name.toLowerCase();
   if (name.endsWith(".xlsx")) {
+    // the .xlsx parser (unzip + XML) is its own chunk, fetched only when someone picks a .xlsx
+    const { readSheet } = await import("read-excel-file/browser");
     return (await readSheet(file)) as SpreadsheetRow[];
   }
   if (name.endsWith(".csv")) {
