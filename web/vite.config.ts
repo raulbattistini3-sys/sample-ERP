@@ -115,7 +115,7 @@ export default defineConfig(({ mode }) => {
     plugins: [react(), tailwindcss(), networkRegistration(env)],
     resolve: { alias: { "@pkg": pkg } },
     // the dev server only serves files under web/ unless told otherwise
-    server: { https: devHttps(env), fs: { allow: [fileURLToPath(new URL(".", import.meta.url)), pkg] } },
+    server: { port: 5173, strictPort: true, https: devHttps(env), fs: { allow: [fileURLToPath(new URL(".", import.meta.url)), pkg] } },
     // the search worker imports pkg modules, so it is bundled as an ES module worker
     worker: { format: "es" as const },
   };
