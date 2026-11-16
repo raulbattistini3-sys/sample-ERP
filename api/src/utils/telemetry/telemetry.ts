@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import { createHostTelemetry, httpSender } from "../../../../pkg/telemetry/host.js";
 import { createIngestChild } from "../../../../pkg/telemetry/ingest-child.js";
+import { adaptiveSamples, observeLatency } from "./adaptive";
 
 // Telemetry sink of this process. Everything goes to the TCC telemetry server (tcc-v2.exe, a sibling
 // process the launcher and `network dev` start), never to local files:
@@ -126,7 +127,8 @@ export const ipcTelemetry = {
 export const hostTelemetry = createHostTelemetry({
    source: "sample-erp-api",
    instanceId: process.env.TELEMETRY_INSTANCE_ID?.trim() || undefined,
-   extraSamples: () => ingest?.extraSamples() ?? [],
+   // the job readings from the ingest child, and polyvisor's pressure level when running under it
+   extraSamples: () => [...(ingest?.extraSamples() ?? []), ...(adaptiveSamples() as { type: string }[])],
    send: async (envelope) => {
       if (ingest?.ready) {
          try {
@@ -183,7 +185,12 @@ export function instrumentPool<P extends object>(pool: P): P {
       if (typeof args[args.length - 1] === "function") return original(...args);
       const first = args[0] as string | { text?: unknown } | undefined;
       const text = typeof first === "string" ? first : typeof first?.text === "string" ? first.text : "";
-      return hostTelemetry.query(queryLabel(text), () => original(...args) as Promise<unknown>);
+      const label = queryLabel(text);
+      const t0 = performance.now();
+      const done = () => observeLatency(`db ${label}`, performance.now() - t0);
+      const result = hostTelemetry.query(label, () => original(...args) as Promise<unknown>);
+      result.then(done, done);
+      return result;
    };
    return pool;
 }
