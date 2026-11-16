@@ -120,7 +120,7 @@ func dev(args []string) int {
 		}
 	}
 	if web {
-		if err := sup.Start(supervisor.Spec{Name: "web", Dir: filepath.Join(root, "web"), Command: bun, Args: []string{"run", "dev"}, Env: join}, exited); err != nil {
+		if err := sup.Start(supervisor.Spec{Name: "web", Dir: filepath.Join(root, "web"), Command: bun, Args: []string{"run", "dev"}, Env: webEnv(join)}, exited); err != nil {
 			sup.Logf("network", "%v", err)
 		} else {
 			started++
@@ -155,6 +155,13 @@ func dev(args []string) int {
 	}
 	_ = started
 	return code
+}
+
+// webEnv points the web app at /api, which the dev server forwards to the API (web/vite.config.ts) the way
+// the gateway does in the build. With a full address from web/.env instead, the browser would call the API
+// itself and fail without a word whenever it doesn't trust secrets/tls/ca.crt, as on a fresh machine.
+func webEnv(join []string) []string {
+	return append(append([]string{}, join...), "VITE_API_URL=/api")
 }
 
 // repoRoot is the folder holding api/ and web/: the working directory or one of its parents.

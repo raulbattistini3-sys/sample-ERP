@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react-swc'
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync } from "node:fs";
+import { Agent } from "node:https";
 
 // ../pkg: code shared with the API (tablecore: columnar table, search index, worker scheduler; telemetry)
 const pkg = fileURLToPath(new URL("../pkg", import.meta.url));
@@ -107,15 +108,36 @@ function devHttps(env: Record<string, string | undefined>) {
   return { cert: readFileSync(cert), key: readFileSync(key), minVersion: "TLSv1.3" as const };
 }
 
+// When VITE_API_URL is a path ("/api", as in the launcher's build), the dev server forwards it to the API
+// (API_PROXY_TARGET, default https://127.0.0.1:3333) with the path stripped, as the gateway does. The browser
+// then calls its own origin, like the build: no CORS, and no API certificate it would have to trust. The
+// proxy trusts the internal CA itself (API_PROXY_CA, default secrets/tls/ca.crt).
+function devApiProxy(env: Record<string, string | undefined>) {
+  const path = env.VITE_API_URL?.trim().replace(/\/+$/, "");
+  if (!path?.startsWith("/") || path.startsWith("//")) return undefined;
+  const target = env.API_PROXY_TARGET?.trim() || "https://127.0.0.1:3333";
+  const caFile = env.API_PROXY_CA?.trim() || fileURLToPath(new URL("../../../secrets/tls/ca.crt", import.meta.url));
+  const ca = existsSync(caFile) ? readFileSync(caFile) : undefined;
+  return {
+    // a regex key (it starts with ^), so /api matches /api/... and /api?... but not /apixyz
+    [`^${path}(/|\\?|$)`]: {
+      target,
+      changeOrigin: true,
+      rewrite: (p: string) => p.slice(path.length) || "/",
+      ...(target.startsWith("https:") ? { agent: new Agent({ ca, minVersion: "TLSv1.3" }) } : {}),
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   checkRequiredEnv(mode);
-  const env = { ...loadEnv(mode, process.cwd(), ["VITE_", "NETWORK_", "WEB_TLS_"]), ...process.env };
+  const env = { ...loadEnv(mode, process.cwd(), ["VITE_", "NETWORK_", "WEB_TLS_", "API_PROXY_"]), ...process.env };
   return {
     plugins: [react(), tailwindcss(), networkRegistration(env)],
     resolve: { alias: { "@pkg": pkg } },
     // the dev server only serves files under web/ unless told otherwise
-    server: { port: 5173, strictPort: true, https: devHttps(env), fs: { allow: [fileURLToPath(new URL(".", import.meta.url)), pkg] } },
+    server: { port: 5173, strictPort: true, https: devHttps(env), proxy: devApiProxy(env), fs: { allow: [fileURLToPath(new URL(".", import.meta.url)), pkg] } },
     // the search worker imports pkg modules, so it is bundled as an ES module worker
     worker: { format: "es" as const },
   };
