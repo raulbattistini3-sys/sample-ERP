@@ -45,6 +45,12 @@ const server = tls
         app,
      )
    : createServer(app);
+// The gateway pools idle upstream connections for 90 s (network/gateway/gateway.go IdleConnTimeout), but Node
+// closes an idle keep-alive socket after 5 s by default. Any request the gateway sent on a pooled socket Node had
+// just closed got EOF and turned into a 502: that was the "first search after the page sat idle always fails" bug.
+// Outlive the gateway's pool, so it is always the gateway that drops an idle connection, never the API.
+server.keepAliveTimeout = 95_000;
+server.headersTimeout = 96_000; // must exceed keepAliveTimeout
 if (!tls) console.warn("API_TLS_* not set: serving plain HTTP, and billing can't reach /internal/billing (development only)");
 
 // development: the importer, the vault and billing as this process's children (API_CHILDREN)
