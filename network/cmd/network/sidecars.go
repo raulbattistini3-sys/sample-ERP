@@ -102,6 +102,29 @@ func secretsDir(root string) string {
 	})
 }
 
+// devSecrets fills what `make dev` would export when it is not set: NETWORK_TOKEN from secrets/network_token
+// and NETWORK_UPSTREAM_CA = secrets/tls/ca.crt. Set in this process, both reach the children too.
+func devSecrets(root string, sup *supervisor.Supervisor) {
+	dir := secretsDir(root)
+	if dir == "" {
+		return
+	}
+	if os.Getenv("NETWORK_TOKEN") == "" {
+		if b, err := os.ReadFile(filepath.Join(dir, "network_token")); err == nil {
+			if t := strings.TrimSpace(string(b)); t != "" {
+				os.Setenv("NETWORK_TOKEN", t)
+			}
+		} else {
+			sup.Logf("network", "no NETWORK_TOKEN and no %s (cd %s && bun run network-token)", filepath.Join(dir, "network_token"), dir)
+		}
+	}
+	if os.Getenv("NETWORK_UPSTREAM_CA") == "" {
+		if ca := filepath.Join(dir, "tls", "ca.crt"); exists(ca) {
+			os.Setenv("NETWORK_UPSTREAM_CA", ca)
+		}
+	}
+}
+
 // readEnvFile reads KEY=value lines (# comments, optional quotes); a missing file is empty.
 func readEnvFile(path string) map[string]string {
 	out := map[string]string{}

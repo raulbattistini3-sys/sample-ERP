@@ -56,6 +56,11 @@ func dev(args []string) int {
 		}
 	}
 
+	// `make dev` exports these from erp-v1/secrets; started directly (`go run ./network/cmd/network dev`) the
+	// same files are read here, so the network does not stop at once for want of a token and the gateway
+	// trusts the API's certificate
+	devSecrets(root, sup)
+
 	// the children join this network: the control address is fixed, and the token is the one it checks
 	var join []string
 	if t := os.Getenv("NETWORK_TOKEN"); t != "" {

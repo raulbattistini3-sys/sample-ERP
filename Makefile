@@ -58,7 +58,7 @@ network: check-secrets
 	go run ./network/cmd/network
 
 run:
-	"$(ERP_V1)/bin/sample-erp.exe"
+	'$(ERP_V1)/bin/sample-erp.exe'
 
 exe:
 	cd "$(ERP_V1)/launcher" && cargo xtask dist

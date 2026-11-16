@@ -33,11 +33,20 @@ function checkRequiredEnv(mode: string) {
   }
 }
 
+// NETWORK_URL as written in web/.env may be just "127.0.0.1": fetch needs a scheme, so a bare host[:port]
+// gets http://, and :7070 (NETWORK_CONTROL_ADDR's default) when it names no port.
+function networkBase(raw: string | undefined): string | undefined {
+  const url = raw?.trim().replace(/\/+$/, "");
+  if (!url) return undefined;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) return url;
+  return /:\d+$/.test(url) ? `http://${url}` : `http://${url}:7070`;
+}
+
 // The dev server joins the network service (network/, Go) as "web" when NETWORK_URL and NETWORK_TOKEN are
 // set: the gateway then serves the app from here (HMR included) at whatever port vite ended up on, next to
 // /api and /billing, with no address in any config. Calls are signed like network/registry/sign.go.
 function networkRegistration(env: Record<string, string | undefined>): Plugin {
-  const base = env.NETWORK_URL?.trim().replace(/\/$/, "");
+  const base = networkBase(env.NETWORK_URL);
   const token = env.NETWORK_TOKEN;
   const sign = (method: string, path: string, body: string) => {
     const t = String(Math.floor(Date.now() / 1000));
