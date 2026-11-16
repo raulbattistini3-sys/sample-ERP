@@ -40,6 +40,11 @@ export const LoginUsuarioSchema = z.object({
 });
 export type LoginUsuarioPayload = z.infer<typeof LoginUsuarioSchema>;
 
+// the login's first step
+export const LoginEmailSchema = z.object({
+  email: z.email("Informe um e-mail válido"),
+});
+
 export const ForgotPasswordSchema = z.object({
   email: z.email("Informe um e-mail válido"),
 });

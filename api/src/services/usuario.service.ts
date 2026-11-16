@@ -83,6 +83,9 @@ const tocaVault = (p: CamposSensiveis) => p.cpf !== undefined || p.dataNasciment
 const onlySuError = () =>
    new ValidationError("403", "Apenas superusuários (SU) podem gerenciar administradores");
 
+// the login answers this for an email with no account (the first step says so before the senha is asked)
+const EMAIL_SEM_CONTA = "Ainda não encontramos uma conta com este e-mail. Confira se ele está certo ou crie uma conta.";
+
 class UsuarioService implements IUserService {
      constructor(
       private userRepository: IUsuarioRepository,
@@ -401,6 +404,29 @@ class UsuarioService implements IUserService {
          return left(new ServerError("500", true, undefined, error));
       }
    }
+  // the login's first step: only says whether the email has an account, so the senha is asked for a known one
+  async checkLoginEmail(payload: unknown): Promise<Either<BaseAppError, { email: string }>> {
+   try {
+      const validation = this.userValidator.validateLoginEmailPayload(payload);
+      if (validation.isLeft()) {
+         return left(validation.value);
+      }
+      const email = String((payload as { email: string }).email).trim();
+      const userData = await this.userRepository.getUsuarioByEmail(email);
+      if (userData.isLeft()) {
+         if (userData.value.message === "Database error") {
+            const causa = (userData.value as { cause?: unknown }).cause ?? userData.value;
+            console.error("[login] database error:", causa);
+            return left(new ServerError("503", true, "Banco de dados indisponível.", causa));
+         }
+         return left(new ValidationError("404", EMAIL_SEM_CONTA));
+      }
+      return right({ email: userData.value.email });
+   } catch (error) {
+      return left(new ServerError("500", true, undefined, error));
+   }
+  }
+
   async loginUsuario(
    payload: PayloadLoginUsuarioDto,
 ): Promise<Either<BaseAppError, ResponseLoginUsuarioDto>> {
@@ -411,19 +437,20 @@ class UsuarioService implements IUserService {
       }
       const userData = await this.userRepository.getUsuarioByEmail(payload.email);
       if (userData.isLeft()) {
-         // "No usuario found" is a wrong email; anything else is the database failing, not the credentials
+         // "No usuario found" is an email with no account (the first step already said so); anything else is the
+         // database failing, not the credentials
          if (userData.value.message === "Database error") {
             const causa = (userData.value as { cause?: unknown }).cause ?? userData.value;
             console.error("[login] database error:", causa);
             return left(new ServerError("503", true, "Banco de dados indisponível.", causa));
          }
-         return left(new ValidationError("401", "credenciais inválidas"));
+         return left(new ValidationError("404", EMAIL_SEM_CONTA));
       }
       const matches = await comparePassword(payload.senha, userData.value.senha);
       if (!matches) {
          return left(new ValidationError("401", "credenciais inválidas"));
       }
-      // checked after the password, so it doesn't reveal which emails exist
+      // checked after the password, so only the account's owner learns it is inactive
       if (!userData.value.ativo) {
          return left(new ValidationError("401", "Usuário inativo"));
       }

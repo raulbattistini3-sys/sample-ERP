@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -61,6 +62,21 @@ func dev(args []string) int {
 		join = append(join, "NETWORK_URL=http://"+env("NETWORK_CONTROL_ADDR", "127.0.0.1:7070"), "NETWORK_TOKEN="+t)
 	}
 
+	// a second `make dev` (or one left over from a closed terminal) holds these: fail here, loudly, instead of
+	// starting the API and vite only to tear them down 30 s later when the control listener cannot bind
+	ports := []string{env("NETWORK_CONTROL_ADDR", "127.0.0.1:7070")}
+	if web {
+		ports = append(ports, "127.0.0.1:5173")
+	}
+	for _, addr := range ports {
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			sup.Logf("network", "%s is already in use: another dev stack is probably running (stop it, or find the owner with: netstat -ano | findstr %s)", addr, addr)
+			return 1
+		}
+		ln.Close()
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -104,7 +120,7 @@ func dev(args []string) int {
 		}
 	}
 	if web {
-		if err := sup.Start(supervisor.Spec{Name: "web", Dir: filepath.Join(root, "web"), Command: bun, Args: []string{"run", "dev"}, Env: join}, exited); err != nil {
+		if err := sup.Start(supervisor.Spec{Name: "web", Dir: filepath.Join(root, "web"), Command: bun, Args: []string{"run", "dev"}, Env: webEnv(join)}, exited); err != nil {
 			sup.Logf("network", "%v", err)
 		} else {
 			started++
@@ -139,6 +155,13 @@ func dev(args []string) int {
 	}
 	_ = started
 	return code
+}
+
+// webEnv points the web app at /api, which the dev server forwards to the API (web/vite.config.ts) the way
+// the gateway does in the build. With a full address from web/.env instead, the browser would call the API
+// itself and fail without a word whenever it doesn't trust secrets/tls/ca.crt, as on a fresh machine.
+func webEnv(join []string) []string {
+	return append(append([]string{}, join...), "VITE_API_URL=/api")
 }
 
 // repoRoot is the folder holding api/ and web/: the working directory or one of its parents.

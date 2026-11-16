@@ -80,6 +80,14 @@ class UsuarioController extends BaseController {
     return res.status(200).json(result.value);
   };
 
+  checkLoginEmail = async (req: Request, res: Response, next: NextFunction) => {
+    const result = await this.usuarioService.checkLoginEmail(req.body);
+    if (result.isLeft()) {
+      return this.fail(req, next, result.value);
+    }
+    return res.status(200).json(result.value);
+  };
+
   login = async (req: Request, res: Response, next: NextFunction) => {
     const result = await this.usuarioService.loginUsuario(req.body);
     if (result.isLeft()) {

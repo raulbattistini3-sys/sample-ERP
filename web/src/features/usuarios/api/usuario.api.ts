@@ -13,6 +13,9 @@ import {
 export const registerUsuario = (payload: RegisterUsuarioPayload) => apiClient.post("/user/register", payload);
 // ADM only: honors permissoes and ativo
 export const createUsuario = (payload: RegisterUsuarioPayload) => apiClient.post("/user", payload);
+// the login's first step: 200 when the email has an account, 404 (with a message to show) when it has none yet
+export const checkLoginEmail = (email: string) =>
+  apiClient.post<{ email: string }>("/user/login/email", { email }).then((r) => r.data);
 export const loginUsuario = async (payload: LoginUsuarioPayload) => {
   const { data } = await apiClient.post("/user/login", payload);
   return LoginResponseSchema.parse(data);

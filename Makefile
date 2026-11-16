@@ -8,7 +8,8 @@
 #   make install    bun install in api/ and web/, pnpm install in the TCC workspace
 #   make logs       the TCC's 5-minute log files (logs/tcc/*.log[.gz])
 #
-# Only what crosses process boundaries is exported: NETWORK_TOKEN (secrets/network_token), TCC_TOKEN +
+# Only what crosses process boundaries is exported: NETWORK_TOKEN (secrets/network_token), NETWORK_UPSTREAM_CA
+# (secrets/tls/ca.crt), TCC_TOKEN +
 # TCC_TELEMETRY_URL (secrets/tcc-server.env, for the API) and TCC_SECRETS_DIR / TCC_DIR. DATABASE_URL & co.
 # are not: the API keeps api/.env and the TCC server reads tcc-server.env itself.
 
@@ -36,6 +37,9 @@ export TCC_DIR           := $(TCC_WS)
 export TCC_TOKEN         := $(call tcc_env,TCC_TOKEN)
 export TCC_TELEMETRY_URL := http://127.0.0.1:$(TCC_PORT)/telemetry/host
 export NETWORK_TOKEN     := $(strip $(shell tr -d '\r\n' < "$(SECRETS)/network_token" 2>/dev/null))
+# the CA that signed the services' certificates (secrets/tls). The API serves HTTPS with one of them, and
+# without this the gateway can't verify it: every /api request fails the TLS handshake and answers 502
+export NETWORK_UPSTREAM_CA := $(wildcard $(SECRETS)/tls/ca.crt)
 
 .PHONY: dev dev-notcc network run exe install logs check-secrets
 
