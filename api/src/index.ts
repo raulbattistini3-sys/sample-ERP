@@ -20,7 +20,9 @@ import { listenWithFallback } from "./utils/listen_with_fallback";
 import { anunciar, novoId, rede } from "./integrations/network/network.client";
 import { apiTls } from "./configs/tls.config";
 import { DevChildren } from "./dev/children";
-import { flushTelemetry, hostTelemetry, hostTelemetryEnabled } from "./utils/telemetry/telemetry";
+import { flushTelemetry, hostTelemetry, startHostTelemetry, stopHostTelemetry } from "./utils/telemetry/telemetry";
+import { startAdaptive, stopAdaptive } from "./utils/telemetry/adaptive";
+import { processRole } from "./configs/process_role";
 
 const config = Config.getInstance();
 
@@ -47,8 +49,10 @@ if (!tls) console.warn("API_TLS_* not set: serving plain HTTP, and billing can't
 
 // development: the importer, the vault and billing as this process's children (API_CHILDREN)
 const children = DevChildren.fromEnv();
-// GC, event loop, request and query timings every 10 s to the TCC server, tcc-v2 (utils/telemetry)
-if (hostTelemetryEnabled) hostTelemetry.start();
+// GC, event loop, request and query timings every 10 s to the TCC server, tcc-v2, over IPC to its ingest child
+startHostTelemetry();
+// under polyvisor (the launcher's supervisor): admission by memory/loop/latency pressure; a no-op otherwise
+void startAdaptive();
 if (children && apiEnv() === "production") {
    console.warn("API_CHILDREN is ignored in production; the launcher or the container platform runs those services");
 } else {
@@ -69,7 +73,8 @@ listenWithFallback(server, { host, port, fallback: apiEnv() === "development", l
       // the first superuser of an empty database, when BOOTSTRAP_SU_* is set
       await ensureBootstrapSu(pinoLogger);
       // pg-boss worker that creates the Jira issues / HubSpot tickets of new auditorias
-      void integracaoEnvioWorker.start();
+      // (API_ROLE=api: producer only; the consumers run in the worker process, src/worker.ts)
+      void integracaoEnvioWorker.start({ consume: processRole() !== "api" });
       // issues each recurring payment's (Pagamento mensal) invoice on its date
       pagamentoRecorrenteWorker.start();
       // automatic auditorias, consolidated every AUDITORIAS_INTERVALO_MINUTOS (default 5)
@@ -104,7 +109,8 @@ const shutdown = async () => {
    await Promise.all([integracaoEnvioWorker.stop(), pagamentoRecorrenteWorker.stop(), auditoriaConsolidacaoWorker.stop(), importacaoCluster?.stop(), closeProductSocket()]);
    importadorClient.close();
    // a "stopping" sample and the last window, written before the process exits
-   if (hostTelemetryEnabled) await hostTelemetry.stop();
+   await stopHostTelemetry();
+   stopAdaptive();
    // the app events still in the batch (searches of the last 2 s)
    await flushTelemetry();
    // the children last: billing may still be sending its last notifications

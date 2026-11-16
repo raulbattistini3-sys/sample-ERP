@@ -56,7 +56,9 @@
     "seed:fake": "bun scripts/seed_fake.ts",
     "dev": "tsnd --transpile-only --respawn ./src/index.ts --ignore-watch node_modules",
     "start:dev": "tsc && node dist/api/src/index.js",
-    "start": "node dist/api/src/index.js",
+    "start": "node --max-old-space-size=768 dist/api/src/index.js",
+    "start:worker": "node --max-old-space-size=512 dist/api/src/worker.js",
+    "dev:worker": "tsnd --transpile-only ./src/worker.ts",
     "build": "tsc"
   }
 }

@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import { createHostTelemetry, httpSender } from "../../../../pkg/telemetry/host.js";
+import { createIngestChild } from "../../../../pkg/telemetry/ingest-child.js";
+import { adaptiveSamples, observeLatency } from "./adaptive";
 
 // Telemetry sink of this process. Everything goes to the TCC telemetry server (tcc-v2.exe, a sibling
 // process the launcher and `network dev` start), never to local files:
@@ -97,17 +99,71 @@ export async function flushTelemetry(): Promise<void> {
 // Memory, GC pauses, event-loop delay and utilization, requests per route and queries per label,
 // aggregated every 10 s into one envelope and sent to TCC with TCC_TOKEN. The middleware's
 // Server-Timing header works either way. A failed send keeps the envelope in the bounded queue (360 = 1 h).
+//
+// With TCC_INGEST_EXE (the launcher sets it to tcc-v2.exe) the envelopes don't go over HTTP at all: the API
+// starts tcc-v2.exe in ingest-ipc mode as its own child and sends them over Node's IPC channel; the child
+// stores them in the TCC database and acks each (pkg/telemetry/ingest-child.js). Being the API's child,
+// it sits in the API's job object (the launcher's memory limit, named by WIN_TELEMETRY_JOB) and reports
+// the job back every second: those win.job / win.system readings ride along in the API's envelopes, and
+// ipcTelemetry.job() is the limit the API actually runs under. Until the child is ready, or if it's
+// gone, envelopes take the HTTP path (TCC_TELEMETRY_URL; via erp-cache, which answers resends itself).
 const toTcc = hostUrl ? httpSender(hostUrl, token) : null;
+const ingestExe = process.env.TCC_INGEST_EXE?.trim() || null;
+const ingestArgs = process.env.TCC_INGEST_ARGS?.trim() ? process.env.TCC_INGEST_ARGS.trim().split(/\s+/) : [];
 
-export const hostTelemetryEnabled = toTcc !== null;
+let ingest: ReturnType<typeof createIngestChild> | null = null;
+
+export const hostTelemetryEnabled = toTcc !== null || ingestExe !== null;
+
+/** the IPC telemetry child, once startHostTelemetry() has started it */
+export const ipcTelemetry = {
+   get ready() {
+      return ingest?.ready ?? false;
+   },
+   job: () => ingest?.job() ?? null,
+   stats: () => ingest?.stats ?? null,
+};
 
 export const hostTelemetry = createHostTelemetry({
    source: "sample-erp-api",
    instanceId: process.env.TELEMETRY_INSTANCE_ID?.trim() || undefined,
+   // the job readings from the ingest child, and polyvisor's pressure level when running under it
+   extraSamples: () => [...(ingest?.extraSamples() ?? []), ...(adaptiveSamples() as { type: string }[])],
    send: async (envelope) => {
+      if (ingest?.ready) {
+         try {
+            await ingest.send(envelope);
+            return;
+         } catch (err) {
+            if (!toTcc) throw err; // stays queued for the child
+         }
+      }
       if (toTcc) await toTcc(envelope);
+      else if (ingest) throw new Error("telemetry child not ready"); // stays queued until it is
    },
 });
+
+/** starts host telemetry and, with TCC_INGEST_EXE, the IPC telemetry child (the API process only) */
+export function startHostTelemetry() {
+   if (!hostTelemetryEnabled) return;
+   if (ingestExe && !ingest) {
+      ingest = createIngestChild({
+         exe: ingestExe,
+         args: ingestArgs,
+         // the child inherits TCC_INGEST_DATABASE_URL/_SSL/_CA_CERT (the TCC database, from the launcher)
+         // and WIN_TELEMETRY_JOB
+         log: (m) => console.log(`[telemetry] ${m}`),
+      });
+   }
+   hostTelemetry.start();
+}
+
+/** the last window ("stopping" included), then the child */
+export async function stopHostTelemetry() {
+   if (!hostTelemetryEnabled) return;
+   await hostTelemetry.stop();
+   await ingest?.stop();
+}
 
 // "select produtos", "insert auditorias": the verb and the first table of a statement. Telemetry is
 // training data, so the label never carries the SQL text or its values.
@@ -129,7 +185,12 @@ export function instrumentPool<P extends object>(pool: P): P {
       if (typeof args[args.length - 1] === "function") return original(...args);
       const first = args[0] as string | { text?: unknown } | undefined;
       const text = typeof first === "string" ? first : typeof first?.text === "string" ? first.text : "";
-      return hostTelemetry.query(queryLabel(text), () => original(...args) as Promise<unknown>);
+      const label = queryLabel(text);
+      const t0 = performance.now();
+      const done = () => observeLatency(`db ${label}`, performance.now() - t0);
+      const result = hostTelemetry.query(label, () => original(...args) as Promise<unknown>);
+      result.then(done, done);
+      return result;
    };
    return pool;
 }

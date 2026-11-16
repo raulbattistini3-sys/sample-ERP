@@ -7,6 +7,7 @@ import swaggerUi from "swagger-ui-express";
 import router from "./routes";
 import { corsOptions, origins } from "./configs/cors.config";
 import { hostTelemetry } from "./utils/telemetry/telemetry";
+import { adaptiveMiddleware } from "./utils/telemetry/adaptive";
 import { openApiDocument } from "./docs/openapi";
 
 const app = express();
@@ -17,6 +18,8 @@ app.set("query parser", "extended");
 // first, so it times the whole request: http.request per matched route (never the raw URL) in host
 // telemetry, and a Server-Timing header (app, db) the web's allowed origins can read
 app.use(hostTelemetry.middleware({ timingAllowOrigin: origins }));
+// then admission (under polyvisor): a shed request still shows up in telemetry, as a 503
+app.use(adaptiveMiddleware);
 
 // 100kb (the default) everywhere except the JSON spreadsheet import (up to 5000 products). Clientes
 // spreadsheets are uploaded as files (multipart) to /clientes/importacoes, which this parser skips.

@@ -34,7 +34,11 @@ class IntegracaoEnvioWorker {
 
   // If the database or the pg-boss schema isn't reachable at startup, the API keeps serving (rows saved
   // meanwhile wait without a job) and this keeps trying every 30s.
-  async start(): Promise<void> {
+  // consume=false (API_ROLE=api): only the producer side, so the API can enqueue jobs in its transactions
+  // and "Reenviar" works, while a separate worker process (src/worker.ts) runs boss.work() and the sweep;
+  // the jobs' allocations then never land on the API's heap.
+  async start(opts: { consume?: boolean } = {}): Promise<void> {
+    const consume = opts.consume ?? true;
     if (this.stopped) return;
     try {
       await this.queue.start(this.logger);
@@ -43,11 +47,16 @@ class IntegracaoEnvioWorker {
         await this.queue.boss.createQueue(dlq);
         await this.queue.boss.createQueue(queue, envioQueueOptions(provider));
         await this.queue.boss.updateQueue(queue, envioQueueOptions(provider)); // keeps options current on existing queues
+        if (!consume) continue;
         await this.queue.boss.work(
           queue,
           { batchSize: 1, localConcurrency: 3, pollingIntervalSeconds: 2, includeMetadata: true } as const,
           async ([job]: JobWithMetadata<EnvioJob>[]) => this.handle(job),
         );
+      }
+      if (!consume) {
+        this.log(ErrorLevelsEnum.Values.INFO, "integration queue started (producer only; jobs run in the worker process)", { schema: this.queue.schema });
+        return;
       }
       await this.enqueueMissing();
       this.sweepTimer = setInterval(() => void this.enqueueMissing(), SWEEP_MS);
@@ -55,7 +64,7 @@ class IntegracaoEnvioWorker {
       this.log(ErrorLevelsEnum.Values.INFO, "integration worker started", { schema: this.queue.schema, queues: ENVIO_QUEUES });
     } catch (error) {
       this.log(ErrorLevelsEnum.Values.ERROR, `integration queue unavailable, retrying in ${RESTART_MS / 1000}s`, { error: (error as Error).message });
-      this.restartTimer = setTimeout(() => void this.start(), RESTART_MS);
+      this.restartTimer = setTimeout(() => void this.start(opts), RESTART_MS);
       this.restartTimer.unref?.();
     }
   }

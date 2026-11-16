@@ -69,6 +69,7 @@ import v8 from "node:v8";
  * @property {number} [degradedLoopP99Ms] event-loop p99 above this marks the service degraded, below it again recovered (default 200 ms; 0 disables)
  * @property {number} [maxSeries] distinct request routes / query names kept per interval; the rest are counted under "(other)" (default 200)
  * @property {number} [heapEvery] a process.heap sample (V8 heap per space) every Nth interval (default 6: once a minute at 10 s; 0 disables)
+ * @property {() => TelemetrySample[]} [extraSamples] samples measured elsewhere, added to each window (the job readings of the IPC telemetry child: win.job, win.system)
  * @property {(err: unknown) => void} [onError]
  */
 
@@ -418,6 +419,13 @@ export function createHostTelemetry(opts) {
     requests.clear();
     for (const [name, q] of queries) samples.push({ type: "db.query", intervalMs: window, name, ...q.d.summary(), errors: q.errors });
     queries.clear();
+    if (opts.extraSamples) {
+      try {
+        samples.push(...opts.extraSamples());
+      } catch (err) {
+        onError(err);
+      }
+    }
 
     const out = [...pending, ...samples];
     pending = [];

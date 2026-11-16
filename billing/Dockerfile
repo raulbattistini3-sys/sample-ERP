@@ -17,4 +17,4 @@ EXPOSE 8081
 # 127.0.0.1, not localhost: busybox wget can resolve that to ::1 first
 HEALTHCHECK --interval=10s --timeout=5s --start-period=40s --retries=6 \
   CMD wget -qO- http://127.0.0.1:8081/actuator/health | grep -q UP
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-Xms128m", "-Xmx512m", "-XX:MaxMetaspaceSize=192m", "-XX:MaxDirectMemorySize=128m", "-jar", "app.jar"]
