@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./TopBar";
@@ -23,6 +23,10 @@ export function AppLayout() {
     setMobileNavOpen(false);
   }
   const title = pageTitles[pathname] ?? "ERP Estoque";
+
+  useEffect(() => {
+    document.title = title === "ERP Estoque" ? title : `${title} · ERP Estoque`;
+  }, [title]);
 
   return (
     <div className="flex h-screen bg-canvas">
